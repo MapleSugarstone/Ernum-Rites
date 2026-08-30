@@ -1,6 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import '../src/cards';
-import { deckByKey } from '../src/cards';
+import { deckByKey, hasDeck } from '../src/cards';
 import type { Action } from '../src/engine/actions';
 import { applyAction, createGame } from '../src/engine/engine';
 import { digestShort } from '../src/engine/digest';
@@ -83,10 +83,29 @@ export class MatchRoom extends DurableObject {
     }
 
     if (msg.type === 'join') {
+      // A modified client can send anything, so the fields are checked for shape
+      // before they are used: nameProblem trims the name, and an unknown deck key
+      // would otherwise throw when startMatch rebuilds the deck and wedge the
+      // match for the honest opponent it was paired with.
+      if (
+        typeof msg.name !== 'string' ||
+        typeof msg.deckKey !== 'string' ||
+        typeof msg.version !== 'string'
+      ) {
+        return this.send(socket, { type: 'error', reason: 'malformed join' });
+      }
       // Checked here as well as in the lobby: the name reaches the other player,
       // so the room does not take a client's word for it.
       const bad = nameProblem(msg.name);
       if (bad) return this.send(socket, { type: 'error', reason: bad });
+      // Only decks the room can rebuild from their key work online; custom decks
+      // live in one browser and never reach the authority.
+      if (!hasDeck(msg.deckKey)) {
+        return this.send(socket, {
+          type: 'error',
+          reason: 'That deck cannot be used online. Pick a starter deck and try again.',
+        });
+      }
       // Checked before a seat is given rather than after the match goes wrong.
       // The room runs the same build it is comparing against, so a client that
       // disagrees with it disagrees with the other player too.

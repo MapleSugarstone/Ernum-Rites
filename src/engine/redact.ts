@@ -23,6 +23,13 @@ export const hiddenCard: CardDef = {
  */
 export function redactFor(state: GameState, viewer: PlayerIdx): GameState {
   const out: GameState = structuredClone(state);
+  // The engine is deterministic from the seed, and every deck is a public list.
+  // Handing a client the seed would let it replay both shuffles and read every
+  // face-down card and future draw, which is exactly what the rest of this
+  // function hides. The client never advances the authority itself, so it does
+  // not need either value.
+  out.seed = 0;
+  out.rngState = 0;
   for (const idx of [0, 1] as PlayerIdx[]) {
     const p = out.players[idx];
     p.deck = p.deck.map(() => HIDDEN_ID);
@@ -59,6 +66,11 @@ export function redactFor(state: GameState, viewer: PlayerIdx): GameState {
  */
 export function publicView(state: GameState): GameState {
   const out: GameState = structuredClone(state);
+  // Blanked here too so the digest both sides compare does not depend on the
+  // seed. redactFor already keeps it off the wire; zeroing it in the projection
+  // as well is what makes the authority and a client agree once it is gone.
+  out.seed = 0;
+  out.rngState = 0;
   for (const idx of [0, 1] as PlayerIdx[]) {
     const p = out.players[idx];
     p.deck = p.deck.map(() => HIDDEN_ID);

@@ -3,6 +3,18 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!--
+      Defence in depth for a UI that renders through innerHTML. The one inline
+      script below is allowed by its hash rather than by 'unsafe-inline', so an
+      injected inline handler or script tag is refused. Editing that script means
+      recomputing the hash (npm run build then hash the theme script's text).
+      GitHub Pages cannot send headers, so frame-ancestors is not available here
+      (meta ignores it) and clickjacking is not covered.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'sha256-UytCwZSNqTDY3xscWEd7CjN7kksU1Fd09RZB25cAL0A='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self'; font-src 'self'; connect-src 'self' https: wss:; object-src 'none'; base-uri 'self'; form-action 'none'"
+    />
     <title>Ernum Rites</title>
     <meta
       name="description"

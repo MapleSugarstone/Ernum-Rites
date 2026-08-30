@@ -965,6 +965,11 @@ export function deckByKey(key: string): StarterDeck {
   return d;
 }
 
+/** Whether a key names a deck the server can rebuild, so callers can check before deckByKey throws. */
+export function hasDeck(key: string): boolean {
+  return allDecks.some((x) => x.key === key);
+}
+
 export {
   blueCards,
   greenCards,

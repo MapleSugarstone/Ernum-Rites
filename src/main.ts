@@ -3786,10 +3786,13 @@ function renderOnline(): string {
   // offered until it is one they can be shown.
   const badName = nameProblem(o.name);
   const blocked = busy || badName !== null;
+  // Only starter decks online: the room rebuilds a deck from its key alone, so a
+  // custom deck, which lives only in this browser, cannot be used against another
+  // player. The room rejects an unknown key, and offering one here would only be
+  // an option that always fails.
   const deckGroups = [
-    { label: 'Your decks', options: savedDeckList().map((d) => ({ value: d.key, label: d.name })) },
     { label: 'Starter decks', options: starterDecks.map((d) => ({ value: d.key, label: d.name })) },
-  ].filter((g) => g.options.length > 0);
+  ];
   const status = o.error
     ? `<p class="lobbyerr lobbystatus">${esc(o.error)}</p>`
     : badName && o.name.trim().length > 0

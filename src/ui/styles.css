@@ -224,6 +224,10 @@ body {
      is the exception, being a document, and so is anything you type into. */
   -webkit-user-select: none;
   user-select: none;
+  /* With nothing to select, an I-beam is a lie, and auto still shows one over
+     any text it finds. The arrow is the honest default; the two places that do
+     take a selection ask for the I-beam back where they turn selecting on. */
+  cursor: default;
   font-family: var(--font-ui);
   font-size: 14px;
   line-height: 1.45;
@@ -4965,6 +4969,16 @@ input,
 textarea {
   -webkit-user-select: text;
   user-select: text;
+}
+/* Only what you type into. A checkbox or a slider is not text and must not
+   claim an I-beam, and neither is the rules page as a whole: cursor inherits,
+   so setting it on the view puts an I-beam over the logo and the art inside it.
+   The page stays selectable either way, which is what it is for. */
+textarea,
+input:not([type]),
+input[type='text'],
+input[type='search'] {
+  cursor: text;
 }
 .rulesview .inner {
   max-width: 780px;

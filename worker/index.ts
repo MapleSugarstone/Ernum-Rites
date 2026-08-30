@@ -11,9 +11,20 @@ export interface Env {
   ALLOWED_ORIGINS?: string;
 }
 
-function corsHeaders(env: Env, origin: string | null): Record<string, string> {
+/**
+ * Whether an origin may talk to this worker. An empty allow-list accepts every
+ * origin, matching how the deployment behaves before one is configured; with a
+ * list set, the origin has to be on it. A forged Origin header slips this on a
+ * non-browser client, so it is a guard against a hostile web page, not a secret.
+ */
+function isAllowedOrigin(env: Env, origin: string | null): boolean {
   const allowed = (env.ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
-  if (!origin || (allowed.length > 0 && !allowed.includes(origin))) return {};
+  if (allowed.length === 0) return true;
+  return origin !== null && allowed.includes(origin);
+}
+
+function corsHeaders(env: Env, origin: string | null): Record<string, string> {
+  if (!origin || !isAllowedOrigin(env, origin)) return {};
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Headers': 'content-type',
@@ -47,8 +58,9 @@ export default {
     }
 
     if (url.pathname === '/api/queue/host' && request.method === 'POST') {
-      const { roomId, code } = await lobby(env).hostPrivate();
-      return reply({ ok: true, roomId, kind: 'private', code });
+      const hosted = await lobby(env).hostPrivate();
+      if (!hosted) return reply({ ok: false, reason: 'Too many lobbies open right now. Try again in a minute.' }, 503);
+      return reply({ ok: true, roomId: hosted.roomId, kind: 'private', code: hosted.code });
     }
 
     if (url.pathname === '/api/queue/join' && request.method === 'POST') {
@@ -70,9 +82,14 @@ export default {
       return reply({ ok: true, roomId: roomId ?? '', kind: 'public' });
     }
 
-    // /api/room/<roomId> upgrades to the websocket for that match.
+    // /api/room/<roomId> upgrades to the websocket for that match. A socket
+    // handshake is not covered by CORS, so the origin is checked here rather
+    // than left to the browser to refuse a response it can already read.
     const match = url.pathname.match(/^\/api\/room\/([A-Za-z0-9_-]{1,64})$/);
     if (match) {
+      if (!isAllowedOrigin(env, origin)) {
+        return new Response('forbidden origin', { status: 403, headers: cors });
+      }
       const id = env.MATCH_ROOM.idFromName(match[1]);
       return env.MATCH_ROOM.get(id).fetch(request);
     }

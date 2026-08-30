@@ -21,6 +21,13 @@ const OPEN_ROOM_MS = 2 * 60 * 1000;
 /** How long a private code is good for before the host has to make a new one. */
 const CODE_MS = 15 * 60 * 1000;
 
+/**
+ * Most live codes to hold at once. Hosting is unauthenticated, so a script can
+ * ask for codes in a loop; without a ceiling the map grows until each one
+ * expires. Far above any real number of private lobbies, so it only bites abuse.
+ */
+const MAX_CODES = 5000;
+
 /** No vowels and no look-alikes, so a code read aloud survives the trip. */
 const CODE_ALPHABET = 'BCDFGHJKLMNPQRSTVWXZ23456789';
 
@@ -90,10 +97,14 @@ export class Lobby extends DurableObject {
     return { roomId };
   }
 
-  /** A room only somebody holding the code can find. */
-  async hostPrivate(): Promise<{ roomId: string; code: string }> {
+  /** A room only somebody holding the code can find, or null when too many are live. */
+  async hostPrivate(): Promise<{ roomId: string; code: string } | null> {
     await this.load();
     this.sweep();
+    if (this.codes.size >= MAX_CODES) {
+      await this.save();
+      return null;
+    }
     let code = makeCode();
     // Vanishingly unlikely, but a collision would put two matches in one room.
     while (this.codes.has(code)) code = makeCode();
