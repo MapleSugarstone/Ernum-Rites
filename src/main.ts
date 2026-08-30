@@ -3608,11 +3608,20 @@ function keepScroll(selectors: string[], rebuild: () => void): void {
   }
 }
 
+/** The screen the last paint drew, so a change of screen can be noticed. */
+let lastScreen: (typeof ui)['screen'] | '' = '';
+
 function render(): void {
   // The drag can end down any number of paths, and all of them repaint. One
   // check here beats a stopHold() beside every one of them.
   if (!ui.drag) stopHold();
   watchError();
+  if (ui.screen !== lastScreen) {
+    lastScreen = ui.screen;
+    // Text selected on the rules page outlives the page it was selected on, and
+    // collapses into a caret blinking in whatever gets built in its place.
+    window.getSelection()?.removeAllRanges();
+  }
   // Every screen, not just the table: the setup list has to fit too.
   syncLayout();
   // The board is rebuilt from scratch on every action, and a fresh element
