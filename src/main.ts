@@ -4204,6 +4204,23 @@ function fuseHtml(): string {
   return `<span class="fuse" data-ends="${clock.endsAt}" style="--burn:${clock.totalMs}ms"><span class="fusefill"></span><span class="fusespark"></span></span>`;
 }
 
+/**
+ * Rebuild the bar against the clock after time has passed unwatched.
+ *
+ * A hidden tab has its animations and timers throttled, so coming back to one
+ * leaves the burn short of where the clock actually is, by however long the tab
+ * was away. The room's deadline is the truth, so the element is made again and
+ * seated against it rather than left to carry on from where it was paused. Only
+ * the bar is rebuilt: redoing the board here would cost every decoded card face
+ * on the table for a strip three pixels tall.
+ */
+function resyncFuse(): void {
+  const divider = document.querySelector<HTMLElement>('.board .divider');
+  if (!divider) return;
+  divider.innerHTML = fuseHtml();
+  syncFuse(divider);
+}
+
 /** Put the burn where the clock has actually reached, before the first paint. */
 function syncFuse(el: HTMLElement): void {
   const fuse = el.querySelector<HTMLElement>('.fuse');
@@ -4239,10 +4256,37 @@ function netClient(): NetClient {
       if (code) ui.online.roomCode = code;
       render();
     },
-    onState(state, seat, clock) {
+    onState(state, seat, clock, move) {
       // Seating happens on arrival, which for the host is while still alone in
       // the room. The match starts on the first state the room pushes.
-      if (ui.online.phase !== 'playing') playSfx('lobby');
+      const opening = ui.online.phase !== 'playing';
+      if (opening) playSfx('lobby');
+      const prev = ui.state;
+      let animated = false;
+      // The room applied the move, so nothing on this side recorded the wounds
+      // it dealt on the way through. Replaying it against the old copy fills
+      // that log and the result is discarded: the animations are drawn against
+      // the room's state, not this one. Redaction can make the replay disagree
+      // in detail, which costs a wound count rather than a wrong board.
+      if (!opening && prev && move) {
+        captureWounds();
+        const replay = applyAction(prev, move.actor, move.action);
+        if (replay.ok) {
+          // Against the replay rather than the room's copy, because the two
+          // sides of every comparison then come from the same redaction: a card
+          // drawn here leaves a hidden deck as a placeholder and matches the
+          // placeholder it came from, while a card handed back from debt keeps
+          // its real id and does not. Comparing to the room's copy instead
+          // makes anything arriving in hand look drawn. The board still comes
+          // from the room; only what is animated is read off this.
+          applyActionFx(prev, replay.state, move.action, move.actor);
+          animated = true;
+        } else {
+          // Nothing trustworthy to animate, and the wound log has to be emptied
+          // or it leaks into whatever is drawn next.
+          takeWounds();
+        }
+      }
       // The room is the authority, so its copy replaces this one outright.
       ui.state = state;
       ui.online.seat = seat;
@@ -4252,7 +4296,24 @@ function netClient(): NetClient {
       ui.botSeat = null;
       ui.screen = 'game';
       ui.error = null;
+      // Before the paint, so a leader that just entered reformed is drawn as the
+      // card it entered as rather than flashing straight to its answer.
+      beginLeaderReform(ui.state);
       render();
+      if (!animated) return;
+      playSounds();
+      playTrapReveal();
+      playSmack();
+      playEffectCallouts();
+      playDraws();
+      playDeckGifts();
+      playHandPlays();
+      playDeckOut();
+      // The animations play on the render just done; later renders show the
+      // settled state rather than replaying them. Cleared here and not on a
+      // timer: anything left standing is re-applied by the next render, which
+      // plays it a second time.
+      clearActionFx();
     },
     onRejected(reason) {
       ui.error = reason;
@@ -5898,6 +5959,15 @@ window.addEventListener(
   },
   { capture: true },
 );
+
+// Time passes while a tab is hidden but its animations and timers do not keep
+// up, so the clock bar and the warning that rides it are put back in step with
+// the room the moment the tab is looked at again.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  resyncFuse();
+  ropeTick();
+});
 
 render();
 void prepareFrames(BASE).then(render);

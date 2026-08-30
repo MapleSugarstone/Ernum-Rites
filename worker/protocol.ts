@@ -39,6 +39,13 @@ export type ServerMessage =
       seat: PlayerIdx;
       clock: Clock | null;
       publicDigest: string;
+      /**
+       * The move that produced this state, so a client can animate it rather
+       * than snap to it. Absent on the opening push and on a resync, neither of
+       * which is the result of anybody moving.
+       */
+      action?: Action;
+      actor?: PlayerIdx;
     }
   | { type: 'rejected'; reason: string; version: number }
   /** A clock ran out and the room played the passive move for that player. */

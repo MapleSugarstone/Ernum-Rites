@@ -24,7 +24,13 @@ import type { ClientMessage, QueueReply, RoomKind, ServerMessage } from '../../w
 export interface NetHandlers {
   onSeated(seat: PlayerIdx, kind: RoomKind, code?: string): void;
   onWaiting(players: number, code?: string): void;
-  onState(state: GameState, seat: PlayerIdx, clock: Clock | null): void;
+  onState(
+    state: GameState,
+    seat: PlayerIdx,
+    clock: Clock | null,
+    /** The move behind this state, when it was one. Null on a resync. */
+    move: { action: Action; actor: PlayerIdx } | null,
+  ): void;
   onRejected(reason: string): void;
   onTimedOut(player: PlayerIdx, action: string): void;
   onOpponentLeft(): void;
@@ -186,7 +192,11 @@ export class NetClient {
         }
         this.mirror = msg.state;
         this.status.seat = msg.seat;
-        return this.handlers.onState(msg.state, msg.seat, msg.clock);
+        const move =
+          msg.action !== undefined && msg.actor !== undefined
+            ? { action: msg.action, actor: msg.actor }
+            : null;
+        return this.handlers.onState(msg.state, msg.seat, msg.clock, move);
       }
 
       case 'rejected':

@@ -1,6 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import '../src/cards';
 import { deckByKey } from '../src/cards';
+import type { Action } from '../src/engine/actions';
 import { applyAction, createGame } from '../src/engine/engine';
 import { digestShort } from '../src/engine/digest';
 import { publicView, redactFor } from '../src/engine/redact';
@@ -120,7 +121,7 @@ export class MatchRoom extends DurableObject {
       }
       this.state = result.state;
       await this.restartClock();
-      this.pushState();
+      this.pushState({ action: msg.action, actor: seat });
     }
   }
 
@@ -195,10 +196,11 @@ export class MatchRoom extends DurableObject {
       this.broadcast({ type: 'timedOut', player, action: action.type });
     }
     await this.restartClock();
-    this.pushState();
+    // A move all the same, even though nobody chose it, so it animates too.
+    this.pushState(result.ok ? { action, actor: player } : undefined);
   }
 
-  private pushState(): void {
+  private pushState(move?: { action: Action; actor: PlayerIdx }): void {
     if (!this.state) return;
     // One digest of what both sides can see, so each client can check the push
     // against the state it computed itself without learning anything private.
@@ -212,6 +214,7 @@ export class MatchRoom extends DurableObject {
         seat,
         clock: this.clock,
         publicDigest: digest,
+        ...(move ? { action: move.action, actor: move.actor } : {}),
       });
     });
   }
