@@ -3787,8 +3787,8 @@ function renderSetup(): string {
           : 'disabled title="This build has no match server configured"'
       }>Online</button>
       <button class="modetile" data-act="btn" data-cmd="to-build">Deckbuilder</button>
-      <button class="modetile" data-act="btn" data-cmd="to-rules">Rules</button></div>
-    ${mixerHtml()}
+      <button class="modetile" data-act="btn" data-cmd="to-rules">Rules</button>
+      ${mixerHtml()}</div>
     <div class="seats"><span class="seatlabel">Opponent</span>${seat('ai', 'Bot')}${seat('hotseat', 'Player')}</div>
     ${
       savedDeckList().length > 0
