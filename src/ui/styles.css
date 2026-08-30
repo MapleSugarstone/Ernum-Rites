@@ -1925,6 +1925,15 @@ body.dragging .bookgrid .card {
   filter: grayscale(0.75) brightness(0.88) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
 }
 
+/* A "deal N" printed as what it would really deal, the printed number having
+   stopped being true the moment something granted Effect Damage. Green so it
+   reads as a number the board changed rather than one the card was printed
+   with. */
+.edmg {
+  color: var(--ok);
+  font-weight: 700;
+}
+
 /* --- keyword and status overlays on the card itself ------------------------ */
 
 .card .overlay {
@@ -2162,6 +2171,11 @@ body.dragging .bookgrid .card {
   border-left: var(--stroke-thick) solid var(--ink);
   background: linear-gradient(180deg, var(--fill-2), var(--fill-1));
   min-height: 0;
+  /* Above the choice scrim. Hovering a card while picking one is exactly when
+     you want to read it, and the wash would otherwise be over the panel that
+     answers. It sits down the right edge, clear of anything centred. */
+  position: relative;
+  z-index: 85;
 }
 .inspector {
   padding: 10px;
@@ -4196,13 +4210,16 @@ body.mobile .modes .mixer {
 }
 
 /* The pill that brings a hidden reveal-choice back. */
+/* Hide and Show are one control in two states, so they sit in one place. Both
+   are pinned to the foot of the overlay rather than left to follow the panel,
+   whose height moves with however many cards are being offered. */
 .showpill {
-  position: absolute;
-  top: 12px;
+  position: fixed;
+  bottom: 28px;
   left: 50%;
   transform: translateX(-50%);
   pointer-events: auto;
-  z-index: 55;
+  z-index: 90;
 }
 
 /* --- flip callouts ----------------------------------------------------------
@@ -4270,21 +4287,47 @@ body.mobile .modes .mixer {
 /* --- deferred choices ------------------------------------------------------ */
 
 /* A reveal choice darkens the stage and floats the revealed row above it. */
+/* A scrim over the whole board rather than a panel on it, so the panel styling
+   the base rule carries has to come back off. max-width is the one that bites:
+   left at 460px the overlay is a narrow box pinned to the left edge, and the
+   cards centre inside that instead of on screen. */
 .prompt.choice {
   position: fixed;
   inset: 0;
+  max-width: none;
+  transform: none;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
   z-index: 80;
   display: grid;
   place-content: center;
   gap: 12px;
   background: rgba(2, 5, 18, 0.66);
-  backdrop-filter: blur(2px);
+  /* Spread the same wash past the app's own box so it reaches the window edges.
+     Done with a shadow rather than by growing the element: the box keeps its
+     size, so the panel and the Hide button under it do not move. */
+  box-shadow: 0 0 0 100vmax rgba(2, 5, 18, 0.66);
+  /* No pop animation and no backdrop-filter. Either one gives this element a
+     transform or a filter, which makes it the containing block for anything
+     fixed inside it, and the scrim itself is then offset by the nudge the base
+     panel carries. A full screen wash has nothing to animate onto anyway. */
+  animation: none;
   text-align: center;
 }
+/* Bigger than the panel prompts. This one is a full screen ask rather than a
+   line on the board, and it is read across the whole window. */
 .prompt.choice h2,
 .prompt.choice p {
   color: #fff;
   text-shadow: 0 1px 3px rgba(13, 26, 31, 0.8);
+}
+.prompt.choice h2 {
+  font-size: 28px;
+}
+.prompt.choice p {
+  font-size: 17px;
 }
 .prompt.choice .revealgrid,
 .prompt.choice .debtpick {
@@ -4294,11 +4337,22 @@ body.mobile .modes .mixer {
   gap: 10px;
   max-width: min(90vw, 900px);
   max-height: 60vh;
+  /* Scrolls down when there are too many, never sideways. A visible x-axis is
+     not an option beside an auto y-axis: the pair computes to auto both ways,
+     and the lift under the cursor is then enough to raise a scrollbar. clip
+     keeps the one axis without offering the other, and the side padding is what
+     the lifted card grows into. */
+  overflow-x: clip;
   overflow-y: auto;
-  padding: 8px;
+  /* Headroom at the top for the lift and the scale a hovered card grows by.
+     With only the side padding the clip edge cuts the top of its border, and
+     the line above it looks like it is eating the card. */
+  padding: 22px 24px 8px;
 }
+/* Darkened rather than drained: a card you cannot take is still a card you are
+   reading, and the grey used to make it look broken instead of unavailable. */
 .prompt.choice .card.dimmed {
-  filter: grayscale(0.7) brightness(0.6);
+  filter: brightness(0.45);
 }
 /* Revealed cards print at hand size, and a legal one lifts under the cursor:
    clicking it takes it, with no confirm step. */
@@ -4313,10 +4367,37 @@ body.mobile .modes .mixer {
   filter: drop-shadow(0 12px 20px rgba(0, 0, 0, 0.45));
   z-index: 5;
 }
+/* Cards and their buttons as one column, sized to the cards, so the row hangs
+   under them and starts at their left edge. */
+.prompt.choice .choicebody {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+}
 .prompt.choice .row {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 10px;
+  /* Matches the grid's own side padding, so the row lines up with the first
+     card rather than with the box the cards sit in. */
+  padding-left: 24px;
+}
+
+/* Hidden is the same overlay turned invisible rather than taken away. The boxes
+   keep their places, so the button does not move, and the board underneath is
+   both readable and clickable again. */
+.prompt.choice.peeking {
+  background: none;
+  box-shadow: none;
+  pointer-events: none;
+}
+.prompt.choice.peeking h2,
+.prompt.choice.peeking p,
+.prompt.choice.peeking .revealgrid {
+  visibility: hidden;
+}
+.prompt.choice.peeking .row {
+  pointer-events: auto;
 }
 
 /* --- debt, hung off the leader --------------------------------------------- */

@@ -7,6 +7,7 @@ import {
   RESHUFFLE_DEBT,
   RESHUFFLE_DEBT_STEP,
   captureWounds,
+  effectDamageOf,
   reshuffleCost,
   takeWounds,
 } from './engine/effects';
@@ -526,6 +527,11 @@ interface CardOpts {
   live?: { strength: number; hp: number; max: number; printedStrength: number; printedHp: number };
   /** Extra absolutely-positioned overlays injected inside the card div. */
   extra?: string;
+  /**
+   * The controller's Effect Damage, when the card is somewhere it has one. Every
+   * "deal N" in the text is printed as what it would actually deal.
+   */
+  edmg?: number;
 }
 
 interface RuleBlocks {
@@ -562,8 +568,8 @@ function cardRefPattern(): RegExp {
  * mechanic keywords, and italicises the name of any card this one names, which
  * is also what the hover glossary defines below the keywords.
  */
-function ruleText(text: string): string {
-  const html = esc(text)
+function ruleText(text: string, edmg = 0): string {
+  const html = withEffectDamage(esc(text), edmg)
     .replace(/Battlecry:/g, '<span class="kw-bc">Battlecry:</span>')
     .replace(/Deathrattle:/g, '<span class="kw-dr">Deathrattle:</span>')
     .replace(/Strike:/g, '<span class="kw-st">Strike:</span>')
@@ -575,7 +581,24 @@ function ruleText(text: string): string {
     .join('');
 }
 
-function rulesBlocks(def: CardDef): RuleBlocks {
+/**
+ * Print what a "deal N" would really deal.
+ *
+ * Effect Damage is added by the engine when the effect runs, so the printed
+ * number is the one thing on the card that stops being true the moment a body
+ * granting it lands. Only the number straight after "deal" moves: "deal 1 to an
+ * enemy summon, 2 times" has a 2 in it that is a count of hits.
+ */
+function withEffectDamage(escaped: string, edmg: number): string {
+  if (edmg <= 0) return escaped;
+  return escaped.replace(
+    /\b(deals?)(\s+)(\d+)/gi,
+    (_m, verb: string, gap: string, n: string) =>
+      `${verb}${gap}<span class="edmg">${Number(n) + edmg}</span>`,
+  );
+}
+
+function rulesBlocks(def: CardDef, edmg = 0): RuleBlocks {
   const parts: string[] = [];
   let chars = 0;
   if (def.factions?.length) {
@@ -593,9 +616,9 @@ function rulesBlocks(def: CardDef): RuleBlocks {
     // A card with one paragraph stays inline, exactly as it printed before.
     const paras = def.text.split('\n').filter((t) => t.trim());
     if (paras.length > 1) {
-      for (const para of paras) parts.push(`<span class="para">${ruleText(para)}</span>`);
+      for (const para of paras) parts.push(`<span class="para">${ruleText(para, edmg)}</span>`);
     } else {
-      parts.push(ruleText(def.text));
+      parts.push(ruleText(def.text, edmg));
     }
   }
   for (const p of def.powers ?? []) {
@@ -604,7 +627,7 @@ function rulesBlocks(def: CardDef): RuleBlocks {
     const price = powerCostHtml(p);
     chars += p.name.length + p.text.length + (price ? 4 : 0);
     parts.push(
-      `<span class="pw">${price ? `<span class="cost">${price}</span> ` : ''}<span class="pwname">${esc(p.name)}:</span> ${ruleText(p.text)}</span>`,
+      `<span class="pw">${price ? `<span class="cost">${price}</span> ` : ''}<span class="pwname">${esc(p.name)}:</span> ${ruleText(p.text, edmg)}</span>`,
     );
   }
   // A mana price on the flip prints as pips, the way a power's cost does. Its
@@ -613,7 +636,7 @@ function rulesBlocks(def: CardDef): RuleBlocks {
     ? `<span class="flipcost">${pipHtml(def.flipCost.mana)}</span> `
     : '';
   const flip = def.flipText
-    ? `<span class="fliplabel">FLIP</span> ${flipPips}${ruleText(def.flipText)}`
+    ? `<span class="fliplabel">FLIP</span> ${flipPips}${ruleText(def.flipText, edmg)}`
     : '';
   if (def.flipText) chars += def.flipText.length;
   // Factions and powers are blocks of their own, so no <br> between parts: a
@@ -693,7 +716,7 @@ function renderCard(def: CardDef, opts: CardOpts = {}): string {
       `<div class="txt strength${strengthCls}">${strength}</div>`
     : `<div class="txt cost">${pipHtml(def.cost)}</div>`;
 
-  const { body, flip, chars } = rulesBlocks(def);
+  const { body, flip, chars } = rulesBlocks(def, opts.edmg ?? 0);
   const flipBlock = flip
     ? `<img decoding="sync" class="flipbar" src="${flipBarFor(frameKeyOf(def), BASE, isBody)}" alt="" draggable="false">
          <div class="txt fliptext">${flip}</div>`
@@ -2179,7 +2202,7 @@ function unitHtml(state: GameState, ref: TargetRef, caption: string): string {
 
   return `<div class="unit">
     <div class="caption">${esc(caption)}${s.isLeader ? '' : ` · L${levelOf(s, def)}`}</div>
-    ${renderCard(def, { classes, data, extra, live })}
+    ${renderCard(def, { classes, data, extra, live, edmg: effectDamageOf(state, s.owner) })}
     ${hpFan(state, ref, s)}
     ${lockHtml(state, ref)}
     ${woundHtml(ref)}
@@ -2531,11 +2554,11 @@ function promptHtml(state: GameState): string {
   if (ch && canAct()) {
     const sourceName = tryCard(ch.source)?.name ?? 'Choose';
     if (ch.cards) {
-      // Tucked away to read the board; a floating pill brings it back.
-      if (ui.choiceHidden) {
-        return `<div class="showpill"><button class="primary" data-act="btn" data-cmd="choice-show">Show</button></div>`;
-      }
       const none = (ch.legal?.length ?? 0) === 0;
+      // Tucked away to read the board. The overlay is still built and still
+      // laid out, only turned invisible: the buttons then keep the place they
+      // had, and the one that hides is the same one that brings it back.
+      const peeking = ui.choiceHidden;
       const grid = ch.cards
         .map((id, index) => {
           const legal = ch.legal?.includes(index) ?? false;
@@ -2545,17 +2568,33 @@ function promptHtml(state: GameState): string {
           });
         })
         .join('');
+      // Where the leftovers land, which is only worth saying when they land
+      // somewhere of yours. A raid reads the other player's deck, so the cards
+      // go home rather than under anything of yours, and it says nothing.
+      const restGo =
+        ch.effect === 'scry-discard'
+          ? 'discard pile'
+          : ch.effect === 'static-raid'
+            ? null
+            : 'deck';
       const note = none
         ? '<p>No viable scry targets</p>'
-        : `<p>${esc(ch.prompt)}. Click a lit card to take it.</p>`;
+        : `<p>Pick a card${restGo ? `, the rest go back under your ${restGo}` : ''}.</p>`;
+      const toggle = peeking
+        ? btn('choice-show', 'Show', 'primary')
+        : btn('choice-hide', 'Hide');
       const row = none
         ? btn('skip-choice', 'Continue', 'primary')
-        : `${ch.optional ? btn('skip-choice', 'Take none') : ''}${btn('choice-hide', 'Hide')}`;
-      return `<div class="prompt choice">
+        : `${ch.optional ? btn('skip-choice', 'Take none') : ''}${toggle}`;
+      // The buttons hang under the cards and align with their left edge, so
+      // they sit in one place however many cards are on offer.
+      return `<div class="prompt choice${peeking ? ' peeking' : ''}">
         <h2>${esc(sourceName)}</h2>
         ${note}
-        <div class="revealgrid">${grid}</div>
-        <div class="row">${row}</div>
+        <div class="choicebody">
+          <div class="revealgrid">${grid}</div>
+          <div class="row">${row}</div>
+        </div>
       </div>`;
     }
     const zoneKind = ch.refs?.[0]?.kind;
@@ -2859,6 +2898,7 @@ function renderHand(): void {
   const me = viewSeat();
   const p = state.players[me];
   const cands = candidateKeys();
+  const edmg = effectDamageOf(state, me);
 
   const cards = p.hand
     .map((id, i) => {
@@ -2878,6 +2918,7 @@ function renderHand(): void {
         classes,
         data: { act: 'hand', index: i, cardid: id, flight: `hand:${i}` },
         vars: { i, n: p.hand.length },
+        edmg,
       });
     })
     .join('');
