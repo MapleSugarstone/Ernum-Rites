@@ -4334,6 +4334,10 @@ function netClient(): NetClient {
       render();
     },
     onOpponentLeft() {
+      // A finished match has nothing left to walk out of. The result is already
+      // on screen and it is the winner's to read for as long as they like, so
+      // the loser closing their tab must not clear it away.
+      if (ui.state && isOver(ui.state)) return;
       failOnline('Your opponent left the match.');
     },
     onError(reason) {
