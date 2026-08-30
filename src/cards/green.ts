@@ -72,15 +72,10 @@ export const greenCards: CardDef[] = [
     flip: (c) => c.reinforce(holderRef(c), 1),
   }),
   k.summon(1, 'computerbug', 'Computer Bug', ['Machine', 'Hedron'], {
-    hp: 2,
+    hp: 3,
     str: 2,
-    text: 'Battlecry: An enemy summon loses 1 attack.',
-    targets: [T.enemy()],
-    triggers: {
-      onEnter: (c) => {
-        if (c.targets[0]) c.buffStrength(c.targets[0], -1, 'permanent');
-      },
-    },
+    supporterLock: true,
+    text: 'Supporter Lock. The enemy cannot play supporters.',
   }),
   k.summon(1, 'defender', 'Defender', ['Machine'], {
     str: 1,

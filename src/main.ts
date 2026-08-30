@@ -3624,6 +3624,8 @@ function renderRules(): string {
     ${sec('1-2-1.', 'Neither player may attack during their own first turn.')}
     ${sec('1-2-2.', 'The player who takes the first turn does not draw on that turn.')}
     ${sec('1-3.', 'A character is a summon or a leader. Anything that affects a character affects both kinds unless it says otherwise.')}
+    ${sec('1-4.', 'A card beats this book. Where the text on a card and a rule here disagree, the card is right and the rule is what happens when no card has said otherwise.')}
+    ${sec('1-4-1.', 'Where one effect allows something and another forbids it, the one that forbids wins, whichever arrived first. &ldquo;The enemy cannot play supporters&rdquo; stops &ldquo;You may play another supporter this turn&rdquo; and the allowance is simply spent on nothing.')}
 
     <h2>2. Winning and Losing</h2>
     ${sec('2-1.', 'The game ends when a player is defeated. The other player wins.')}
@@ -3635,8 +3637,9 @@ function renderRules(): string {
     <h2>3. Debt</h2>
     ${sec('3-1.', 'Debt is the clock. It never goes down unless a card says it does.')}
     ${sec('3-1-1.', 'A summon of yours that dies goes to your debt zone. You take debt equal to its level.')}
-    ${sec('3-1-2.', 'An annihilated summon reaches no zone at all. It charges no debt and its Deathrattle does not fire. Nothing can raise it or recycle it. Other cards still see that it died.')}
-    ${sec('3-1-3.', 'An eaten summon goes under the eating summon as an HP card. It charges no debt.')}
+    ${sec('3-1-2.', 'A Deathrattle is text that fires as its summon dies. It resolves before the debt is paid, so it can still change what that death costs. A Deathrattle another card lent to the body fires after the body&rsquo;s own.')}
+    ${sec('3-1-3.', 'An annihilated summon reaches no zone at all. It charges no debt and its Deathrattle does not fire. Nothing can raise it or recycle it. Other cards still see that it died.')}
+    ${sec('3-1-4.', 'An eaten summon goes under the eating summon as an HP card. It charges no debt.')}
     ${sec('3-2.', `Drawing from an empty deck costs you ${RESHUFFLE_DEBT} debt. Your discard pile is then shuffled to become your new deck.`)}
     ${sec('3-2-1.', `Every later deck-out in the same game costs ${RESHUFFLE_DEBT_STEP} more than the one before it.`)}
     ${sec('3-2-2.', 'You pay that debt even with no discard pile to shuffle. In that case you draw nothing.')}
@@ -3730,6 +3733,20 @@ function renderRules(): string {
     ${sec('13-1-3.', 'Neither player may act until you answer.')}
     ${sec('13-2.', 'Nothing is offered for a summon that dies on your own turn. Your main step already lets you fill the slot.')}
     ${sec('13-3.', 'An effect may shut your slots for a number of turns. You cannot replace a dead summon while they are shut.')}
+
+    <h2>14. Keywords</h2>
+    ${sec('14-1.', 'Battlecry fires once, as its summon enters play. A summon put into a slot any other way still counts as entering.')}
+    ${sec('14-2.', 'Strike fires when its summon declares an attack, before the clash resolves.')}
+    ${sec('14-3.', 'Reborn returns the body to its slot with 1 HP the first time it would die, once per body. That death reaches no zone and charges no debt, so nothing answering a Deathrattle answers it.')}
+    ${sec('14-4.', 'Frenzy fires the first time its body takes damage and survives, once per body. A body that dies to the hit never frenzies.')}
+    ${sec('14-5.', 'Stationary never declares an attack. It still deals its strength back when something attacks it.')}
+    ${sec('14-6.', 'Redirection forces the enemy to attack this body and to aim every spell and trap at it. A leader with Redirection can be attacked even with its slots full, being the only legal target.')}
+    ${sec('14-7.', 'Spell Immunity stops any spell or trap choosing this body as a target, from either side of the table. Combat and triggers still reach it.')}
+    ${sec('14-8.', 'Effect Damage raises the damage its controller deals with spells, Powers and flips by that much. Combat damage is untouched.')}
+    ${sec('14-9.', 'Scry N looks at the top N cards of your deck, takes the first match to your hand, and puts the rest on the bottom.')}
+    ${sec('14-10.', 'Mill moves cards from the top of a deck into its discard pile.')}
+    ${sec('14-11.', 'Healing a character turns its flipped HP cards back face down. Healing debt lowers the debt counter instead.')}
+    ${sec('14-12.', 'Catch takes a spent, face-up HP card off the board and returns it to its owner&rsquo;s hand.')}
   </div></div>`;
 }
 

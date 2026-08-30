@@ -262,6 +262,7 @@ export function graftedCopy(
       ? { effectDamage: Math.max(host.effectDamage ?? 0, src.effectDamage ?? 0) }
       : {}),
     ...(host.woundAmplify || src.woundAmplify ? { woundAmplify: true } : {}),
+    ...(host.supporterLock || src.supporterLock ? { supporterLock: true } : {}),
     ...(host.spellEcho || src.spellEcho ? { spellEcho: true } : {}),
     ...(host.cursePotency || src.cursePotency ? { cursePotency: true } : {}),
     ...(host.muffleFlips || src.muffleFlips ? { muffleFlips: true } : {}),
@@ -363,6 +364,7 @@ export function fusedRecomp(
       ? { effectDamage: Math.max(a.effectDamage ?? 0, b.effectDamage ?? 0) }
       : {}),
     ...(a.woundAmplify || b.woundAmplify ? { woundAmplify: true } : {}),
+    ...(a.supporterLock || b.supporterLock ? { supporterLock: true } : {}),
     ...(a.spellEcho || b.spellEcho ? { spellEcho: true } : {}),
     ...(a.cursePotency || b.cursePotency ? { cursePotency: true } : {}),
     ...(a.muffleFlips || b.muffleFlips ? { muffleFlips: true } : {}),

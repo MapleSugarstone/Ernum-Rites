@@ -676,6 +676,11 @@ public static class Engine
             {
                 var blocked = MainPhaseBlocker(state);
                 if (blocked is not null) return blocked;
+                // Checked before the allowance, because forbidding beats allowing:
+                // an extra supporter granted this turn is spent on nothing while
+                // a lock is on the table.
+                if (Effects.SupporterLocked(state, actor))
+                    return "The enemy is stopping you playing supporters.";
                 if (me.SupportersLeft <= 0) return "You already played a supporter this turn.";
                 if (action.HandIndex < 0 || action.HandIndex >= me.Hand.Count) return "No card at that hand index.";
                 var id = me.Hand[action.HandIndex];

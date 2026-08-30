@@ -72,16 +72,9 @@ public static class Green
             flip: c => c.Reinforce(c.HolderRef, 1)),
 
         K.Summon(1, "computerbug", "Computer Bug", F(Faction.Machine, Faction.Hedron), str: 2,
-            hp: 2,
-            text: "Battlecry: An enemy summon loses 1 attack.",
-            targets: Specs(Enemy()),
-            triggers: new Triggers
-            {
-                OnEnter = c =>
-                {
-                    if (c.TargetOrNull(0) is { } t) c.BuffStrength(t, -1, ModDuration.Permanent);
-                },
-            }),
+            hp: 3,
+            supporterLock: true,
+            text: "Supporter Lock. The enemy cannot play supporters."),
 
         K.Summon(1, "defender", "Defender", F(Faction.Machine), str: 1, hp: 5,
             redirect: true,

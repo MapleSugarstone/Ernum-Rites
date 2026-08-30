@@ -692,6 +692,13 @@ public sealed class CardDef
     /// one for one instead of two for one. Oil's payoff keyword.
     /// </summary>
     public bool WoundAmplify { get; init; }
+
+    /// <summary>
+    /// Supporter Lock. While this card is in play the other player may not face
+    /// a supporter at all. It forbids rather than reduces, so it beats any
+    /// allowance they have been given.
+    /// </summary>
+    public bool SupporterLock { get; init; }
     /// <summary>
     /// While this card is in play and its controller holds no slot summons,
     /// their spells and traps cost nothing. A summon standing in a slot is a

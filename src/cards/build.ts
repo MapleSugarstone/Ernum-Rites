@@ -29,6 +29,7 @@ export interface Extra {
   triggers?: Triggers;
   effectDamage?: number;
   woundAmplify?: boolean;
+  supporterLock?: boolean;
   freeSpells?: boolean;
   spellTrap?: boolean;
   letSpellResolve?: boolean;
@@ -152,6 +153,7 @@ function base(
   if (extra.triggers) def.triggers = extra.triggers;
   if (extra.effectDamage) def.effectDamage = extra.effectDamage;
   if (extra.woundAmplify) def.woundAmplify = extra.woundAmplify;
+  if (extra.supporterLock) def.supporterLock = extra.supporterLock;
   if (extra.freeSpells) def.freeSpells = extra.freeSpells;
   if (extra.spellTrap) def.spellTrap = extra.spellTrap;
   if (extra.letSpellResolve) def.letSpellResolve = extra.letSpellResolve;

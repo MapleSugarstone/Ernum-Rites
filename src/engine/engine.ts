@@ -7,6 +7,7 @@ import {
   endGame,
   flipWouldFire,
   strengthSourcesOf,
+  supporterLocked,
   fireTrigger,
   log,
   makeEffectCtx,
@@ -554,6 +555,10 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
     case 'PLAY_SUPPORTER': {
       const blocked = mainPhaseBlocker(state);
       if (blocked) return blocked;
+      // Checked before the allowance, because forbidding beats allowing: an
+      // extra supporter granted this turn is spent on nothing while a lock is
+      // on the table.
+      if (supporterLocked(state, actor)) return 'The enemy is stopping you playing supporters.';
       if (me.supportersLeft <= 0) return 'You already played a supporter this turn.';
       const id = me.hand[action.handIndex];
       if (!id) return 'No card at that hand index.';

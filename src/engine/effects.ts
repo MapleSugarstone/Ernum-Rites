@@ -419,6 +419,15 @@ export function dealDamage(
   return muted;
 }
 
+/** Whether the other side is fielding anything that forbids this player supporters. */
+export function supporterLocked(state: GameState, owner: PlayerIdx): boolean {
+  const foe = state.players[owner === 0 ? 1 : 0];
+  for (const s of [...foe.slots, foe.leader]) {
+    if (s && tryCard(s.cardId)?.supporterLock) return true;
+  }
+  return !!foe.stage && !!tryCard(foe.stage)?.supporterLock;
+}
+
 /** Wounds convert at 2 per damage, or 1 while the other side fields an amplifier. */
 function woundRate(state: GameState, owner: PlayerIdx): number {
   const foe = state.players[owner === 0 ? 1 : 0];

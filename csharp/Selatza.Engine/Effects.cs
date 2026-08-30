@@ -888,6 +888,16 @@ public static class Effects
         return muted;
     }
 
+    /// <summary>Whether the other side fields anything forbidding this player supporters.</summary>
+    public static bool SupporterLocked(GameState state, int owner)
+    {
+        var foe = state.Players[owner == 0 ? 1 : 0];
+        foreach (var s in foe.Slots)
+            if (s is not null && Registry.Card(s.CardId).SupporterLock) return true;
+        if (foe.Leader is not null && Registry.Card(foe.Leader.CardId).SupporterLock) return true;
+        return foe.Stage is not null && Registry.Card(foe.Stage).SupporterLock;
+    }
+
     /// <summary>Wounds convert at 2 per damage, or 1 while the other side fields an amplifier.</summary>
     private static int WoundRate(GameState state, int owner)
     {

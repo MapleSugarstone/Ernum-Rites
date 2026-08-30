@@ -654,6 +654,12 @@ export interface CardDef {
    */
   woundAmplify?: boolean;
   /**
+   * Supporter Lock. While this card is in play the other player may not face a
+   * supporter at all. It forbids rather than reduces, so it beats any allowance
+   * they have been given.
+   */
+  supporterLock?: boolean;
+  /**
    * While this card is in play and its controller holds no slot summons, their
    * spells and traps cost nothing. A summon standing in a slot is a summon its
    * controller holds, so a body with this only turns it on from the leader seat.
