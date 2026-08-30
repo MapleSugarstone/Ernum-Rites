@@ -625,7 +625,8 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
       const offer = state.flipQueue[0];
       if (!offer || offer.player !== actor) return 'No flip is waiting.';
       state.flipQueue.shift();
-      log(state, actor, `${me.name} lets ${card(offer.cardId).name} lie.`);
+      // Deliberately unnamed: the card stays face down, and the log is public.
+      log(state, actor, `${me.name} lets the card lie.`);
       return null;
     }
 

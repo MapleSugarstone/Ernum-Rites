@@ -514,7 +514,7 @@ public static class Program
 
         Harness.Test("lets debt move across the table", () =>
         {
-            // M-Xalbriss's Reckoning is the debt-transfer power now.
+            // M-Xalbriss's Anti-Abstraction is the debt-transfer power now.
             var s = Game();
             s.Players[0].DebtCount = 4;
             s = Place(s, 0, "m-yp-m-xalbriss", 0);

@@ -627,7 +627,7 @@ describe('new structural verbs', () => {
   });
 
   it('lets debt move across the table', () => {
-    // M-Xalbriss's Reckoning is the debt-transfer power now.
+    // M-Xalbriss's Anti-Abstraction is the debt-transfer power now.
     let s = game();
     s.players[0].debtCount = 4;
     s = place(s, 0, 'm-yp-m-xalbriss', 0);

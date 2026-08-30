@@ -141,7 +141,7 @@ public static class Mixed
             triggers: new Triggers { OnAwake = c => c.Mill(c.Me, 2) },
             powers: Powers(new Power
             {
-                Name = "Trade Places",
+                Name = "Dark Vision",
                 Cost = new Cost(F: 1, O: 1),
                 Text = "Swap all HP cards between one of your summons and an enemy summon.",
                 Targets = Specs(Ally("your summon"), Enemy()),
@@ -231,7 +231,7 @@ public static class Mixed
         Rb.Summon(3, "xyliss", "Xyliss", F(Faction.Spirit, Faction.Scholar), str: 2, hp: 5,
             powers: Powers(new Power
             {
-                Name = "Rewrite",
+                Name = "Sordid Folk",
                 Cost = new Cost(P: 1, F: 1),
                 Text = "Turn one of your summons into any summon sitting in your debt zone.",
                 Targets = Specs(Ally("your summon"), MyDebt("a summon in your debt")),
@@ -537,7 +537,7 @@ public static class Mixed
             },
             powers: Powers(new Power
             {
-                Name = "Overclock",
+                Name = "Pragmist Power",
                 Cost = new Cost(S: 1, R: 1),
                 Text = "Unsap an ally summon, then pay off 1 debt.",
                 SapSelf = true,
@@ -653,7 +653,7 @@ public static class Mixed
             },
             new Power
             {
-                Name = "Rummage",
+                Name = "Parthult Aid",
                 Cost = new Cost(),
                 Text = "Draw a random card from your discard pile.",
                 SapSelf = true,
@@ -674,7 +674,7 @@ public static class Mixed
         Yp.Summon(3, "m-xalbriss", "M-Xalbriss", F(Faction.Spirit, Faction.Star), str: 3, hp: 5,
             powers: Powers(new Power
             {
-                Name = "Reckoning",
+                Name = "Anti-Abstraction",
                 Cost = new Cost(S: 1, O: 1),
                 Text = "Move 1 of your debt onto your opponent.",
                 SapSelf = true,

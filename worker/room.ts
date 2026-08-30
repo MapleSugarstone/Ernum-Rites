@@ -141,6 +141,14 @@ export class MatchRoom extends DurableObject {
     }
     const kind = clockKindFor(this.state);
     const player = currentActor(this.state);
+    // Acting is what the window is for, so acting does not buy more of it. The
+    // same player still inside the same kind of window keeps the deadline they
+    // started on; refreshing it per action would let a player hold a turn open
+    // for as long as they had something left to do.
+    if (this.clock && this.clock.kind === kind && this.clock.player === player) {
+      await this.ctx.storage.setAlarm(this.clock.endsAt);
+      return;
+    }
     const total = enforcedMs(kind);
     this.clock = { kind, player, endsAt: Date.now() + total, totalMs: total };
     await this.ctx.storage.setAlarm(this.clock.endsAt);

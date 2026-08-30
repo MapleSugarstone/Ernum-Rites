@@ -773,7 +773,8 @@ public static class Engine
                 }
                 var offer = state.FlipQueue[0];
                 state.FlipQueue.RemoveAt(0);
-                Effects.Log(state, actor, $"{me.Name} lets {Registry.Card(offer.CardId).Name} lie.");
+                // Deliberately unnamed: the card stays face down, and the log is public.
+                Effects.Log(state, actor, $"{me.Name} lets the card lie.");
                 return null;
             }
 

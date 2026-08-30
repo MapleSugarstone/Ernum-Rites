@@ -165,7 +165,7 @@ export const mixedCards: CardDef[] = [
     },
     powers: [
       {
-        name: 'Trade Places',
+        name: 'Dark Vision',
         cost: { F: 1, O: 1 },
         text: 'Swap all HP cards between one of your summons and an enemy summon.',
         targets: [T.ally('your summon'), T.enemy()],
@@ -260,7 +260,7 @@ export const mixedCards: CardDef[] = [
     hp: 5,
     powers: [
       {
-        name: 'Rewrite',
+        name: 'Sordid Folk',
         cost: { P: 1, F: 1 },
         text: 'Turn one of your summons into any summon sitting in your debt zone.',
         targets: [T.ally('your summon'), T.myDebt('a summon in your debt')],
@@ -605,7 +605,7 @@ export const mixedCards: CardDef[] = [
     },
     powers: [
       {
-        name: 'Overclock',
+        name: 'Pragmist Power',
         cost: { S: 1, R: 1 },
         text: 'Unsap an ally summon, then pay off 1 debt.',
         sapSelf: true,
@@ -729,7 +729,7 @@ export const mixedCards: CardDef[] = [
         },
       },
       {
-        name: 'Rummage',
+        name: 'Parthult Aid',
         cost: {},
         text: 'Draw a random card from your discard pile.',
         sapSelf: true,
@@ -751,7 +751,7 @@ export const mixedCards: CardDef[] = [
     hp: 5,
     powers: [
       {
-        name: 'Reckoning',
+        name: 'Anti-Abstraction',
         cost: { S: 1, O: 1 },
         text: 'Move 1 of your debt onto your opponent.',
         sapSelf: true,

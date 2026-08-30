@@ -4348,8 +4348,19 @@ function dispatch(action: Action): void {
     const sent = net.play(action);
     if (!sent.ok) {
       ui.error = sent.reason;
-      render();
+    } else {
+      // The room owns the state from here, but the prompts that produced this
+      // action belong to this side and are finished with. Left standing, the
+      // picker stays on screen after the battlecry it was collecting for has
+      // already resolved, and the next click pushes a second ref into it and
+      // builds an action the room can only refuse.
+      ui.selection = null;
+      ui.targeting = null;
+      ui.choiceHidden = false;
+      ui.error = null;
     }
+    ui.drag = null;
+    render();
     return;
   }
   // Only the real move is recorded. The bot has already finished searching by

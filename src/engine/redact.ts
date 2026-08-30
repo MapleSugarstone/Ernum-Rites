@@ -32,6 +32,19 @@ export function redactFor(state: GameState, viewer: PlayerIdx): GameState {
       s.hp = s.hp.map((h) => (h.flipped ? h : { ...h, cardId: HIDDEN_ID }));
     }
   }
+  // A decision belongs to the player making it, and so does what it is looking
+  // at. A flip offer names a face-down HP card, which neither side is supposed
+  // to know: a declined flip has to go back to being unknown, not merely
+  // unflipped. A reveal holds cards pulled off a deck for one player to choose
+  // from, and the other player never sees the row.
+  for (const offer of out.flipQueue) {
+    if (offer.player !== viewer) offer.cardId = HIDDEN_ID;
+  }
+  for (const choice of out.choiceQueue) {
+    if (choice.player !== viewer && choice.cards) {
+      choice.cards = choice.cards.map(() => HIDDEN_ID);
+    }
+  }
   return out;
 }
 
@@ -54,6 +67,13 @@ export function publicView(state: GameState): GameState {
       if (!s) continue;
       s.hp = s.hp.map((h) => (h.flipped ? h : { ...h, cardId: HIDDEN_ID }));
     }
+  }
+  // Blanked for both sides, not per viewer: this is the one projection the two
+  // clients have to agree on, and a value only one of them can see would make
+  // every flip and every reveal look like a desync.
+  for (const offer of out.flipQueue) offer.cardId = HIDDEN_ID;
+  for (const choice of out.choiceQueue) {
+    if (choice.cards) choice.cards = choice.cards.map(() => HIDDEN_ID);
   }
   return out;
 }
