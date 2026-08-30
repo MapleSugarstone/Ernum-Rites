@@ -16,6 +16,7 @@ import type { Action } from '../engine/actions';
 import { digestShort } from '../engine/digest';
 import { applyAction } from '../engine/engine';
 import { publicView } from '../engine/redact';
+import { BUILD_VERSION } from '../version';
 import type { GameState } from '../engine/state';
 import type { Clock } from '../engine/timing';
 import type { PlayerIdx } from '../engine/types';
@@ -119,7 +120,7 @@ export class NetClient {
       'open',
       () => {
         this.status.connected = true;
-        this.send({ type: 'join', deckKey, name });
+        this.send({ type: 'join', deckKey, name, version: BUILD_VERSION });
         this.measureSkew();
         this.pingTimer = window.setInterval(() => this.measureSkew(), PING_EVERY_MS);
       },

@@ -8,7 +8,12 @@ export type RoomKind = 'public' | 'private';
 
 /** Sent by a client. */
 export type ClientMessage =
-  | { type: 'join'; deckKey: string; name: string }
+  /**
+   * `version` is the build the client is running. A room refuses a seat to a
+   * client that disagrees with it, because two builds that disagree about a
+   * card diverge partway through a match rather than at the start.
+   */
+  | { type: 'join'; deckKey: string; name: string; version: string }
   | { type: 'action'; action: Action; version: number }
   | { type: 'resync' }
   /**

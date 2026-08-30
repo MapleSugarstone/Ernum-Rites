@@ -9,6 +9,7 @@ import { currentActor, type GameState } from '../src/engine/state';
 import { timeoutAction } from '../src/engine/timeout';
 import { clockKindFor, enforcedMs, type Clock } from '../src/engine/timing';
 import type { PlayerIdx } from '../src/engine/types';
+import { BUILD_VERSION } from '../src/version';
 import { nameProblem } from './protocol';
 import type { ClientMessage, RoomKind, ServerMessage } from './protocol';
 
@@ -86,6 +87,15 @@ export class MatchRoom extends DurableObject {
       // so the room does not take a client's word for it.
       const bad = nameProblem(msg.name);
       if (bad) return this.send(socket, { type: 'error', reason: bad });
+      // Checked before a seat is given rather than after the match goes wrong.
+      // The room runs the same build it is comparing against, so a client that
+      // disagrees with it disagrees with the other player too.
+      if (msg.version !== BUILD_VERSION) {
+        return this.send(socket, {
+          type: 'error',
+          reason: 'Your copy of the game is a different version. Reload the page and try again.',
+        });
+      }
       const seat = this.seats.findIndex((s) => s === null);
       if (seat < 0) return this.send(socket, { type: 'error', reason: 'room is full' });
       this.seats[seat] = { socket, name: msg.name.trim(), deckKey: msg.deckKey };
