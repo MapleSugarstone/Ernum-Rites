@@ -1,7 +1,7 @@
 import { chooseAction } from './ai/bot';
 import { NetClient } from './net/client';
 import { nameProblem } from '../worker/protocol';
-import { CLOCK_SECONDS } from './engine/timing';
+import { CLOCK_SECONDS, asDisplayed, isRoping, secondsLeft, type Clock } from './engine/timing';
 import {
   MILL_DEBT,
   RESHUFFLE_DEBT,
@@ -90,7 +90,16 @@ import {
 import { flipBarFor, frameFor, frameKeyOf, gemFor, prepareFrames } from './ui/frames';
 import { mountGuy, showGuy } from './ui/guy';
 import { levels, setLevel, setMood, startAudio, type Mood } from './ui/audio';
-import { playSfx, setSfxBase, startHold, stopHold, warmSfx, type Sfx } from './ui/sfx';
+import {
+  playSfx,
+  setSfxBase,
+  startHold,
+  startLast10,
+  stopHold,
+  stopLast10,
+  warmSfx,
+  type Sfx,
+} from './ui/sfx';
 import { sheetsFor, spriteCss } from './ui/atlas';
 import { onTintReady, tintedArt } from './ui/tint';
 import {
@@ -245,9 +254,15 @@ function actor(): PlayerIdx {
   return ui.state ? currentActor(ui.state) : 0;
 }
 
-/** The side the board is drawn from: hotseat flips, versus the bot it does not. */
+/**
+ * The side the board is drawn from: hotseat flips, versus the bot it does not.
+ * Online it is pinned to the seat this client holds. Following the actor would
+ * draw the board from the opponent's seat on their turn, and their hand arrives
+ * redacted, so it would render as face-down cards.
+ */
 function viewSeat(): PlayerIdx {
   if (!ui.state) return 0;
+  if (ui.online.phase === 'playing' && ui.online.seat !== null) return ui.online.seat;
   if (ui.botSeat !== null) return otherPlayer(ui.botSeat);
   return currentActor(ui.state);
 }
@@ -2416,7 +2431,7 @@ function renderBoard(): void {
   el.style.setProperty('--fxd', `${landed + woundLeadMs()}ms`);
   const html = `
     ${sideHtml(state, them, false)}
-    <div class="divider"></div>
+    <div class="divider">${fuseHtml()}</div>
     ${sideHtml(state, me, true)}
     ${actionBarHtml(state)}
     ${endTurnHtml(state)}
@@ -2428,6 +2443,7 @@ function renderBoard(): void {
   if (html === lastBoardHtml) return;
   lastBoardHtml = html;
   el.innerHTML = html;
+  syncFuse(el);
 }
 
 // --- action bar and prompts -------------------------------------------------
@@ -3008,6 +3024,14 @@ function syncHandAxis(): void {
   const mid = lanes[lanes.length - 1] ?? document.querySelector('.board .midcol');
   const root = document.getElementById('app');
   if (!mid || !root) return;
+  // A narrow board is clipped rather than laid out smaller, so the lane's centre
+  // can sit past the edge of the window and shifting onto it takes the fans out
+  // with it. They want the width far more than the alignment, so on a small
+  // screen they keep the window's own centre and the lane goes unmatched.
+  if (document.body.classList.contains('mobile')) {
+    root.style.setProperty('--hand-shift', '0px');
+    return;
+  }
   const box = mid.getBoundingClientRect();
   const app = root.getBoundingClientRect();
   // Both read post-transform, so the difference is in screen pixels; the shift is
@@ -3172,7 +3196,10 @@ function fitFans(): void {
       // crushes a long hand to a fifth of the strip it should have.
       const cardW = hand[0].offsetWidth;
       const bleed = first.width / k - cardW;
-      const step = (room / k - cardW - bleed) / (hand.length - 1);
+      // Floored at the pitch the first pass already calls the tightest the fan
+      // may be. Without it a hand wider than its room drives the step negative
+      // and lays the cards out right to left, back over themselves.
+      const step = Math.max(cardW * 0.18, (room / k - cardW - bleed) / (hand.length - 1));
       rail.style.setProperty('--overlap', `${Math.round(step - cardW)}px`);
     }
   }
@@ -3777,7 +3804,7 @@ function renderSetup(): string {
   // toggle under it picks who takes the other chair.
   const seat = (m: SetupMode, label: string) =>
     `<button data-act="btn" data-cmd="mode:${m}" class="seattile${ui.setupMode === m ? ' on' : ''}">${label}</button>`;
-  return `<div class="setup"><div class="inner">
+  return `<div class="setup menuview"><div class="inner">
     <header class="platebar"><img class="sigil" src="${BASE}favicon.png" alt="" width="63" height="44"><h1>Ernum Rites</h1></header>
     <div class="modes">
       <button class="modetile on" data-act="btn" data-cmd="mode:${ui.setupMode}">Local Play</button>
@@ -3800,7 +3827,11 @@ function renderSetup(): string {
     <button class="primary go" data-act="btn" data-cmd="start" ${ui.preloading ? 'disabled' : ''}>${
       ui.preloading ? 'Loading cards…' : 'Start match'
     }</button>
-  </div></div>`;
+  </div>
+  <footer class="credits">
+    <p>Music and sound effects by <span class="who">Lemonadey</span></p>
+    <p>All other rights reserved, 2026, Krazvalt</p>
+  </footer></div>`;
 }
 
 
@@ -4106,11 +4137,99 @@ let net: NetClient | null = null;
 /** Kept so a cancel can take the room out of the queue rather than orphan it. */
 let pendingRoom: { roomId: string; code?: string } | null = null;
 
+/** The clock the room last sent, watched so the last ten seconds can be heard. */
+let onlineClock: Clock | null = null;
+let ropeWatch: number | null = null;
+/** The window the ring is sounding for, so the way it ended can be judged. */
+let ringingFor: Clock | null = null;
+
+/**
+ * Gate the warning on whoever is actually on the clock. Driven by its own timer
+ * rather than the render loop, because the board only repaints when something
+ * happens and the whole point of this sound is the stretch where nothing does.
+ */
+function ropeTick(): void {
+  if (ui.online.phase !== 'playing') {
+    stopRopeWatch();
+    return;
+  }
+  // The room's clock carries its own grace, which is not part of the window the
+  // player is acting inside, so the warning counts the one they are given.
+  const clock = onlineClock ? asDisplayed(onlineClock) : null;
+  const seat = ui.online.seat;
+  const skew = net?.status.skewMs ?? 0;
+  const now = Date.now();
+  const burning =
+    !!clock &&
+    seat !== null &&
+    clock.player === seat &&
+    !!ui.state &&
+    !isOver(ui.state) &&
+    secondsLeft(clock, now, skew) > 0 &&
+    isRoping(clock, now, skew);
+
+  if (burning) {
+    // Keyed on the window rather than a flag, so ticks inside one window do not
+    // restart the clip and a genuinely new window is not swallowed by its tail.
+    if (ringingFor?.endsAt !== clock.endsAt) {
+      stopLast10();
+      if (startLast10()) ringingFor = clock;
+    }
+    return;
+  }
+
+  const ended = ringingFor;
+  if (!ended) return;
+  ringingFor = null;
+  // A window that reached zero is a turn the player let run out, and the ring
+  // going off is the whole point of it, so it is left to finish. Anything else
+  // means they acted, and the sound gets out of the way.
+  if (secondsLeft(ended, now, skew) > 0) stopLast10();
+}
+
+/**
+ * The turn clock drawn on the line between the boards. The elapsed time goes out
+ * as a negative animation delay, so a render in the middle of a turn picks the
+ * burn up where it was rather than starting it again. Empty off the clock, which
+ * is every game that is not online.
+ */
+function fuseHtml(): string {
+  const clock = onlineClock ? asDisplayed(onlineClock) : null;
+  if (!clock || clock.totalMs <= 0) return '';
+  // Stable for the whole window. The elapsed offset is applied after the write
+  // instead of being baked in here, because a string carrying the current time
+  // would differ on every hover and cost the board its decoded card faces.
+  // data-ends is what makes a new window a different string, so the burn is
+  // restarted even when the turn changed nothing else on the table.
+  return `<span class="fuse" data-ends="${clock.endsAt}" style="--burn:${clock.totalMs}ms"><span class="fusefill"></span><span class="fusespark"></span></span>`;
+}
+
+/** Put the burn where the clock has actually reached, before the first paint. */
+function syncFuse(el: HTMLElement): void {
+  const fuse = el.querySelector<HTMLElement>('.fuse');
+  const clock = onlineClock ? asDisplayed(onlineClock) : null;
+  if (!fuse || !clock || clock.totalMs <= 0) return;
+  const left = clock.endsAt - (Date.now() + (net?.status.skewMs ?? 0));
+  const burnt = Math.max(0, Math.min(clock.totalMs - left, clock.totalMs));
+  fuse.style.setProperty('--burnt', `${-burnt}ms`);
+}
+
+function startRopeWatch(): void {
+  if (ropeWatch === null) ropeWatch = window.setInterval(ropeTick, 250);
+}
+
+function stopRopeWatch(): void {
+  if (ropeWatch !== null) window.clearInterval(ropeWatch);
+  ropeWatch = null;
+  onlineClock = null;
+  ringingFor = null;
+  stopLast10();
+}
+
 function netClient(): NetClient {
   if (net) return net;
   net = new NetClient(serverBase(), {
     onSeated(seat, _kind, code) {
-      playSfx('lobby');
       ui.online.seat = seat;
       ui.online.roomCode = code ?? ui.online.roomCode;
       render();
@@ -4120,11 +4239,16 @@ function netClient(): NetClient {
       if (code) ui.online.roomCode = code;
       render();
     },
-    onState(state, seat) {
+    onState(state, seat, clock) {
+      // Seating happens on arrival, which for the host is while still alone in
+      // the room. The match starts on the first state the room pushes.
+      if (ui.online.phase !== 'playing') playSfx('lobby');
       // The room is the authority, so its copy replaces this one outright.
       ui.state = state;
       ui.online.seat = seat;
       ui.online.phase = 'playing';
+      onlineClock = clock;
+      startRopeWatch();
       ui.botSeat = null;
       ui.screen = 'game';
       ui.error = null;
@@ -4153,6 +4277,7 @@ function netClient(): NetClient {
 
 /** Drop back to the lobby with something to read. */
 function failOnline(reason: string): void {
+  stopRopeWatch();
   net?.close();
   pendingRoom = null;
   ui.online.phase = 'idle';

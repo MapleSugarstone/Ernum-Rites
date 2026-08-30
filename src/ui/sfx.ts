@@ -59,6 +59,7 @@ const CLIPS = {
 
   // --- the frame around the match ------------------------------------------
   lobby: 'Sounds/connecttolobby.mp3',
+  last10: 'Sounds/last10seconds.mp3',
   win: 'Sounds/winner.mp3',
   lose: 'Sounds/loser.mp3',
 } as const;
@@ -216,6 +217,72 @@ export function stopHold(): void {
       g.gain.setTargetAtTime(0, now, HOLD_OUT);
       // Stopped once the ramp has effectively finished, so the tail is not cut.
       src.stop(now + HOLD_OUT * 6);
+    } else {
+      src.stop();
+    }
+  } catch {
+    /* a source already stopped is not a problem worth reporting */
+  }
+}
+
+/**
+ * The last ten seconds of a clock. A one-shot rather than a loop, but held on a
+ * gain node like the hold bed is, so ending the turn early fades it instead of
+ * cutting it dead mid-tick.
+ */
+let ropeSrc: AudioBufferSourceNode | null = null;
+let ropeGain: GainNode | null = null;
+const ROPE_OUT = 0.18;
+
+/** Whether a ring is now sounding, so a caller can retry once it has decoded. */
+export function startLast10(): boolean {
+  const bus = effectsBus();
+  if (!bus) return false;
+  if (ropeSrc) return true;
+  const buffer = buffers.get('last10');
+  if (!buffer) {
+    // Not decoded yet, so this clock is silent and the next one will not be.
+    void load('last10', bus.ctx);
+    return false;
+  }
+  try {
+    const g = bus.ctx.createGain();
+    g.gain.value = TRIM.last10 ?? 1;
+    const src = bus.ctx.createBufferSource();
+    src.buffer = buffer;
+    src.connect(g).connect(bus.out);
+    // A clock left to run out ends on its own, and must not look still-playing.
+    src.onended = () => {
+      if (ropeSrc !== src) return;
+      ropeSrc = null;
+      ropeGain = null;
+    };
+    src.start();
+    ropeSrc = src;
+    ropeGain = g;
+    return true;
+  } catch {
+    ropeSrc = null;
+    ropeGain = null;
+    return false;
+  }
+}
+
+export function stopLast10(): void {
+  const src = ropeSrc;
+  const g = ropeGain;
+  ropeSrc = null;
+  ropeGain = null;
+  if (!src || !g) return;
+  const bus = effectsBus();
+  try {
+    if (bus) {
+      const now = bus.ctx.currentTime;
+      g.gain.cancelScheduledValues(now);
+      g.gain.setValueAtTime(g.gain.value, now);
+      g.gain.setTargetAtTime(0, now, ROPE_OUT);
+      // Stopped once the ramp has effectively finished, so the tail is not cut.
+      src.stop(now + ROPE_OUT * 6);
     } else {
       src.stop();
     }

@@ -78,6 +78,19 @@ export interface Clock {
   totalMs: number;
 }
 
+/**
+ * The clock as the player experiences it. The room's grace is the authority's
+ * own margin for a packet in flight, so it is no part of the window a player is
+ * being asked to act inside, and nothing client-side should count it.
+ */
+export function asDisplayed(clock: Clock): Clock {
+  return {
+    ...clock,
+    endsAt: clock.endsAt - NETWORK_GRACE_SECONDS * 1000,
+    totalMs: displayedMs(clock.kind),
+  };
+}
+
 /** Fraction of a clock still to run, 1 at the start and 0 once it is out. */
 export function fractionLeft(clock: Clock, now: number, skewMs = 0): number {
   const left = clock.endsAt - (now + skewMs);

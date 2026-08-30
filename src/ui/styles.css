@@ -20,6 +20,11 @@
   --danger: #f84c48;
   --ok: #47cf79;
   --warn: #ecca29;
+  /* The turn clock burnt into the middle line. Blue rather than the cyan
+     accent, so a clock running out never reads as something selectable. */
+  --fuse: #2f6bff;
+  --fuse-hot: #8fd8ff;
+  --fuse-glow: rgba(64, 132, 255, 0.55);
   --font-display: Optima, Candara, 'Noto Sans', source-sans-pro, sans-serif;
   --font-ui: Seravek, 'Gill Sans Nova', Ubuntu, Calibri, 'DejaVu Sans', source-sans-pro,
     sans-serif;
@@ -48,6 +53,9 @@
     rgba(23, 33, 67, 0.95) 55%,
     rgba(16, 24, 53, 0.96) 100%
   );
+  /* --glass at full alpha, for the one pill that sits over the board and must
+     not let the table read through it. */
+  --glass-solid: linear-gradient(180deg, #202c54 0%, #172143 55%, #101835 100%);
   --glass-dark: linear-gradient(
     180deg,
     rgba(37, 64, 138, 0.96) 0%,
@@ -140,6 +148,9 @@
   --select: #a35c00;
   --danger: #b32228;
   --ok: #007238;
+  --fuse: #1b47c4;
+  --fuse-hot: #2f8fd8;
+  --fuse-glow: rgba(27, 71, 196, 0.42);
   --warn: #805f00;
   --shadow: 0 4px 14px rgba(17, 26, 46, 0.16);
   --shadow-lift: 0 16px 34px rgba(17, 26, 46, 0.26);
@@ -153,6 +164,7 @@
     rgba(240, 245, 255, 0.94) 55%,
     rgba(226, 235, 254, 0.95) 100%
   );
+  --glass-solid: linear-gradient(180deg, #ffffff 0%, #f0f5ff 55%, #e2ebfe 100%);
   /* The chrome plate stays a deep blue in both schemes, which is what lets
      --chrome-text stay light and the pressed state read the same way. */
   --glass-dark: linear-gradient(
@@ -521,8 +533,11 @@ button.on {
   display: grid;
   grid-template-rows: 1fr auto 1fr;
   gap: 6px;
-  /* Left padding clears the play-by-play strip on the edge. */
-  padding: 8px 12px 8px 48px;
+  /* Left padding clears the play-by-play strip on the edge. The right is named
+     because the fuse lives inside the divider, one box in from here, and has to
+     reach the End Turn pill, which is positioned against the board instead. */
+  --board-pad-r: 12px;
+  padding: 8px var(--board-pad-r) 8px 48px;
   min-height: 0;
   overflow: hidden;
 }
@@ -849,7 +864,9 @@ button.on {
    button lift can never shove it down the screen. */
 .endturn {
   position: absolute;
-  right: 12px;
+  /* Clamped to the edge as a half pill, so the fuse has something to run into
+     and the divider line ends under it rather than reappearing past it. */
+  right: 0;
   top: 50%;
   transform: translateY(-50%);
   z-index: 46;
@@ -862,11 +879,16 @@ button.on {
      something happening rather than the same button saying something else. Wide
      enough for the longest of the three. */
   width: var(--endturn-w);
-  padding: 8px 14px;
-  border-radius: 999px;
+  padding: 5px 14px;
+  border-radius: 999px 0 0 999px;
+  border-right: 0;
   border: var(--stroke-thick) solid var(--ink);
   color: var(--muted);
-  opacity: 0.82;
+  /* Solid: the fuse runs up to this pill and the board sits under it, and both
+     read wrong through a translucent one. State is carried by the label colour
+     and the shadow instead, which is why disabled stays opaque too. */
+  background: var(--glass-solid);
+  opacity: 1;
   transition:
     box-shadow 150ms ease,
     filter 150ms ease,
@@ -877,7 +899,7 @@ button.on {
   transform: translateY(-50%);
 }
 .endturn:disabled {
-  opacity: 0.65;
+  opacity: 1;
 }
 .endturn.ready {
   color: var(--accent);
@@ -1079,6 +1101,114 @@ button.on {
   height: 0;
   border-top: var(--stroke) solid var(--hairline-2);
   position: relative;
+}
+
+/* The online turn clock, burnt into the line between the two boards. The blue is
+   the time left. It is eaten from the left and the spark rides the burn front,
+   so the line is bare at the same moment the turn ends.
+
+   Both animations run off one duration and one negative delay, which is what
+   lets a re-render mid-turn write the element again and have the burn pick up
+   where it was instead of starting over. Neither touches layout: the fill is
+   clipped and the spark is translated, so a minute of burning stays on the
+   compositor. */
+.fuse {
+  position: absolute;
+  left: 0;
+  /* Runs into the pill rather than stopping short of it. The pill is clamped to
+     the board's padding box and this sits in the divider, one padding in, so the
+     inset gives that back to land exactly on the pill's left lip. */
+  right: calc(var(--endturn-w) - var(--board-pad-r));
+  top: calc(var(--stroke) * -1);
+  height: 3px;
+  pointer-events: none;
+}
+
+.fusefill {
+  position: absolute;
+  inset: 0;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--fuse), var(--fuse-hot));
+  box-shadow: 0 0 8px var(--fuse-glow);
+  animation: fuse-burn var(--burn) linear var(--burnt, 0ms) forwards;
+}
+
+/* Full width so translateX can be read as a fraction of the bar; the spark
+   itself is the pseudo-element pinned to its left edge. */
+.fusespark {
+  position: absolute;
+  inset: 0;
+  animation: fuse-travel var(--burn) linear var(--burnt, 0ms) forwards;
+}
+
+.fusespark::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  margin-top: -8px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    #fff 0%,
+    var(--fuse-hot) 30%,
+    var(--fuse-glow) 58%,
+    transparent 72%
+  );
+  animation: fuse-sizzle 420ms ease-in-out infinite;
+}
+
+@keyframes fuse-burn {
+  from {
+    clip-path: inset(0 0 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 100%);
+  }
+}
+
+@keyframes fuse-travel {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* Uneven stops so it reads as something burning rather than something blinking.
+   Opacity never drops far enough to leave a gap at the burn front. */
+@keyframes fuse-sizzle {
+  0% {
+    opacity: 0.84;
+    transform: scale(0.96);
+  }
+  28% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+  46% {
+    opacity: 0.9;
+    transform: scale(0.99);
+  }
+  70% {
+    opacity: 0.98;
+    transform: scale(1.04);
+  }
+  100% {
+    opacity: 0.84;
+    transform: scale(0.96);
+  }
+}
+
+/* The bar still has to empty on time, so only the crackle is given up here. */
+@media (prefers-reduced-motion: reduce) {
+  .fusespark::before {
+    animation: none;
+    opacity: 0.85;
+  }
 }
 
 /* --- supporters ------------------------------------------------------------ */
@@ -2427,6 +2557,22 @@ body.dragging .bookgrid .card {
   opacity: 0.45;
   cursor: not-allowed;
 }
+/* Four tiles in a column waste a narrow screen and push everything under them
+   off the fold, so they pair up. The tile's min-width is what stops a flex row
+   fitting two, and a 1fr column sizes them anyway, so it goes. The mixer is the
+   fifth child and is not a mode, so it takes a row of its own underneath. */
+body.mobile .modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+body.mobile .modes .modetile {
+  min-width: 0;
+  padding: 14px 10px;
+}
+body.mobile .modes .mixer {
+  grid-column: 1 / -1;
+  justify-content: center;
+}
 .decks {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
@@ -2474,6 +2620,33 @@ body.dragging .bookgrid .card {
   margin-top: 22px;
   font-size: 16px;
   padding: 9px 26px;
+}
+
+/* Credits sit on the bottom edge of the menu: the column grows to fill a short
+   viewport so the footer lands there rather than floating mid-screen, and it
+   rides down with the content once the deck grid overflows. */
+.setup.menuview {
+  display: flex;
+  flex-direction: column;
+}
+.setup.menuview .inner {
+  flex: 1 0 auto;
+  width: 100%;
+}
+.credits {
+  flex: none;
+  margin: 40px auto 0;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+.credits p {
+  margin: 0;
+}
+.credits .who {
+  color: var(--text);
+  font-weight: 600;
 }
 
 /* --- deckbuilder ----------------------------------------------------------
@@ -4633,7 +4806,19 @@ body.mobile .side .caption {
 
 /* The side gutters carry debt and the piles, and on a phone they eat the lane. */
 body.mobile .board {
-  padding: 6px;
+  --board-pad-r: 6px;
+  padding: var(--board-pad-r);
+}
+
+/* The pill is a fixed width so the label changing cannot resize it, which means
+   the narrow case needs its own number rather than shrinking to fit. The fuse
+   reads the same variable, so it follows without being told. */
+body.mobile {
+  --endturn-w: 92px;
+}
+body.mobile .endturn {
+  font-size: 11px;
+  padding: 4px 8px;
 }
 
 /* Buttons get thumb-sized, and the wordmark chip drops: the name of the game is
