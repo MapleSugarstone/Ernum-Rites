@@ -5533,6 +5533,12 @@ let buildPending: {
 const DRAG_SLOP = 6;
 
 function startBuildDrag(ev: PointerEvent): void {
+  // A finger on a card is how the list is scrolled, and the browser decides
+  // which it is long before the drag threshold is crossed: it takes the gesture
+  // for a scroll, cancels the pointer, and the card is left mid-drag with no
+  // release to end it. Tapping a card already adds it and tapping a row already
+  // removes it, so touch keeps the scroll and the drag stays a mouse gesture.
+  if (ev.pointerType === 'touch') return;
   const t = ev.target as HTMLElement;
   const leaderCard = t.closest<HTMLElement>('.leaderbox .card[data-cardid]');
   if (leaderCard) {
@@ -5773,7 +5779,25 @@ window.addEventListener('pointermove', (ev) => {
   renderArrow();
 });
 
-window.addEventListener('pointercancel', cancelHold);
+window.addEventListener('pointercancel', (ev) => {
+  cancelHold();
+  // The browser takes the gesture over rather than handing back a release, so
+  // this is the only chance to put a half-finished drag down.
+  buildPending = null;
+  if (buildDrag) {
+    buildDrag = null;
+    killGhost();
+    document.querySelector('.deckpanel')?.classList.remove('dropready');
+    document.querySelector('.leaderbox')?.classList.remove('leaderdrop');
+    render();
+  }
+  if (ui.drag || ghost) {
+    ui.drag = null;
+    killGhost();
+    render();
+  }
+  void ev;
+});
 
 window.addEventListener('pointerup', (ev) => {
   cancelHold();
