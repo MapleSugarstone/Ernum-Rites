@@ -506,7 +506,7 @@ button.on {
   height: 12px;
   border-radius: 50%;
   border: 2px solid var(--ink);
-  background: var(--surface);
+  background: var(--accent);
   box-shadow: var(--shadow);
 }
 .vol input[type='range']::-moz-range-thumb {
@@ -514,7 +514,7 @@ button.on {
   height: 12px;
   border-radius: 50%;
   border: 2px solid var(--ink);
-  background: var(--surface);
+  background: var(--accent);
 }
 /* On the menu the pair rides the right end of the mode row. Trimmed just
    enough to share that row with four tiles rather than wrap below them. */

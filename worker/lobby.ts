@@ -31,10 +31,36 @@ function makeCode(): string {
   return out;
 }
 
+/** A private room reachable only by its code. */
+interface CodeEntry {
+  roomId: string;
+  expiresAt: number;
+}
+
 export class Lobby extends DurableObject {
-  /** At most one room waiting for a random opponent at a time. */
+  /**
+   * Cached in memory but owned by storage. Nothing keeps this object alive
+   * between requests the way a socket keeps a MatchRoom alive, so it is evicted
+   * within seconds of going idle and rebuilt empty. Held only in fields, the
+   * room a player is waiting in and every code handed out die with it, and two
+   * players arriving seconds apart never meet.
+   */
   private open: Open | null = null;
-  private codes = new Map<string, { roomId: string; expiresAt: number }>();
+  private codes = new Map<string, CodeEntry>();
+  private loaded = false;
+
+  private async load(): Promise<void> {
+    if (this.loaded) return;
+    this.open = (await this.ctx.storage.get<Open>('open')) ?? null;
+    this.codes = new Map((await this.ctx.storage.get<[string, CodeEntry][]>('codes')) ?? []);
+    this.loaded = true;
+  }
+
+  private async save(): Promise<void> {
+    if (this.open) await this.ctx.storage.put('open', this.open);
+    else await this.ctx.storage.delete('open');
+    await this.ctx.storage.put('codes', [...this.codes]);
+  }
 
   private sweep(): void {
     const now = Date.now();
@@ -50,45 +76,62 @@ export class Lobby extends DurableObject {
    * does not need to.
    */
   async findPublic(): Promise<{ roomId: string }> {
+    await this.load();
     this.sweep();
     if (this.open) {
       const roomId = this.open.roomId;
       this.open = null;
+      await this.save();
       return { roomId };
     }
     const roomId = `pub-${crypto.randomUUID()}`;
     this.open = { roomId, expiresAt: Date.now() + OPEN_ROOM_MS };
+    await this.save();
     return { roomId };
   }
 
   /** A room only somebody holding the code can find. */
   async hostPrivate(): Promise<{ roomId: string; code: string }> {
+    await this.load();
     this.sweep();
     let code = makeCode();
     // Vanishingly unlikely, but a collision would put two matches in one room.
     while (this.codes.has(code)) code = makeCode();
     const roomId = `prv-${crypto.randomUUID()}`;
     this.codes.set(code, { roomId, expiresAt: Date.now() + CODE_MS });
+    await this.save();
     return { roomId, code };
   }
 
   async joinPrivate(code: string): Promise<{ roomId: string } | null> {
+    await this.load();
     this.sweep();
     const entry = this.codes.get(code.toUpperCase());
-    if (!entry) return null;
+    if (!entry) {
+      // The sweep may have dropped expired codes, which is worth keeping.
+      await this.save();
+      return null;
+    }
     // A code is good for one guest. Leaving it live would let a third player
     // knock on a room that is already full.
     this.codes.delete(code.toUpperCase());
+    await this.save();
     return { roomId: entry.roomId };
   }
 
   /** A host who backs out before anyone arrives. */
   async cancel(code: string): Promise<void> {
+    await this.load();
     this.codes.delete(code.toUpperCase());
+    await this.save();
   }
 
   /** A player who leaves the random queue rather than wait it out. */
   async leavePublic(roomId: string): Promise<void> {
-    if (this.open?.roomId === roomId) this.open = null;
+    await this.load();
+    if (this.open?.roomId === roomId) {
+      this.open = null;
+      await this.save();
+    }
   }
 }
