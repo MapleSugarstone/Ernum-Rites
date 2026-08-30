@@ -4678,6 +4678,10 @@ function handleBuilderCommand(cmd: string): boolean {
       break;
     case 'to-setup':
       closeDropdown();
+      // Leaving for the menu ends any online session. Without this the phase is
+      // still 'playing' after a match finishes, and the lobby greys out every
+      // queue button because it goes on believing you are in a game.
+      leaveOnline();
       ui.screen = 'setup';
       break;
     case 'to-rules':
@@ -4983,6 +4987,10 @@ function handleCommand(cmd: string): void {
     return render();
   }
   if (cmd === 'new-game') {
+    // The match is over, so the online session that produced it is over too.
+    // Without this the phase stays 'playing' and the lobby greys out every queue
+    // button, because it goes on believing there is a game still running.
+    leaveOnline();
     ui.screen = 'setup';
     ui.state = null;
     ui.botSeat = null;
