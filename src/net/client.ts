@@ -51,6 +51,8 @@ const PING_EVERY_MS = 10_000;
 
 export class NetClient {
   private socket: WebSocket | null = null;
+  /** Aborted on close, which detaches every listener on the socket being let go. */
+  private live: AbortController | null = null;
   private handlers: NetHandlers;
   private base: string;
   private pingTimer: number | null = null;
@@ -104,23 +106,42 @@ export class NetClient {
     if (code) params.set('code', code);
     const socket = new WebSocket(`${ws}/api/room/${roomId}?${params.toString()}`);
     this.socket = socket;
+    // Every listener below is hung off this, so closing can take them all back
+    // at once. A socket that has been let go must not still be able to reach
+    // the handlers: closing one is not instant, and the tail of it arriving
+    // later would otherwise report a connection this client no longer wants as
+    // a connection that failed.
+    const live = new AbortController();
+    this.live = live;
+    const on = { signal: live.signal };
 
-    socket.addEventListener('open', () => {
-      this.status.connected = true;
-      this.send({ type: 'join', deckKey, name });
-      this.measureSkew();
-      this.pingTimer = window.setInterval(() => this.measureSkew(), PING_EVERY_MS);
-    });
-    socket.addEventListener('message', (ev) => this.receive(String(ev.data)));
-    socket.addEventListener('close', () => {
-      this.status.connected = false;
-      if (this.pingTimer !== null) window.clearInterval(this.pingTimer);
-      this.pingTimer = null;
-    });
-    socket.addEventListener('error', () => this.handlers.onError('the connection dropped'));
+    socket.addEventListener(
+      'open',
+      () => {
+        this.status.connected = true;
+        this.send({ type: 'join', deckKey, name });
+        this.measureSkew();
+        this.pingTimer = window.setInterval(() => this.measureSkew(), PING_EVERY_MS);
+      },
+      on,
+    );
+    socket.addEventListener('message', (ev) => this.receive(String(ev.data)), on);
+    socket.addEventListener(
+      'close',
+      () => {
+        this.status.connected = false;
+        if (this.pingTimer !== null) window.clearInterval(this.pingTimer);
+        this.pingTimer = null;
+      },
+      on,
+    );
+    socket.addEventListener('error', () => this.handlers.onError('the connection dropped'), on);
   }
 
   close(): void {
+    // Before the close itself, so nothing the teardown raises comes back.
+    this.live?.abort();
+    this.live = null;
     if (this.pingTimer !== null) window.clearInterval(this.pingTimer);
     this.pingTimer = null;
     this.socket?.close();
