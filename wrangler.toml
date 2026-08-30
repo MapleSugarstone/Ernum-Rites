@@ -3,9 +3,10 @@ main = "worker/index.ts"
 compatibility_date = "2026-01-01"
 compatibility_flags = ["nodejs_compat"]
 
-# Set to the GitHub Pages origin (and any custom domain) once deployed.
+# The Origin header the browser sends, so no repo path and the username
+# lowercased the way Pages serves it. Add any custom domain here too.
 [vars]
-ALLOWED_ORIGINS = "http://localhost:5173"
+ALLOWED_ORIGINS = "https://maplesugarstone.github.io,http://localhost:5173"
 
 [[durable_objects.bindings]]
 name = "MATCH_ROOM"
