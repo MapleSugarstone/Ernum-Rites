@@ -1,0 +1,96 @@
+/**
+ * Clocks for online play, shared by the room and both clients so nobody has to
+ * guess what the other is counting.
+ *
+ * Modelled on Legends of Runeterra: a long window for the turn you are actually
+ * playing, a much shorter one for answering something the other player did, and
+ * a rope that starts burning near the end rather than a number ticking the whole
+ * time. The numbers are ours, chosen to feel like that game rather than copied
+ * from it, and every one of them is meant to be tuned.
+ */
+
+/** Windows a player can be waiting in, longest first. */
+export type ClockKind = 'turn' | 'response' | 'mulligan';
+
+export const CLOCK_SECONDS: Record<ClockKind, number> = {
+  /** Your own main phase: play, attack, activate, then end. */
+  turn: 60,
+  /**
+   * Answering something on the other player's turn: springing a trap, paying for
+   * a flip, filling a hole a dead body left. Short on purpose. These windows
+   * interrupt somebody else's turn, and a player who wants to think has already
+   * had their own clock to do it in.
+   */
+  response: 15,
+  /** Opening hand decisions, before either clock starts. */
+  mulligan: 45,
+};
+
+/**
+ * Which clock a position is on. Anything queued in front of the main phase is
+ * somebody answering something, and answers get the short window even when the
+ * player answering is the one whose turn it is.
+ */
+export function clockKindFor(state: {
+  pending: unknown;
+  choiceQueue: readonly unknown[];
+  flipQueue: readonly unknown[];
+  replaceQueue: readonly unknown[];
+}): ClockKind {
+  if (state.pending) return 'response';
+  if (state.choiceQueue.length > 0) return 'response';
+  if (state.flipQueue.length > 0) return 'response';
+  if (state.replaceQueue.length > 0) return 'response';
+  return 'turn';
+}
+
+/**
+ * The last stretch, when the rope catches. Purely a display threshold: nothing
+ * about the rules changes, the bar just stops being ignorable.
+ */
+export const ROPE_SECONDS = 10;
+
+/**
+ * Added to every deadline the room enforces, and to nothing the client draws.
+ * A packet in flight must not cost a player their turn, so the authority is
+ * slightly more forgiving than the bar the player is watching.
+ */
+export const NETWORK_GRACE_SECONDS = 3;
+
+/** Milliseconds a clock of this kind runs for, as the room enforces it. */
+export function enforcedMs(kind: ClockKind): number {
+  return (CLOCK_SECONDS[kind] + NETWORK_GRACE_SECONDS) * 1000;
+}
+
+/** Milliseconds a clock of this kind runs for, as the player sees it. */
+export function displayedMs(kind: ClockKind): number {
+  return CLOCK_SECONDS[kind] * 1000;
+}
+
+/** A running clock, as it travels over the wire. */
+export interface Clock {
+  kind: ClockKind;
+  /** Who is on the clock. The other player is waiting and cannot time out. */
+  player: 0 | 1;
+  /** Wall clock ms since the epoch, on the room's clock, when the bar empties. */
+  endsAt: number;
+  /** How long this clock ran in total, so a client can draw the fraction left. */
+  totalMs: number;
+}
+
+/** Fraction of a clock still to run, 1 at the start and 0 once it is out. */
+export function fractionLeft(clock: Clock, now: number, skewMs = 0): number {
+  const left = clock.endsAt - (now + skewMs);
+  if (clock.totalMs <= 0) return 0;
+  return Math.max(0, Math.min(1, left / clock.totalMs));
+}
+
+/** Whole seconds still to run, for the number beside the bar. */
+export function secondsLeft(clock: Clock, now: number, skewMs = 0): number {
+  return Math.max(0, Math.ceil((clock.endsAt - (now + skewMs)) / 1000));
+}
+
+/** Whether the rope has caught and the bar should be shouting about it. */
+export function isRoping(clock: Clock, now: number, skewMs = 0): boolean {
+  return secondsLeft(clock, now, skewMs) <= ROPE_SECONDS;
+}

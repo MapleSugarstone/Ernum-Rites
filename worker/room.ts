@@ -1,0 +1,200 @@
+import { DurableObject } from 'cloudflare:workers';
+import '../src/cards';
+import { deckByKey } from '../src/cards';
+import { applyAction, createGame } from '../src/engine/engine';
+import { digestShort } from '../src/engine/digest';
+import { publicView, redactFor } from '../src/engine/redact';
+import { currentActor, type GameState } from '../src/engine/state';
+import { timeoutAction } from '../src/engine/timeout';
+import { clockKindFor, enforcedMs, type Clock } from '../src/engine/timing';
+import type { PlayerIdx } from '../src/engine/types';
+import { nameProblem } from './protocol';
+import type { ClientMessage, RoomKind, ServerMessage } from './protocol';
+
+interface Seat {
+  socket: WebSocket;
+  name: string;
+  deckKey: string;
+}
+
+/**
+ * One match. This object is the authority: clients send intents, it runs the
+ * shared rules engine and pushes each side a redacted view of the result.
+ *
+ * It is also the only clock. Timers cannot live on the clients, because the
+ * player being timed is exactly the person who benefits from a slow one.
+ */
+export class MatchRoom extends DurableObject {
+  private seats: (Seat | null)[] = [null, null];
+  private state: GameState | null = null;
+  private clock: Clock | null = null;
+  private kind: RoomKind = 'public';
+  private code: string | undefined;
+
+  async fetch(request: Request): Promise<Response> {
+    if (request.headers.get('Upgrade') !== 'websocket') {
+      return new Response('expected a websocket upgrade', { status: 426 });
+    }
+    const url = new URL(request.url);
+    this.kind = url.searchParams.get('kind') === 'private' ? 'private' : 'public';
+    this.code = url.searchParams.get('code') ?? undefined;
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair);
+    server.accept();
+    this.attach(server);
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  private attach(socket: WebSocket): void {
+    socket.addEventListener('message', (ev) => {
+      let msg: ClientMessage;
+      try {
+        msg = JSON.parse(String(ev.data)) as ClientMessage;
+      } catch {
+        return this.send(socket, { type: 'error', reason: 'malformed message' });
+      }
+      void this.handle(socket, msg);
+    });
+    socket.addEventListener('close', () => {
+      const idx = this.seats.findIndex((s) => s?.socket === socket);
+      if (idx >= 0) {
+        this.seats[idx] = null;
+        this.clock = null;
+        void this.ctx.storage.deleteAlarm();
+        this.broadcast({ type: 'opponentLeft' });
+      }
+    });
+  }
+
+  private async handle(socket: WebSocket, msg: ClientMessage): Promise<void> {
+    // Free of the match, and answered even before anyone is seated.
+    if (msg.type === 'ping') {
+      return this.send(socket, { type: 'pong', sent: msg.sent, now: Date.now() });
+    }
+
+    if (msg.type === 'join') {
+      // Checked here as well as in the lobby: the name reaches the other player,
+      // so the room does not take a client's word for it.
+      const bad = nameProblem(msg.name);
+      if (bad) return this.send(socket, { type: 'error', reason: bad });
+      const seat = this.seats.findIndex((s) => s === null);
+      if (seat < 0) return this.send(socket, { type: 'error', reason: 'room is full' });
+      this.seats[seat] = { socket, name: msg.name.trim(), deckKey: msg.deckKey };
+      this.send(socket, {
+        type: 'seated',
+        seat: seat as PlayerIdx,
+        roomId: this.ctx.id.toString(),
+        kind: this.kind,
+        ...(this.code ? { code: this.code } : {}),
+      });
+      if (this.seats.every((s) => s !== null)) await this.startMatch();
+      else this.send(socket, { type: 'waiting', players: 1, ...(this.code ? { code: this.code } : {}) });
+      return;
+    }
+
+    const seatIndex = this.seats.findIndex((s) => s?.socket === socket);
+    if (seatIndex < 0 || !this.state) {
+      return this.send(socket, { type: 'error', reason: 'not seated in a running match' });
+    }
+    const seat = seatIndex as PlayerIdx;
+
+    // A client that no longer trusts what it holds gets the whole thing again.
+    if (msg.type === 'resync' || msg.type === 'desync') return this.pushState();
+
+    if (msg.type === 'action') {
+      const result = applyAction(this.state, seat, msg.action);
+      if (!result.ok) {
+        return this.send(socket, {
+          type: 'rejected',
+          reason: result.error,
+          version: this.state.version,
+        });
+      }
+      this.state = result.state;
+      await this.restartClock();
+      this.pushState();
+    }
+  }
+
+  private async startMatch(): Promise<void> {
+    const decks = this.seats.map((s, i) => {
+      const d = deckByKey(s!.deckKey);
+      return { name: s!.name || `Player ${i + 1}`, leaderId: d.leaderId, cards: d.cards };
+    });
+    // Seeded from the room so a replay of the same actions reproduces the match.
+    const seed = Math.floor(Math.random() * 0x7fffffff);
+    this.state = createGame([decks[0], decks[1]], seed, 0);
+    await this.restartClock();
+    this.pushState();
+  }
+
+  /**
+   * Put whoever must act next on the appropriate clock and set the alarm that
+   * enforces it. Called after every accepted action, because an action can hand
+   * the turn over, open a response window, or close one.
+   */
+  private async restartClock(): Promise<void> {
+    if (!this.state || this.state.winner !== null) {
+      this.clock = null;
+      await this.ctx.storage.deleteAlarm();
+      return;
+    }
+    const kind = clockKindFor(this.state);
+    const player = currentActor(this.state);
+    const total = enforcedMs(kind);
+    this.clock = { kind, player, endsAt: Date.now() + total, totalMs: total };
+    await this.ctx.storage.setAlarm(this.clock.endsAt);
+  }
+
+  /**
+   * A clock ran out. Play the passive move for whoever was on it and carry on;
+   * a timeout is a missed decision, not a forfeit.
+   */
+  async alarm(): Promise<void> {
+    if (!this.state || !this.clock) return;
+    // The alarm can outlive the clock it was set for if an action landed in the
+    // same instant. Anything still to run means this alarm is stale.
+    if (Date.now() < this.clock.endsAt - 250) return;
+
+    const player = this.clock.player;
+    const action = timeoutAction(this.state);
+    if (!action) return;
+    const result = applyAction(this.state, player, action);
+    if (result.ok) {
+      this.state = result.state;
+      this.broadcast({ type: 'timedOut', player, action: action.type });
+    }
+    await this.restartClock();
+    this.pushState();
+  }
+
+  private pushState(): void {
+    if (!this.state) return;
+    // One digest of what both sides can see, so each client can check the push
+    // against the state it computed itself without learning anything private.
+    const digest = digestShort(publicView(this.state));
+    this.seats.forEach((s, i) => {
+      if (!s) return;
+      const seat = i as PlayerIdx;
+      this.send(s.socket, {
+        type: 'state',
+        state: redactFor(this.state!, seat),
+        seat,
+        clock: this.clock,
+        publicDigest: digest,
+      });
+    });
+  }
+
+  private send(socket: WebSocket, msg: ServerMessage): void {
+    try {
+      socket.send(JSON.stringify(msg));
+    } catch {
+      // The socket closed mid-flight; the close handler clears the seat.
+    }
+  }
+
+  private broadcast(msg: ServerMessage): void {
+    for (const s of this.seats) if (s) this.send(s.socket, msg);
+  }
+}

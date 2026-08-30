@@ -1,0 +1,4949 @@
+/* Theme: bwp seed velvet-casino, mood midnight, dark.
+   Blue velvet ground under cyan, magenta and gold. Matte throughout: felt nap
+   instead of gloss, soft shadows instead of specular breaks. The ink and border
+   weights come from the card art, which is flat colour behind thick black
+   lineart, so the ink stays dark here even though the page does not. */
+:root {
+  --bg: #07102e;
+  --surface: #0f1938;
+  --surface-2: #182241;
+  --line: #313c5a;
+  --text: #e5ebfb;
+  --muted: #8f9bb8;
+  --accent: #00d3e3;
+  --accent-text: #0f1938;
+  --accent-2: #f435a9;
+  /* Copy on the deep chrome, which stayed dark when the accent went bright. */
+  --chrome-text: #eef3ff;
+  /* Console-style focus ring for the currently selected toggle, and only that. */
+  --select: #d9821b;
+  --danger: #f84c48;
+  --ok: #47cf79;
+  --warn: #ecca29;
+  --font-display: Optima, Candara, 'Noto Sans', source-sans-pro, sans-serif;
+  --font-ui: Seravek, 'Gill Sans Nova', Ubuntu, Calibri, 'DejaVu Sans', source-sans-pro,
+    sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas,
+    'DejaVu Sans Mono', monospace;
+  /* The wordmark alone: a display serif with real stroke contrast, which is what
+     lets the gold plate read without an outline holding the letters together. */
+  --font-wordmark: 'Sitka Display', Didot, 'Bodoni MT', 'Noto Serif Display',
+    'Palatino Linotype', 'Iowan Old Style', Georgia, serif;
+  --radius: 13px;
+  --radius-lg: 25px;
+  --radius-sm: 6px;
+  --shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  --shadow-lift: 0 16px 34px rgba(0, 0, 0, 0.58);
+
+  /* Lineart ink, taken from the card art rather than the generated palette. */
+  --ink: #04091f;
+  --ink-soft: rgba(4, 9, 31, 0.55);
+  --stroke: 2px;
+  --stroke-thick: 3px;
+
+  /* Felt, not glass: one shallow fall from top to bottom and no specular break. */
+  --glass: linear-gradient(
+    180deg,
+    rgba(32, 44, 84, 0.94) 0%,
+    rgba(23, 33, 67, 0.95) 55%,
+    rgba(16, 24, 53, 0.96) 100%
+  );
+  --glass-dark: linear-gradient(
+    180deg,
+    rgba(37, 64, 138, 0.96) 0%,
+    rgba(28, 52, 123, 0.97) 55%,
+    rgba(20, 42, 107, 0.98) 100%
+  );
+  --sheen: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+
+  /* Overlay roles, so the light scheme is a token swap rather than a second
+     stylesheet. On the dark ground a panel lifts with white and a recess sinks
+     with black; on the light ground both go the other way. Anything printed on
+     a card is not in here: the art is the art in either scheme. */
+  --fill-1: rgba(255, 255, 255, 0.05);
+  --fill-2: rgba(255, 255, 255, 0.075);
+  --fill-3: rgba(255, 255, 255, 0.1);
+  --hairline: rgba(255, 255, 255, 0.11);
+  --hairline-2: rgba(255, 255, 255, 0.14);
+  --edge: rgba(255, 255, 255, 0.22);
+  --well-1: rgba(0, 0, 0, 0.3);
+  --well-2: rgba(0, 0, 0, 0.16);
+  --well-3: rgba(0, 0, 0, 0.07);
+  --sunk: rgba(0, 0, 0, 0.24);
+  --track: rgba(0, 0, 0, 0.4);
+  --thumb: linear-gradient(180deg, #46538a, #2b3660);
+  /* Floating panels: the glossary, the history popover, the dropdown list. */
+  --panel: #131c3e;
+  --panel-2: #1a2447;
+  --panel-lift: #1b2552;
+  /* The dim behind a modal, and the one behind the mobile card zoom, which runs
+     the opposite way to the page in both schemes. */
+  --scrim: rgba(7, 16, 46, 0.86);
+  --scrim-invert: rgba(239, 244, 255, 0.62);
+  /* The wordmark's metal. Pale on the velvet; on the light ground the same
+     ramp is unreadable, so light mode runs a struck-bronze one instead. */
+  --goldplate: linear-gradient(180deg, #ffeeb4 0%, #f0d055 44%, #d3a418 56%, #f6dd8e 100%);
+  --page-bg:
+    radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.035) 1px, transparent 1.5px) 0 0 /
+      9px 9px,
+    radial-gradient(115% 80% at 50% -12%, rgba(92, 112, 200, 0.22) 0%, transparent 62%),
+    radial-gradient(95% 65% at 50% 112%, rgba(0, 0, 0, 0.5) 0%, transparent 68%),
+    linear-gradient(180deg, #0c1638 0%, var(--bg) 45%, #050b21 100%);
+
+  /* Card colours are game data, matched to the art pack. */
+  --c-P: #cc0014;
+  --c-O: #6b1f8f;
+  --c-R: #1f8f3d;
+  --c-F: #1155b8;
+  --c-S: #d8a800;
+  --c-N: #99715b;
+
+  /* Every card size derives from one width; the frame is 240x336. The board
+     sizes track viewport height so the two sides and their HP fans always fit. */
+  --card-ratio: 1.4;
+  /* A plain vh ratio spends height the board does not have. Of the window, the
+     enemy hand and your own hand take a fixed slice off the top and bottom, what
+     is left is split between two sides, and each side has to fit a card, its
+     caption, its HP fan and the supporter well beneath it. Solved for the card:
+     roughly a quarter of the viewport less the chrome. At 720 tall this lands
+     near 80px and at 900 it reaches the cap, while a short window shrinks the
+     board instead of pushing the lane through the supporter band. */
+  /* --board-cap is the ceiling the supporter well needs the cards to keep to on
+     a short window, measured after layout. Without one the lane spends the whole
+     side and the well is cropped by the board rather than given room. */
+  --cw-board: clamp(50px, min(calc(23vh - 95px), var(--board-cap, 104px)), 104px);
+  --cw-hand: clamp(100px, 15.5vh, 132px);
+  --cw-big: 232px;
+  /* HP cards worn under a summon, small but still real cards. */
+  --hpw: clamp(28px, 4.6vh, 38px);
+
+  color-scheme: dark;
+}
+
+/* --- light scheme -----------------------------------------------------------
+   The page this started as: a pale sky ground with dark ink borders, aero's
+   light-on-glass rather than the velvet's nap. Pulled off aero's cyan onto the
+   same royal blue the dark scheme's chrome uses, so the two are one palette at
+   two brightnesses rather than two different games. Only the ground changes;
+   the ink weights, the card colours and anything printed on a card are the
+   same in both, because the art is the art. Set by data-theme on <html>. */
+:root[data-theme='light'] {
+  --bg: #dde8ff;
+  --surface: #edf3ff;
+  --surface-2: #f7faff;
+  --line: #a2b1d2;
+  --text: #111a2e;
+  --muted: #546385;
+  --accent: #2543a0;
+  --accent-text: #f2f6ff;
+  --accent-2: #b00074;
+  --select: #a35c00;
+  --danger: #b32228;
+  --ok: #007238;
+  --warn: #805f00;
+  --shadow: 0 4px 14px rgba(17, 26, 46, 0.16);
+  --shadow-lift: 0 16px 34px rgba(17, 26, 46, 0.26);
+  --ink-soft: rgba(4, 9, 31, 0.45);
+
+  /* Still one shallow fall with no specular break: the light ground is a
+     change of brightness, not a return to gloss. */
+  --glass: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.96) 0%,
+    rgba(240, 245, 255, 0.94) 55%,
+    rgba(226, 235, 254, 0.95) 100%
+  );
+  /* The chrome plate stays a deep blue in both schemes, which is what lets
+     --chrome-text stay light and the pressed state read the same way. */
+  --glass-dark: linear-gradient(
+    180deg,
+    rgba(46, 78, 166, 0.97) 0%,
+    rgba(36, 64, 146, 0.98) 55%,
+    rgba(27, 51, 127, 0.99) 100%
+  );
+  --sheen: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+
+  --fill-1: rgba(255, 255, 255, 0.6);
+  --fill-2: rgba(255, 255, 255, 0.82);
+  --fill-3: rgba(255, 255, 255, 0.85);
+  --hairline: rgba(17, 26, 46, 0.2);
+  --hairline-2: rgba(17, 26, 46, 0.28);
+  --edge: rgba(17, 26, 46, 0.4);
+  --well-1: rgba(17, 26, 46, 0.15);
+  --well-2: rgba(17, 26, 46, 0.06);
+  --well-3: rgba(17, 26, 46, 0.03);
+  --sunk: rgba(255, 255, 255, 0.62);
+  --track: rgba(255, 255, 255, 0.6);
+  --thumb: linear-gradient(180deg, #8ca3dd, #4a5b96);
+  --panel: rgba(255, 255, 255, 0.97);
+  --panel-2: rgba(255, 255, 255, 0.88);
+  --panel-lift: #ffffff;
+  --scrim: rgba(221, 232, 255, 0.88);
+  --scrim-invert: rgba(12, 20, 44, 0.62);
+  --goldplate: linear-gradient(180deg, #846305 0%, #6d4c00 44%, #543600 56%, #7b5f06 100%);
+  --page-bg:
+    radial-gradient(circle at 2px 2px, rgba(255, 255, 255, 0.4) 1.2px, transparent 1.9px) 0 0 /
+      17px 17px,
+    radial-gradient(44% 34% at 76% 8%, rgba(255, 255, 255, 0.5) 0%, transparent 70%),
+    radial-gradient(120% 90% at 50% -10%, #ffffff 0%, rgba(255, 255, 255, 0) 55%),
+    linear-gradient(180deg, #f0f5ff 0%, var(--bg) 40%, #bfd0f7 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  /* Velvet nap: a fine light mesh at grazing strength, a cool wash off the top
+     and a heavy vignette into the bottom corners. No bloom, nothing specular. */
+  background: var(--page-bg);
+  background-attachment: fixed;
+  color: var(--text);
+  /* Nothing on the table is text worth dragging a selection through, and a
+     stray highlight across a card or a button reads as a glitch. The rules page
+     is the exception, being a document, and so is anything you type into. */
+  -webkit-user-select: none;
+  user-select: none;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.45;
+  overflow: hidden;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  margin: 0;
+  font-weight: 600;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--track);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--thumb);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+* {
+  scrollbar-color: #46538a rgba(0, 0, 0, 0.3);
+  scrollbar-width: thin;
+}
+
+:focus-visible {
+  outline: var(--stroke) solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* --- controls -------------------------------------------------------------- */
+
+button {
+  font: inherit;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--glass);
+  border: var(--stroke) solid var(--ink);
+  border-radius: 999px;
+  padding: 5px 14px;
+  cursor: pointer;
+  box-shadow: var(--sheen), var(--shadow);
+  transition:
+    transform 90ms ease,
+    filter 90ms ease;
+}
+button:hover:not(:disabled) {
+  filter: brightness(1.06) saturate(1.1);
+  transform: translateY(-1px);
+}
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+button:disabled {
+  opacity: 0.42;
+  cursor: default;
+  box-shadow: none;
+}
+button.primary {
+  background: var(--glass-dark);
+  color: var(--chrome-text);
+  border-color: var(--ink);
+}
+button.danger {
+  color: var(--danger);
+}
+
+input[type='checkbox'] {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: var(--stroke) solid var(--ink);
+  border-radius: 5px;
+  background: var(--glass);
+  box-shadow: var(--sheen);
+  display: grid;
+  place-content: center;
+  cursor: pointer;
+}
+input[type='checkbox']:checked {
+  background: var(--glass-dark);
+}
+input[type='checkbox']:checked::after {
+  content: '';
+  width: 8px;
+  height: 4px;
+  border: 2px solid var(--chrome-text);
+  border-top: 0;
+  border-right: 0;
+  transform: translateY(-1px) rotate(-45deg);
+}
+
+/* --- shell ----------------------------------------------------------------- */
+
+#app {
+  height: 100%;
+  display: grid;
+  /* The shell is a fixed viewport, not a document: scaling it to fit leaves a
+     sub-pixel of height that rounds up into a scrollbar otherwise. Setup keeps
+     its own scroll, so nothing that needs to scroll loses the ability. */
+  overflow: hidden;
+  grid-template-rows: var(--enemyhand-h) minmax(0, 1fr) calc(var(--cw-hand) * var(--card-ratio) + 26px);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 18px;
+  padding: 0 16px;
+  background: var(--glass);
+  border-bottom: var(--stroke-thick) solid var(--ink);
+  box-shadow: var(--sheen), 0 2px 10px rgba(0, 0, 0, 0.14);
+  position: relative;
+  /* The fan is drawn taller and wider than the bar on purpose. This is the crop,
+     and it also stops the shifted fan from pushing the page sideways. */
+  overflow: hidden;
+  z-index: 40;
+}
+/* No ink outline here. The card art's lineart is what the outline imitates, and
+   the wordmark is type on felt rather than a printed card; the outline only ate
+   the gold. A soft drop keeps it off the bar without drawing a second edge. */
+.wordmark {
+  font-family: var(--font-wordmark);
+  font-size: 23px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: #f0d055;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+}
+/* Gold plate on the big titles; the ink outline stays in the shadows. */
+@supports (-webkit-background-clip: text) or (background-clip: text) {
+  /* The wordmark only. The main menu's h1 is white on the blue plate and sets
+     its own colour later, which left it clipping a metal it never showed. */
+  .wordmark {
+    background: var(--goldplate);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+/* The one selected item in a row of choices, ringed the way a console menu is. */
+button.on {
+  background: var(--glass-dark);
+  color: var(--chrome-text);
+  border-color: var(--select);
+  box-shadow:
+    var(--sheen),
+    0 0 0 2px rgba(217, 130, 27, 0.35),
+    0 0 14px rgba(217, 130, 27, 0.5),
+    var(--shadow);
+}
+.topbar .tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.topbar label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* Debt meters live in the top bar so the loss clock is always in view. */
+.meters {
+  display: flex;
+  gap: 14px;
+}
+.meter {
+  display: grid;
+  grid-template-columns: auto 84px auto;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.meter .track {
+  height: 10px;
+  border: var(--stroke) solid var(--ink);
+  border-radius: 999px;
+  background: var(--track);
+  overflow: hidden;
+  box-shadow: var(--sheen);
+}
+.meter .fill {
+  height: 100%;
+  background: linear-gradient(180deg, #7fd6a4, var(--ok));
+  transition: width 220ms ease;
+}
+.meter.warn .fill {
+  background: linear-gradient(180deg, #e6cf7c, var(--warn));
+}
+.meter.hot .fill {
+  background: linear-gradient(180deg, #d99a9a, var(--danger));
+}
+
+.stage {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--rail-w);
+  min-height: 0;
+}
+
+/* Two levels, small enough to sit in a corner of either screen. */
+.mixer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.vol {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* Light or dark, both named. A single button showing one word has to mean
+   either the state or the thing it would switch to, and there is no way to tell
+   which; two named buttons with the console-menu ring on the live one cannot be
+   read the wrong way round. */
+.themeset {
+  display: flex;
+  gap: 4px;
+}
+.themeset button {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--fill-2);
+  border: var(--stroke) solid var(--ink);
+  border-radius: 999px;
+  padding: 3px 9px;
+  cursor: pointer;
+}
+.themeset button:hover {
+  color: var(--text);
+}
+.themeset button.on {
+  background: var(--glass-dark);
+  color: var(--chrome-text);
+  border-color: var(--select);
+  box-shadow: var(--sheen);
+}
+
+.vol input[type='range'] {
+  width: 74px;
+  height: 4px;
+  appearance: none;
+  border-radius: 999px;
+  border: 1.5px solid var(--ink);
+  background: linear-gradient(90deg, var(--accent) 0%, rgba(255, 255, 255, 0.7) 100%);
+  cursor: pointer;
+}
+.vol input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--ink);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.vol input[type='range']::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--ink);
+  background: var(--surface);
+}
+/* On the menu the pair sits under the mode tiles rather than in a bar. */
+.setup .mixer {
+  justify-content: center;
+  margin: 2px 0 6px;
+}
+
+/* --- board ----------------------------------------------------------------- */
+
+.board {
+  position: relative;
+  display: grid;
+  grid-template-rows: 1fr auto 1fr;
+  gap: 6px;
+  /* Left padding clears the play-by-play strip on the edge. */
+  padding: 8px 12px 8px 48px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Lit while a targetless spell or a field is mid-drag: drop anywhere to cast. */
+.board.castready {
+  outline: 3px dashed var(--accent);
+  outline-offset: -6px;
+  background: rgba(0, 211, 227, 0.05);
+  border-radius: var(--radius);
+}
+/* The field cell while a field card is mid-drag, and once the ghost has
+   snapped onto it. */
+.stagecell.stagelit .slot-empty,
+.stagecell.stagelit .card {
+  outline: var(--stroke) dashed var(--accent);
+  outline-offset: 3px;
+}
+.stagecell.stagedrop .slot-empty,
+.stagecell.stagedrop .card {
+  outline: var(--stroke-thick) solid var(--accent);
+  outline-offset: 3px;
+  box-shadow: 0 0 16px rgba(0, 211, 227, 0.55);
+}
+
+/* Each side reads like the sketch: debt on the left, the lane in the middle,
+   deck and discard on the right. */
+.side {
+  display: grid;
+  grid-template-columns: calc(var(--cw-board) * 1.02) minmax(0, 1fr) 88px;
+  /* Stretched, not centred, so the supporter well can take the slack under the
+     lane instead of leaving a band of empty board. */
+  align-items: stretch;
+  gap: 6px;
+  min-height: 0;
+}
+.midcol {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+/* Lane and well each take their own height and the slack is left over, rather
+   than the well swallowing it: given a 1fr track on a tall viewport the band
+   grew past 120px with a 38px card floating in the middle of it. The slack sits
+   between the two, which pushes each side's lane up against the divider and its
+   well out to the edge of the board, next to the hand that feeds it. */
+.side.mine .midcol,
+.side.theirs .midcol {
+  grid-template-rows: auto auto;
+  align-content: space-between;
+}
+.zonecol {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  min-height: 0;
+}
+.zonecol {
+  align-content: center;
+}
+.zlabel {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: center;
+}
+.zempty,
+.zmore {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* The debt zone: a consecutive stack of card tops, name and level peeking out. */
+.debtzone {
+  width: 106px;
+  display: grid;
+  gap: 3px;
+}
+.debtstack {
+  display: flex;
+  flex-direction: column;
+}
+.debtcard {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 1px 5px 3px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.06) 55%, rgba(0, 0, 0, 0.18) 100%),
+    var(--dc, #888);
+  border: 1.5px solid var(--ink);
+  border-radius: 6px 6px 0 0;
+  margin-bottom: -4px;
+  box-shadow: 0 2px 3px rgba(19, 34, 39, 0.3);
+  cursor: pointer;
+  transition: transform 90ms ease;
+}
+.debtcard:hover {
+  transform: translateY(-3px);
+}
+.debtcard .dlv {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.42);
+  border-radius: 3px;
+  padding: 0 3px;
+  flex: none;
+}
+.debtcard .dnm {
+  font-size: 9.5px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.65);
+}
+
+/* Deck and discard, drawn as the piles they are. */
+.piles {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+}
+.pile {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+}
+.minicard {
+  position: relative;
+  width: 54px;
+  height: 76px;
+  border-radius: 5px;
+}
+.minicard.back.stacked {
+  box-shadow:
+    1.5px 2px 0 #5ed7ea,
+    3px 4px 0 #85e5f8,
+    4.5px 6px 0 rgba(0, 0, 0, 0.45);
+}
+.minicard.hollow {
+  border: 1.5px dashed var(--edge);
+  background: var(--fill-1);
+  box-shadow: none;
+}
+.minicard.face {
+  filter: drop-shadow(1px 1.5px 0 rgba(0, 0, 0, 0.4));
+  cursor: pointer;
+}
+.minicard.face:hover {
+  transform: scale(1.6);
+  z-index: 40;
+}
+.pilecount {
+  position: absolute;
+  top: -7px;
+  right: -9px;
+  z-index: 2;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 16px;
+  text-align: center;
+  padding: 0 4px;
+  border-radius: 999px;
+  border: 1.5px solid var(--ink);
+  background: var(--glass);
+  color: var(--accent);
+  box-shadow: var(--sheen);
+}
+
+/* What the next deck-out will cost, shown once the deck is nearly gone. Sits
+   on the opposite corner from the count so the two never collide. */
+.pilewarn {
+  position: absolute;
+  bottom: -7px;
+  left: -9px;
+  z-index: 2;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 16px;
+  text-align: center;
+  padding: 0 4px;
+  border-radius: 999px;
+  border: 1.5px solid var(--ink);
+  background: var(--debt, #f64400);
+  color: #020421;
+  box-shadow: var(--sheen);
+}
+.pile-low .minicard.hollow {
+  border-color: var(--debt, #f64400);
+}
+
+/* A card in flight from the deck to the hand. Fixed to the viewport because it
+   crosses out of the board and into the fan in the footer, and sized to the
+   pile it leaves: the flight scales it up to the size it lands at. */
+.drawfly {
+  position: fixed;
+  z-index: 300;
+  pointer-events: none;
+  perspective: 900px;
+  transform-origin: 50% 50%;
+}
+.drawfly .flin {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+}
+.drawfly .fback,
+.drawfly .fface {
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.4);
+}
+/* The face fills the flyer rather than sizing itself, so both faces stay square
+   on top of each other through the turn. */
+.drawfly .card {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+.card.flatcard {
+  box-shadow: none;
+  filter: none;
+  transition: none;
+  cursor: default;
+}
+
+/* --- play-by-play strip ----------------------------------------------------
+   Hearthstone's left-edge history: a tile of card art per log line, hover for
+   the full interaction. */
+.history {
+  position: absolute;
+  left: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  /* Sits over the board rather than inside it: the board clips its overflow and
+     a hover card centred on a tile near either end reaches past that edge. */
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  z-index: 44;
+  width: 36px;
+}
+.histile {
+  position: relative;
+  pointer-events: auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 7px;
+  border: 2px solid var(--ink-soft);
+  background: var(--panel-2);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.histile.mine {
+  border-color: var(--accent);
+}
+.histile.theirs {
+  border-color: var(--danger);
+}
+.hisart {
+  position: absolute;
+  inset: 0;
+  border-radius: 5px;
+  background-size: cover;
+  background-position: center 25%;
+}
+.hisart.plain {
+  display: grid;
+  place-content: center;
+  color: var(--muted);
+  font-size: 16px;
+}
+.histpop {
+  display: none;
+  position: absolute;
+  left: 40px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 80;
+  width: 216px;
+  padding: 9px;
+  background: var(--panel);
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lift);
+}
+.histile:hover {
+  border-width: 3px;
+}
+.histile:hover .histpop {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+.histpop .card {
+  --cw: 132px;
+  cursor: default;
+}
+.histpop p {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--text);
+  text-align: center;
+}
+
+/* --- the turn button, parked on the right edge the way Hearthstone does ---
+   Dim at rest, a small glow under the pointer, and green once the turn is
+   spent. Its centering transform is pinned on hover/active so the generic
+   button lift can never shove it down the screen. */
+.endturn {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 46;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  /* Fixed, not a floor: the label changes between End Turn, Enemy Turn and
+     Waiting, and a pill that resizes itself every time the turn passes reads as
+     something happening rather than the same button saying something else. Wide
+     enough for the longest of the three. */
+  width: var(--endturn-w);
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: var(--stroke-thick) solid var(--ink);
+  color: var(--muted);
+  opacity: 0.82;
+  transition:
+    box-shadow 150ms ease,
+    filter 150ms ease,
+    opacity 150ms ease;
+}
+.endturn:hover:not(:disabled),
+.endturn:active:not(:disabled) {
+  transform: translateY(-50%);
+}
+.endturn:disabled {
+  opacity: 0.65;
+}
+.endturn.ready {
+  color: var(--accent);
+}
+.endturn.ready:hover {
+  opacity: 1;
+  filter: brightness(1.05);
+  box-shadow:
+    var(--sheen),
+    0 0 14px rgba(0, 211, 227, 0.45),
+    var(--shadow);
+}
+.endturn.alldone {
+  background: linear-gradient(180deg, #dcf8e7 0%, #7fd6a4 46%, #41a06f 54%, #a8e7c5 100%);
+  color: #0b3a20;
+  opacity: 1;
+  box-shadow:
+    var(--sheen),
+    0 0 0 3px rgba(45, 128, 93, 0.28),
+    0 0 14px rgba(45, 128, 93, 0.5),
+    var(--shadow);
+  animation: endpulse 2s ease-in-out infinite;
+}
+.endturn.alldone:hover {
+  box-shadow:
+    var(--sheen),
+    0 0 0 3px rgba(71, 207, 121, 0.38),
+    0 0 22px rgba(71, 207, 121, 0.7),
+    var(--shadow);
+}
+@keyframes endpulse {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.07);
+  }
+}
+
+.lane {
+  display: grid;
+  grid-auto-flow: column;
+  align-items: start;
+  justify-content: center;
+  gap: 14px;
+}
+
+/* Each unit keeps the same footprint whether or not something is standing in it. */
+.unit {
+  position: relative;
+  width: calc(var(--cw-board) + 30px);
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+.unit .caption {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  height: 12px;
+}
+
+.slot-empty {
+  width: var(--cw-board);
+  height: calc(var(--cw-board) * var(--card-ratio));
+  border: var(--stroke) dashed var(--edge);
+  border-radius: var(--radius);
+  background: var(--sunk);
+  display: grid;
+  place-content: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.slot-empty.droppable {
+  border-color: var(--accent);
+  border-style: solid;
+  background: rgba(0, 211, 227, 0.14);
+  color: var(--accent);
+}
+
+/* The HP fan is a fixed-height strip so a summon losing cards never reflows.
+   Every HP point is a real card: face down until damage turns it over. */
+.hpfan {
+  height: calc(var(--hpw) * var(--card-ratio) + 4px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  width: 100%;
+  position: relative;
+}
+/* A hard stop under the measured spacing above. The step is worked out from what
+   is already on screen, so on the very first paint of a match there is nothing to
+   measure and it takes a fallback meant for a full-size board. That frame is the
+   only one that can be wrong, and one body's HP bleeding over the next is worse
+   than a few pixels of it being clipped. */
+.hpfan {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.hpmini {
+  position: relative;
+  width: var(--hpw);
+  height: calc(var(--hpw) * var(--card-ratio));
+  flex: none;
+  border-radius: 4px;
+}
+.hpmini + .hpmini {
+  margin-left: calc(var(--step, 16px) - var(--hpw));
+}
+/* The shared card back, drawn art rather than a gradient. It carries its own
+   edge and corners, so no border goes on top of it; the shadow underneath is
+   what gives the stock its thickness. --cardback is set from main.ts, which is
+   the only place that knows the deployed base path. */
+.hpmini.back,
+.minicard.back,
+.fback {
+  background: var(--cardback) center / 100% 100% no-repeat;
+  border-radius: 3px;
+  box-shadow: 1px 1.5px 0 rgba(148, 236, 253, 0.75);
+}
+.hpmini .hart,
+.minicard .hart {
+  position: absolute;
+  left: 4.2%;
+  top: 10.7%;
+  width: 91.2%;
+  height: 46.7%;
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+.hpmini .hframe,
+.minicard .hframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.hpmini.face {
+  filter: drop-shadow(1px 1.5px 0 rgba(0, 0, 0, 0.4));
+}
+.hpmini.face:hover {
+  transform: translateY(-6px) scale(1.7);
+  z-index: 40;
+}
+/* Damage flips the card over in place. */
+.hpmini.flipnow {
+  perspective: 300px;
+  z-index: 5;
+}
+.hpmini.flipnow .flin {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  /* Held until the blow lands, and until any wound tokens have finished
+     resolving into it. A clash used to be the only thing that pushed this back,
+     so the delay was set alongside .board.smacking; --fxd now carries both. */
+  animation: hpflip 520ms ease var(--fxd, 0ms) forwards;
+}
+.flin .fback,
+.flin .fface {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  border-radius: 4px;
+}
+.flin .fface {
+  transform: rotateY(180deg);
+}
+@keyframes hpflip {
+  from {
+    transform: rotateY(0);
+  }
+  to {
+    transform: rotateY(180deg);
+  }
+}
+/* The card waiting on a costed flip decision glows until it is settled. */
+.hpmini.flipglow {
+  z-index: 6;
+}
+.hpmini.flipglow::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 6px;
+  border: 2px solid #ffd34d;
+  box-shadow: 0 0 12px rgba(255, 195, 26, 0.85);
+  animation: hum 0.9s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.divider {
+  height: 0;
+  border-top: var(--stroke) solid var(--hairline-2);
+  position: relative;
+}
+
+/* --- supporters ------------------------------------------------------------ */
+
+/* The supporter area is a well, not a row that shrinks to fit its contents.
+   Once the first supporter is down the cells are only 25px each, and a drop
+   target that narrow is hard to hit, so the whole band under the lane takes the
+   drop. It sits dimmed and open toward the board, which casts down into it. */
+.supportrow {
+  position: relative;
+  /* Narrow enough to read as a well rather than a stripe across the board, wide
+     enough to stay an easy drop target, and exactly tall enough to hold a card
+     lying down.
+
+     A supporter grows with the viewport the way board cards do, but it cannot be
+     a plain vh ratio: at 720 the lane has already spent the height budget and
+     leaves the well about 42px, while a tall screen has room for double that. So
+     it interpolates between those two ends and stops.
+
+     A wide window is the case the interpolation gets wrong: the lane grows with
+     it too and takes its share first, so the well asks for more than is left and
+     the board crops what does not fit. --well-room is what the lane actually
+     left, measured after layout, and the well takes whichever is smaller. */
+  --sw: clamp(38px, min(calc(38px + (100vh - 720px) * 0.136), var(--well-room, 80px)), 80px);
+  width: 74%;
+  margin: 0 auto;
+  height: calc(var(--sw) + 6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  /* Only the left rim carries a label, so only that side has to be kept clear
+     of it; the right keeps a plain margin. */
+  padding: 2px 14px 2px 84px;
+  background: linear-gradient(180deg, var(--well-1) 0%, var(--well-2) 45%, var(--well-3) 100%);
+  transition:
+    background 120ms ease,
+    box-shadow 120ms ease;
+}
+.side.mine .supportrow {
+  border-radius: 18px 18px 5px 5px;
+  box-shadow:
+    inset 0 11px 15px -8px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+/* The same well the other way up, since their lane sits below their row. */
+.side.theirs .supportrow {
+  border-radius: 5px 5px 18px 18px;
+  background: linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.3) 0%,
+    rgba(0, 0, 0, 0.16) 45%,
+    rgba(0, 0, 0, 0.07) 100%
+  );
+  box-shadow:
+    inset 0 -11px 15px -8px rgba(0, 0, 0, 0.55),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+}
+/* Named on the left rim, out of the way of the cells in the middle. */
+.supportlabel {
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+/* Lit while a hand card that could be faced as a supporter is mid-drag. */
+.supportrow.droppable {
+  outline: var(--stroke) dashed var(--accent);
+  outline-offset: -3px;
+  background: rgba(0, 211, 227, 0.14);
+}
+/* The card is over the well: this drop faces it as a supporter. */
+.supportrow.supportdrop {
+  outline: var(--stroke-thick) solid var(--accent);
+  outline-offset: -3px;
+  background: rgba(0, 211, 227, 0.24);
+  box-shadow:
+    inset 0 11px 15px -8px rgba(0, 0, 0, 0.45),
+    0 0 18px rgba(0, 211, 227, 0.55);
+}
+/* A supporter is the card itself, lying down. Rotation does not move layout, so
+   the cell claims the footprint the card has once it is turned: its height
+   becomes the cell's width and its width the cell's height. */
+.support {
+  position: relative;
+  flex: none;
+  width: calc(var(--sw) * var(--card-ratio));
+  height: var(--sw);
+  margin-right: calc(var(--soverlap, 0) * var(--sw));
+  cursor: pointer;
+}
+.support:last-of-type {
+  margin-right: 0;
+}
+.support .card {
+  --cw: var(--sw);
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) rotate(90deg);
+  transform-origin: 50% 50%;
+  transition:
+    transform 160ms ease,
+    filter 160ms ease;
+}
+/* Spent, it taps further over, the way a tapped land leans past its resting
+   angle. It shrinks a touch as it goes so the turned corners stay inside the
+   well rather than reaching up into the lane. */
+.support.sapped .card {
+  /* Any angle off 90 grows the bounding box, so the tap leans just far enough to
+     read and shrinks as it goes, keeping the turned corners inside the well. */
+  transform: translate(-50%, -50%) rotate(106deg) scale(0.82);
+  /* The stock shadow is restated because filter replaces rather than adds, and
+     a spent card that lost it would read as printed onto the well. */
+  filter: grayscale(0.65) brightness(0.82) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.32));
+}
+.support.mine:hover {
+  z-index: 60;
+}
+.support.mine:hover .card {
+  transform: translate(-50%, -50%) rotate(90deg) scale(1.5);
+}
+.support.mine.sapped:hover .card {
+  transform: translate(-50%, -50%) rotate(106deg) scale(1.3);
+}
+
+.manapool {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  margin-left: 8px;
+  letter-spacing: 0.05em;
+}
+.pip-P {
+  color: var(--c-P);
+}
+.pip-O {
+  color: var(--c-O);
+}
+/* Mana reads lime rather than the frame's darker green, which sank into the
+   ink outline. */
+.pip-R {
+  color: #7ed321;
+}
+.pip-F {
+  color: var(--c-F);
+}
+.pip-S {
+  color: var(--c-S);
+}
+/* Colourless pips: any mana pays them, so they stay grey. */
+.pip-C {
+  color: #a9b4ba;
+}
+/* An ink outline keeps every pip legible on any ground, pale yellow included. */
+.pip-P,
+.pip-O,
+.pip-R,
+.pip-F,
+.pip-S,
+.pip-C {
+  letter-spacing: 0.08em;
+  text-shadow:
+    -1px -1px 0 var(--ink),
+    1px -1px 0 var(--ink),
+    -1px 1px 0 var(--ink),
+    1px 1px 0 var(--ink),
+    0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+/* Pips drawn from the art pack. Sized off the surrounding text so a cost scales
+   with the card it is printed on, the same way the bullets did. A cost sits in
+   running text next to a name or a rules line, so the pips ride the baseline
+   rather than forming a row of their own. */
+.pipart {
+  white-space: nowrap;
+  letter-spacing: 0;
+  text-shadow: none;
+}
+.pipart img {
+  width: 1.05em;
+  height: 1.05em;
+  vertical-align: -0.18em;
+  margin-right: 0.06em;
+  /* The art carries its own outline, so it needs no help staying legible, but a
+     shadow keeps it sitting on the card rather than floating over it. */
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.4));
+}
+.pipart img:last-child { margin-right: 0; }
+
+/* --- the card itself ------------------------------------------------------- */
+
+.card {
+  --cw: var(--cw-board);
+  position: relative;
+  width: var(--cw);
+  height: calc(var(--cw) * var(--card-ratio));
+  flex: none;
+  border-radius: calc(var(--cw) * 0.055);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-drag: none;
+  /* A sliver of card-edge under the right and bottom, so it reads as stock
+     with thickness rather than a printed rectangle. */
+  box-shadow:
+    1px 1.5px 0 rgba(57, 68, 97, 0.9),
+    2px 3px 0 rgba(116, 126, 151, 0.75);
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.32));
+  transition:
+    transform 120ms ease,
+    filter 120ms ease;
+}
+/* Playable this turn: the mana is there and so is somewhere legal to put it.
+   Drawn on the card's own edge rather than under it, so the card reads as lit
+   rather than as floating: a hard bright rim right on the border, the same light
+   spilling a little way onto the face, and a bloom outside it. Green rather than
+   the accent ring a target wears, since this is a card you may play rather than
+   a card something may be played on.
+
+   The targetable ring owns ::after already and means more than this does, so a
+   hand card that is somebody's target keeps that ring instead. */
+.handrail .card.playable:not(.targetable):not(.attackable)::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: calc(var(--cw) * 0.055 + 2px);
+  pointer-events: none;
+  box-shadow:
+    inset 0 0 0 2px rgba(163, 255, 176, 0.95),
+    inset 0 0 10px rgba(72, 232, 128, 0.7),
+    0 0 8px 1px rgba(64, 226, 118, 0.85),
+    0 0 20px 5px rgba(38, 190, 92, 0.5);
+}
+
+/* A hand card riding the cursor mid-drag hides its copy in the fan. */
+.card.ghosted {
+  opacity: 0;
+  pointer-events: none;
+}
+/* The seat a card is still flying towards, and the HP it will bring with it. */
+.inflight,
+.inflight ~ .hpfan {
+  visibility: hidden;
+}
+/* The clone that follows the pointer: lifted, shadowed, tilting with motion. */
+.dragghost {
+  filter: drop-shadow(0 16px 24px rgba(0, 0, 0, 0.5)) !important;
+}
+/* A dragged spell hanging over a spot that would cast it. */
+.dragghost.castglow {
+  filter: drop-shadow(0 16px 24px rgba(19, 34, 39, 0.5))
+    drop-shadow(0 0 16px rgba(0, 186, 233, 0.95)) brightness(1.07) !important;
+}
+/* And over the middle of the table, where a spell with nobody to hit goes: the
+   same glow turned up, so letting go there reads as a decision. */
+.dragghost.castglow.castmid {
+  filter: drop-shadow(0 18px 26px rgba(19, 34, 39, 0.5))
+    drop-shadow(0 0 34px rgba(0, 186, 233, 1)) brightness(1.2) !important;
+}
+/* Pulled clear of the hand with targets still to pick: the card flashes in the
+   colour of the arrow it is about to hand you. The ring is drawn as a shadow
+   rather than a filter, because the ghost's filter is spoken for. */
+.dragghost.aiming {
+  animation: aimflash 460ms ease-in-out infinite alternate;
+}
+@keyframes aimflash {
+  from {
+    box-shadow:
+      0 0 0 3px rgba(216, 168, 0, 0.8),
+      0 0 18px rgba(216, 168, 0, 0.6);
+  }
+  to {
+    box-shadow:
+      0 0 0 6px rgba(216, 168, 0, 0.98),
+      0 0 34px rgba(216, 168, 0, 0.95);
+  }
+}
+/* Mid-drag, the cards left behind must not zoom, tip or tooltip under the
+   ghost's path. */
+body.dragging .handrail .card,
+body.dragging .bookgrid .card {
+  pointer-events: none;
+}
+.card .art,
+.card .frame {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+  image-rendering: auto;
+}
+.card .art {
+  left: 4.1667%;
+  top: 10.7143%;
+  width: 91.25%;
+  height: 46.7262%;
+  /* Painted out of the colour sheet, so this box has to carry the cell's own
+     proportions, and it does: 91.25% by 46.7262% of a 240x336 card is 219x157. */
+  background-repeat: no-repeat;
+}
+.card .frame {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+/* The rarity gem is drawn on a full card canvas, so it overlays the frame at
+   the same size and lands where it was drawn. The card's stock casts a hard
+   shadow down and to the right; the stone casts the same one at its own scale,
+   so it reads as set into the frame rather than stuck on top of it. */
+.card .gem {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  /* Resampled smoothly like the art and the frame: the stone is 24px wide on a
+     canvas that is nearly always drawn smaller than it, and nearest-neighbour
+     would drop pixels out of a one-pixel outline. */
+  image-rendering: auto;
+  filter:
+    drop-shadow(calc(var(--cw) * 0.006) calc(var(--cw) * 0.009) 0 rgba(0, 0, 0, 0.55))
+    drop-shadow(0 calc(var(--cw) * 0.006) calc(var(--cw) * 0.01) rgba(0, 0, 0, 0.4));
+}
+.card .txt {
+  position: absolute;
+  color: #fff;
+  pointer-events: none;
+  overflow: hidden;
+  font-family: var(--font-ui);
+  line-height: 1.05;
+}
+/* Every slot below is a percentage of the 240x336 frame, measured off the art. */
+.card .name {
+  left: 32.625%;
+  top: 2.95%;
+  /* Stops short of the printed divider before the HP badge, which the frame art
+     puts at 77.1%: text that merely fits the box still reads as touching it. */
+  width: 43.3%;
+  height: 6.5%;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: calc(var(--cw) * var(--nf, 0.078));
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+}
+.card.spellframe .name {
+  left: 5.95%;
+  /* The cost badge starts at 57.5%, so the plate stops short of that instead. */
+  width: 49%;
+}
+/* The spell frame carries no badges, so its cost sits at the banner's end,
+   given room and an outline so the pips actually read. */
+.card.spellframe .cost {
+  left: 57.5%;
+  top: 2.2%;
+  width: 36.5%;
+  height: 7.6%;
+  font-size: calc(var(--cw) * 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  overflow: visible;
+}
+/* Level sits in the printed tab at the top left. The badge boxes stay open
+   (no overflow clipping) so tall digits keep their tops and tails. */
+.card .level {
+  left: 2.5%;
+  top: 4.4%;
+  width: 25%;
+  height: 7.4%;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: calc(var(--cw) * 0.1);
+  line-height: 1;
+  display: grid;
+  place-content: center;
+  overflow: visible;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+}
+.card .hp {
+  left: 83.3%;
+  top: 2.1%;
+  width: 13.3%;
+  height: 8%;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: calc(var(--cw) * 0.09);
+  line-height: 1;
+  display: grid;
+  place-content: center;
+  overflow: visible;
+}
+/* Strength lives in the printed circle at the bottom right of the text box. */
+.card .strength {
+  left: 79.17%;
+  top: 84.4%;
+  width: 15.83%;
+  height: 11.31%;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: calc(var(--cw) * 0.13);
+  line-height: 1;
+  display: grid;
+  place-content: center;
+  overflow: visible;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+/* Numbers pushed off their printed values: green above, red below. */
+.card .txt.buff {
+  color: #8dffab;
+  text-shadow:
+    0 0 6px rgba(20, 130, 60, 0.95),
+    0 1px 2px rgba(0, 0, 0, 0.65);
+}
+.card .txt.debuff {
+  color: #ff9a8f;
+  text-shadow:
+    0 0 6px rgba(140, 20, 20, 0.95),
+    0 1px 2px rgba(0, 0, 0, 0.65);
+}
+.card .rules {
+  left: 5.83%;
+  top: 60.7%;
+  width: 87.5%;
+  height: 30%;
+  font-size: calc(var(--cw) * var(--rf, 0.05));
+  line-height: 1.16;
+  color: rgba(255, 255, 255, 0.94);
+}
+/* With a flip line printed underneath, the rules block stops short of it. */
+.card .rules.short {
+  height: 22%;
+}
+.card.spellframe .rules {
+  height: 31.4%;
+}
+/* No flip line means no flip bar, and the rules run deeper into the box. They
+   stop at the top of the two-row footer rather than running under it. */
+.card .rules.deep {
+  height: 31.4%;
+}
+.card.spellframe .rules.deepspell {
+  height: 31.4%;
+}
+/* Reserves the printed attack circle's corner so deep text wraps around it. */
+/* Keeps the rules out of the printed attack circle, and out of no more than
+   that. The circle reaches into the box at 83.8% across and 75.5% down, measured
+   off the frame, so reserving from 80% and 64% was giving away a band of usable
+   line above it. Held a little clear of both so text never touches the ring. */
+.card .rules .atkspace {
+  float: right;
+  width: 17%;
+  height: 100%;
+  shape-outside: polygon(0 73%, 100% 73%, 100% 100%, 0 100%);
+}
+.card .rules .fac {
+  display: block;
+  color: rgba(255, 255, 255, 0.5);
+  font-style: italic;
+  font-size: 0.92em;
+}
+.card .rules .pw {
+  display: block;
+  margin-top: 0.25em;
+}
+/* Where a minted card came from, rather than anything it does. Fainter and a
+   touch smaller than the faction line above it, so two italic lines in a row
+   still read as two different kinds of thing. */
+.card .rules .note {
+  display: block;
+  color: rgba(255, 255, 255, 0.42);
+  font-style: italic;
+  font-size: 0.86em;
+}
+/* Layered rules: each half of a graft or a fusion keeps its own paragraph
+   instead of running into the next one. */
+.card .rules .para {
+  display: block;
+}
+.card .rules .para + .para {
+  margin-top: 0.25em;
+}
+.card .rules .pwname {
+  font-weight: 700;
+}
+/* Battlecry and Deathrattle carry their own colours so they never read as powers. */
+.card .rules .kw-bc {
+  color: #ffb84d;
+  font-weight: 700;
+}
+.card .rules .kw-dr {
+  color: #c9a0ff;
+  font-weight: 700;
+}
+.card .kw-st {
+  color: #ff9b8a;
+  font-weight: 700;
+}
+/* Mechanic keywords read as rules, not prose. */
+.card .kw-b {
+  font-weight: 700;
+}
+/* A card this one names. The hover glossary defines it under the keywords. */
+.cardref {
+  font-style: italic;
+}
+/* The prompt sits on the felt now, so it takes the card's own keyword colours. */
+.prompt .kw-bc {
+  color: #ffb84d;
+  font-weight: 700;
+}
+.prompt .kw-dr {
+  color: #c9a0ff;
+  font-weight: 700;
+}
+.prompt .kw-st {
+  color: #ff9b8a;
+  font-weight: 700;
+}
+.prompt .kw-b {
+  font-weight: 700;
+}
+
+/* The debt pile laid out inside a targeting prompt, since it has no board presence. */
+.debtpick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  max-height: 46vh;
+  overflow-y: auto;
+  margin: 10px 0;
+}
+.debtpick .card {
+  --cw: 110px;
+}
+
+/* Sapping as part of a power's cost, printed beside the mana pips. */
+.card .rules .sappip,
+.prompt .sappip {
+  font-weight: 700;
+  font-size: 1.15em;
+  vertical-align: 0.5px;
+}
+
+/* The hover glossary: keyword definitions and cards named on the card. */
+#cardtip {
+  position: fixed;
+  z-index: 90;
+  width: 286px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: var(--stroke) solid var(--edge);
+  background: var(--panel);
+  box-shadow: 0 6px 18px rgba(13, 26, 31, 0.18);
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+#cardtip.show {
+  opacity: 1;
+}
+#cardtip .tiprow {
+  margin-bottom: 5px;
+}
+#cardtip .tiprow b {
+  color: var(--accent, #00d3e3);
+}
+#cardtip .tiphead {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 7px 0 4px;
+}
+.card .rules .cost {
+  font-family: var(--font-mono);
+  letter-spacing: 0.08em;
+  background: rgba(0, 0, 0, 0.38);
+  border-radius: 4px;
+  padding: 0 3px 1px;
+}
+/* Artist, collector number and rarity, printed small in the bottom-left. */
+.card .cardfoot {
+  left: 6%;
+  /* The printed rules panel ends at 93.2% and the frame's bottom rim runs from
+     there to 97.1%, which is where the art prints its own ATTACK in white. The
+     credit line lives in that rim: sized to clear the panel above it, and kept
+     clear of ATTACK, which starts at 62%. */
+  bottom: 2.7%;
+  width: 54%;
+  height: 3.2%;
+  font-family: var(--font-mono);
+  font-size: calc(var(--cw) * 0.021);
+  color: #fff;
+  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-end;
+  line-height: 1.05;
+}
+/* The artist and the imprint sit under the collector line rather than beside it,
+   in the same plain white: greyed and shadowed, the line read as smudged. */
+.card .flipbar {
+  position: absolute;
+  left: 4.17%;
+  /* 282px down the 336px reference frame. */
+  top: 83.93%;
+  width: 91.25%;
+  height: 1.8%;
+  pointer-events: none;
+  object-fit: fill;
+}
+/* Stops short of the strength circle rather than running underneath it. */
+.card .fliptext {
+  left: 5.83%;
+  top: 85.7%;
+  width: 71.67%;
+  height: 7.4%;
+  font-size: calc(var(--cw) * var(--ffs, 0.046));
+  line-height: 1.12;
+  color: rgba(255, 255, 255, 0.92);
+}
+.card .fliptext .fliplabel {
+  font-weight: 700;
+}
+/* The flip's mana price, as pips in the same pill the power costs wear. */
+.card .fliptext .flipcost {
+  font-family: var(--font-mono);
+  letter-spacing: 0.08em;
+  background: rgba(0, 0, 0, 0.38);
+  border-radius: 4px;
+  padding: 0 3px 1px;
+}
+
+.card.sapped {
+  transform: rotate(7deg);
+  filter: grayscale(0.55) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+/* Hovering a board card pulls it into focus, zoomed enough to read. */
+.unit .card:hover {
+  transform: scale(1.32);
+  z-index: 35;
+  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.45));
+}
+.unit .card.sapped:hover {
+  transform: rotate(7deg) scale(1.25);
+  filter: grayscale(0.55) drop-shadow(0 10px 18px rgba(0, 0, 0, 0.45));
+}
+.card.selected {
+  transform: translateY(-6px) scale(1.03);
+  filter: drop-shadow(0 0 0 2px var(--accent)) drop-shadow(0 10px 16px rgba(0, 211, 227, 0.4));
+}
+.card.targetable::after,
+.card.attackable::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: calc(var(--cw) * 0.075);
+  border: var(--stroke-thick) solid var(--accent);
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.85),
+    0 0 18px rgba(0, 93, 118, 0.55);
+  animation: hum 1.1s ease-in-out infinite;
+  pointer-events: none;
+}
+.card.attackable::after {
+  border-color: var(--danger);
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.85),
+    0 0 18px rgba(157, 76, 76, 0.6);
+}
+@keyframes hum {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.card.dimmed {
+  filter: grayscale(0.75) brightness(0.88) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+  opacity: 0.7;
+}
+
+/* --- keyword and status overlays on the card itself ------------------------ */
+
+.card .overlay {
+  position: absolute;
+  pointer-events: none;
+}
+/* The Power Shield bubble wraps the whole body, Hearthstone-fashion. */
+.card .shieldfx {
+  inset: 1%;
+  width: 98%;
+  height: 98%;
+  opacity: 0.62;
+}
+/* Loose tokens dropped on the art rather than printed into the card. They live
+   in the art window because the bottom of the card is text: the rules box runs
+   to 92% and the imprint line sits under that. Each is drawn square, so only the
+   width is set and the height follows, and the lean comes from the placer. */
+.card .token {
+  width: 21%;
+  height: auto;
+  transform: rotate(var(--tilt, 0deg));
+  /* A token rests on the card rather than being printed into it, so it casts its
+     own shadow. drop-shadow rather than box-shadow because the art is a cut-out
+     and the shadow has to follow its edge, not its bounding box. The offsets are
+     taken off the card's own width so the token reads the same in the hand, on
+     the table and zoomed. */
+  filter: drop-shadow(
+    calc(var(--cw) * 0.014) calc(var(--cw) * 0.022) calc(var(--cw) * 0.018) rgba(19, 34, 39, 0.5)
+  );
+}
+/* How many Power Shields are stacked, read straight off the bubble rather than
+   pinned to the card's edge as a pill. The bubble's own centre is 49.4% across
+   and down, not 50%, so the numeral is placed on that rather than on the card.
+   Bright green and only slightly see-through, over a dark halo: the bubble it
+   sits on is itself bright green, so the numeral needs the dark edge to separate
+   from it and from whatever art is showing underneath.
+   Sized off the card's width so it scales with every place a card is drawn. */
+.card .shieldn {
+  position: absolute;
+  left: 49.4%;
+  top: 49.4%;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-mono);
+  font-size: calc(var(--cw) * 0.34);
+  font-weight: 700;
+  line-height: 1;
+  color: rgba(138, 255, 66, 0.92);
+  text-shadow:
+    0 0 calc(var(--cw) * 0.03) rgba(4, 30, 12, 0.85),
+    0 calc(var(--cw) * 0.008) calc(var(--cw) * 0.012) rgba(4, 30, 12, 0.6);
+  pointer-events: none;
+}
+/* The Deathrattle skull sits at the bottom of its card-shaped overlay. */
+.card .rattlefx {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+/* Buffs shimmer: soft sparkles that breathe in and out. */
+.card .sparkles,
+.card .blight {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: inherit;
+}
+.card .sparkles i {
+  position: absolute;
+  width: calc(var(--cw) * 0.08);
+  height: calc(var(--cw) * 0.08);
+  background: var(--buff-sparkle) center / contain no-repeat;
+  opacity: 0;
+  /* Placed and paced by the script, off the body's own seed. --fxnow is the
+     time as a negative delay: a card rebuilt mid-breath picks the breath back
+     up rather than starting it again. */
+  animation: sparkle var(--ms, 2.6s) ease-in-out infinite;
+  animation-delay: calc(var(--fxnow, 0ms) + var(--md, 0s));
+}
+@keyframes sparkle {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+/* Debuffs fester: orbs that fade in and out, placed and paced the same way. */
+.card .blight i {
+  position: absolute;
+  width: calc(var(--cw) * 0.1);
+  height: calc(var(--cw) * 0.1);
+  background: var(--debuff-orb) center / contain no-repeat;
+  opacity: 0;
+  animation: blight var(--ms, 3s) ease-in-out infinite;
+  animation-delay: calc(var(--fxnow, 0ms) + var(--md, 0s));
+}
+@keyframes blight {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+/* The card inside the flip prompt, its flip line lit while the offer stands. */
+.flipprompt .card {
+  --cw: 132px;
+  cursor: default;
+}
+.flipfocus .fliptext {
+  background: rgba(255, 195, 26, 0.22);
+  border-radius: 3px;
+}
+.flipfocus .fliptext,
+.flipfocus .flipbar {
+  animation: flipglowpulse 1.1s ease-in-out infinite;
+}
+@keyframes flipglowpulse {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px rgba(255, 195, 26, 0.5));
+  }
+  50% {
+    filter: drop-shadow(0 0 8px rgba(255, 195, 26, 1));
+  }
+}
+.card.facedown .art,
+.card.facedown .txt {
+  display: none;
+}
+.card.facedown {
+  background:
+    repeating-linear-gradient(
+      45deg,
+      rgba(255, 255, 255, 0.07) 0 6px,
+      rgba(255, 255, 255, 0) 6px 12px
+    ),
+    linear-gradient(180deg, #26326e 0%, #1b2554 50%, #131b40 100%);
+  border: var(--stroke-thick) solid var(--ink);
+}
+
+/* --- hand ------------------------------------------------------------------ */
+
+.hand {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 6px;
+  background: linear-gradient(180deg, transparent 0%, var(--fill-2) 70%);
+  border-top: var(--stroke-thick) solid var(--ink);
+  z-index: 30;
+}
+.handrail {
+  position: relative;
+  /* Lined up with the lane, which is not the middle of the window. */
+  transform: translateX(var(--hand-shift, 0px));
+  height: calc(var(--cw-hand) * var(--card-ratio));
+  display: flex;
+  align-items: flex-end;
+}
+/* Overlap keeps the row the same width no matter how many cards are held. */
+.handrail .card {
+  --cw: var(--cw-hand);
+  margin-right: var(--overlap, -46px);
+  transform-origin: 50% 120%;
+  /* --fx is where this card sat before the hand changed size, handed back by
+     slideFan for the card to travel from.
+
+     The turn and the dip are per card, so left alone a long hand bends itself
+     into a half circle and stands its end cards on their corners, which is
+     where a strip is hardest to land on. Both steps come down once the hand is
+     long enough to spend the whole arc, so eight cards and twenty describe the
+     same curve. */
+  transform: translateX(var(--fx, 0px))
+    rotate(calc((var(--i) - (var(--n) - 1) / 2) * min(2.1deg, 30deg / max(1, var(--n) - 1))))
+    translateY(calc(abs(var(--i) - (var(--n) - 1) / 2) * min(2px, 26px / max(1, var(--n) - 1))));
+  z-index: calc(var(--i) + 1);
+}
+/* Only while a card is closing the distance, so a hover still lifts at its own
+   pace once the fan has settled. */
+.handrail .card.sliding {
+  transition: transform 260ms cubic-bezier(0.22, 0.9, 0.28, 1);
+}
+.handrail .card:last-child {
+  margin-right: 0;
+}
+.handrail .card:hover {
+  transform: translateX(var(--fx, 0px)) translateY(-66px) scale(1.45);
+  z-index: 200;
+  filter: drop-shadow(0 14px 22px rgba(0, 0, 0, 0.42));
+}
+/* The lift would shove the card out from under a pointer resting near its
+   bottom edge, ending the hover and dropping the card back onto the pointer
+   in a flicker loop. This invisible skirt keeps the raised card's hit area
+   covering where it stood, so a hover holds until the pointer really leaves. */
+.handrail .card:hover::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: -64px;
+}
+.handrail .card.selected {
+  transform: translateX(var(--fx, 0px)) translateY(-70px) scale(1.45);
+  z-index: 210;
+}
+.hand .empty {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  align-self: center;
+}
+.handcount {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* --- rail (log and inspector) ---------------------------------------------- */
+
+.rail {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border-left: var(--stroke-thick) solid var(--ink);
+  background: linear-gradient(180deg, var(--fill-2), var(--fill-1));
+  min-height: 0;
+}
+.inspector {
+  padding: 10px;
+  border-bottom: var(--stroke) solid var(--hairline);
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  /* Held at the card's height so hovering one never resizes the rail; it grows
+     only when there are buff sources to print underneath. */
+  min-height: calc(var(--cw-big) * var(--card-ratio) + 38px);
+  align-content: start;
+}
+.inspector .card {
+  --cw: var(--cw-big);
+  cursor: default;
+}
+/* What is working on the previewed body: one portrait per card, with what it is
+   worth. Sits under the card so a green or red number never stands unexplained. */
+.bsrcrow {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 5px;
+  padding-top: 2px;
+}
+.bsrc {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  border-radius: 6px;
+  border: var(--stroke) solid var(--ink);
+  background: var(--glass);
+  box-shadow: var(--sheen);
+  overflow: hidden;
+}
+.bsrcart {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: 50% 32%;
+}
+.bsrctag {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  padding: 0 3px;
+  border-radius: 5px 0 4px 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #fff;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.6);
+}
+.bsrc.up {
+  border-color: #ff51ab;
+}
+.bsrc.up .bsrctag {
+  background: #ff51ab;
+}
+.bsrc.down {
+  border-color: #ff8a76;
+}
+.bsrc.down .bsrctag {
+  background: #ff8a76;
+}
+.inspector .hint {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  align-self: center;
+}
+/* The credit line moved onto the card itself, and the text log became the
+   play-by-play strip on the board's left edge. */
+
+/* --- prompts, on the board rather than off to one side --------------------- */
+
+/* Held to the upper part of the table rather than the middle of it. A prompt
+   centred on the stage sits across the divider and covers the slots you are
+   being asked to play into, so the answer is under the question. Anchored to the
+   top and given most of the height, a short prompt lands over the other side's
+   half while a tall one still has room to grow down into. */
+.promptlayer {
+  position: absolute;
+  /* Up over the other player's hand, off the board altogether. A panel always
+     covers something, and their fan of card backs is the one thing on screen
+     nobody ever needs to click, where the row of their bodies is the worst,
+     since pointing at those is what a prompt keeps asking for. Sits above the
+     bar rather than inside it, which is why the offset is negative. */
+  inset: calc(8px - var(--enemyhand-h)) 0 auto 0;
+  height: auto;
+  display: grid;
+  /* Anything taller than the bar grows downwards rather than off the top. */
+  place-items: start center;
+  pointer-events: none;
+  z-index: 50;
+}
+.prompt {
+  pointer-events: auto;
+  background: var(--glass);
+  border: var(--stroke-thick) solid var(--ink);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--sheen), var(--shadow-lift);
+  padding: 14px 20px;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  max-width: 460px;
+  text-align: center;
+  /* Over the middle slot, which is the middle of the lane, not the middle of the
+     stage: the rail on one side and the debt gutter on the other push those
+     apart. --hand-shift is that difference, already measured for the fans. */
+  transform: translateX(var(--hand-shift, 0px));
+  animation: pop 160ms ease-out;
+}
+@keyframes pop {
+  from {
+    transform: translateX(var(--hand-shift, 0px)) scale(0.94);
+    opacity: 0;
+  }
+}
+.prompt h2 {
+  font-size: 19px;
+}
+.prompt p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.prompt .row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.prompt.urgent {
+  border-color: var(--danger);
+  box-shadow: var(--sheen), 0 0 0 4px rgba(248, 76, 72, 0.18), var(--shadow-lift);
+}
+
+/* The builder's card inspector. Reading the card is the whole point of the
+   button that opens it, so it takes as much of the viewport as it can while
+   leaving room for the close button under it. Fixed rather than absolute
+   because the book it opens over scrolls, and a card this size would be clipped
+   by the scroller it was measured against. */
+.promptlayer.binspectlayer {
+  position: fixed;
+  /* Middle of the screen, not the top: this one is not aimed past anything. */
+  place-items: center;
+  /* Takes the whole screen back: it is an overlay over the deckbuilder rather
+     than a prompt held above the table. */
+  inset: 0;
+  height: auto;
+  z-index: 120;
+  background: rgba(2, 5, 18, 0.62);
+  pointer-events: auto;
+}
+
+/* A card blown up over the builder is not aimed at a slot, so it keeps the
+   middle of the screen and pops in without the sideways lean. */
+.prompt.binspect {
+  max-width: none;
+  padding: 14px;
+  transform: none;
+  animation: popplain 160ms ease-out;
+}
+@keyframes popplain {
+  from {
+    transform: scale(0.94);
+    opacity: 0;
+  }
+}
+.prompt.binspect .card {
+  --cw: min(48vh, 74vw);
+  cursor: default;
+}
+
+/* The action bar sits at the bottom of the board, always the same height. */
+.actionbar {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--glass);
+  border: var(--stroke) solid var(--ink);
+  border-radius: 999px;
+  box-shadow: var(--sheen), var(--shadow);
+  z-index: 45;
+  white-space: nowrap;
+}
+.actionbar .status {
+  font-size: 12px;
+  color: var(--muted);
+  max-width: 340px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.actionbar .status.error {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* --- attack arrow ---------------------------------------------------------- */
+
+.arrows {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  overflow: visible;
+}
+
+/* A short notice over the table: what just happened to you, rather than
+   something you have to answer. Takes itself away, so it never covers a click. */
+.notice {
+  position: absolute;
+  /* Over the middle slot and clear of the divider, the same place a prompt
+     lands, since the two say the same kind of thing. */
+  left: calc(50% + var(--hand-shift, 0px));
+  top: 31%;
+  transform: translate(-50%, -50%);
+  z-index: 80;
+  pointer-events: none;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 13px 26px;
+  text-align: center;
+  background: var(--glass);
+  border: var(--stroke-thick) solid var(--ink);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--sheen), var(--shadow-lift);
+  animation:
+    noticein 260ms cubic-bezier(0.2, 1.3, 0.4, 1) both,
+    noticeout 400ms ease 2200ms both;
+}
+.notice b {
+  font-family: var(--font-display);
+  font-size: 19px;
+}
+.notice span {
+  font-size: 13px;
+  color: var(--muted);
+}
+/* Debt is the losing clock, so the notice that hands you some carries its colour
+   in the ring rather than in the panel. The title takes the danger colour from
+   the shared .bad utility; the line under it stays muted like any other. */
+.notice.bad {
+  box-shadow:
+    var(--sheen),
+    0 0 0 3px rgba(248, 76, 72, 0.45),
+    var(--shadow-lift);
+}
+@keyframes noticein {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 14px)) scale(0.94);
+  }
+}
+@keyframes noticeout {
+  to {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% - 10px));
+  }
+}
+
+/* --- banner ---------------------------------------------------------------- */
+
+.banner {
+  position: fixed;
+  inset: 0;
+  /* The promptlayer parent is pointer-events: none; opt back in or the
+     New match button cannot be clicked. */
+  pointer-events: auto;
+  background: var(--scrim);
+  backdrop-filter: blur(6px);
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  z-index: 500;
+  text-align: center;
+}
+.banner h2 {
+  font-size: 40px;
+  color: #fff;
+  text-shadow:
+    -2px -2px 0 var(--ink),
+    2px -2px 0 var(--ink),
+    -2px 2px 0 var(--ink),
+    2px 2px 0 var(--ink),
+    0 6px 0 rgba(4, 9, 31, 0.45);
+}
+.banner p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+/* --- setup ----------------------------------------------------------------- */
+
+.setup {
+  /* The #app grid rows are shaped for the game shell; setup is its only child
+     and must span them all, or it gets crushed into the enemy-hand row. */
+  grid-row: 1 / -1;
+  height: 100%;
+  overflow-y: auto;
+  padding: 28px 24px 60px;
+  /* Above the guy's layer, which is behind everything else on this screen. */
+  position: relative;
+  z-index: 1;
+}
+.setup .inner {
+  max-width: 1080px;
+  margin: 0 auto;
+}
+.setup h1 {
+  font-family: var(--font-wordmark);
+  /* Scales with the plate so the lockup never wraps the name onto two lines. */
+  font-size: clamp(28px, 7.2vw, 42px);
+  font-weight: 600;
+  color: #fff;
+  text-shadow:
+    -2px -2px 0 var(--ink),
+    2px -2px 0 var(--ink),
+    -2px 2px 0 var(--ink),
+    2px 2px 0 var(--ink),
+    0 5px 0 rgba(4, 9, 31, 0.42);
+  letter-spacing: 0.02em;
+}
+/* Title plate: the dark banner strip a console menu hangs its screen name on.
+   The sigil and the name are one lockup, centred together rather than the name
+   centred with a mark parked beside it. */
+.platebar {
+  background: var(--glass-dark);
+  border: var(--stroke-thick) solid var(--ink);
+  border-radius: var(--radius);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    var(--shadow);
+  padding: 8px 20px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+/* Blown up well past the size it was drawn, so it keeps its pixels, and lit
+   with the same hard-then-soft shadow the little guy and the cards throw. */
+.sigil {
+  height: clamp(38px, 9.6vw, 56px);
+  width: auto;
+  flex: none;
+  image-rendering: pixelated;
+  filter: drop-shadow(2px 3px 0 rgba(4, 9, 31, 0.55))
+    drop-shadow(0 6px 7px rgba(0, 0, 0, 0.4));
+}
+
+.setup .lede {
+  color: var(--muted);
+  margin: 6px 0 20px;
+  max-width: 62ch;
+}
+.setup h2 {
+  font-size: 17px;
+  margin: 24px 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.setup h2::after {
+  content: '';
+  flex: 1;
+  border-top: var(--stroke) solid rgba(255, 255, 255, 0.12);
+}
+.modes {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+/* Mode choices as big glossy console tiles. */
+.modetile {
+  font-size: 16px;
+  min-width: 172px;
+  padding: 14px 24px;
+  border-radius: var(--radius);
+  border-width: var(--stroke-thick);
+}
+/* The seat toggle under Local Play: smaller than a mode tile, because it picks
+   an option inside the mode rather than the mode itself. */
+.seats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 18px;
+  flex-wrap: wrap;
+}
+.seatlabel {
+  color: var(--muted);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-right: 2px;
+}
+.seattile {
+  font-size: 14px;
+  min-width: 92px;
+  padding: 7px 16px;
+  border-radius: var(--radius);
+}
+.modetile[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.decks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 10px;
+}
+.deckcard {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--glass);
+  border: var(--stroke) solid var(--ink);
+  border-radius: var(--radius);
+  box-shadow: var(--sheen), var(--shadow);
+  transition: transform 100ms ease, box-shadow 100ms ease;
+}
+.deckcard:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--sheen), var(--shadow-lift);
+}
+.deckcard.p0 {
+  outline: var(--stroke-thick) solid var(--accent);
+}
+.deckcard.p1 {
+  outline: var(--stroke-thick) solid var(--accent-2);
+}
+.deckcard strong {
+  font-family: var(--font-display);
+  font-size: 15px;
+}
+.deckcard .blurb {
+  font-size: 12px;
+  color: var(--muted);
+}
+.deckcard .picks {
+  display: grid;
+  gap: 5px;
+}
+.deckcard .picks button {
+  font-size: 12px;
+  padding: 3px 10px;
+}
+.setup .go {
+  margin-top: 22px;
+  font-size: 16px;
+  padding: 9px 26px;
+}
+
+/* --- deckbuilder ----------------------------------------------------------
+   Collection-book layout: a card browser panel on the left, the deck as a
+   rail of compact art rows on the right, colour tabs across the top. */
+
+.buildwrap {
+  grid-row: 1 / -1;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.bheader {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 7px 14px;
+  background: var(--glass);
+  border-bottom: var(--stroke-thick) solid var(--ink);
+  box-shadow: var(--sheen), 0 2px 10px rgba(0, 0, 0, 0.14);
+  position: relative;
+  z-index: 40;
+}
+.bheader .tabs {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  padding: 4px 13px;
+}
+.tabdot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+.tabdot.dual {
+  background: linear-gradient(90deg, var(--c-P) 0 50%, var(--c-F) 50% 100%);
+}
+/* Sampled from the neutral frame, so the dot and the card agree. */
+.tabdot.neutral {
+  background: var(--c-N);
+}
+
+.devtoggle { font-size: 13px; opacity: 0.8; }
+.devpanel {
+  background: var(--fill-2);
+  padding: 6px 14px;
+  font-size: 13px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.bmain {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+/* The book: where the collection lives. */
+.book {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: linear-gradient(180deg, var(--fill-2), var(--fill-1));
+  border: var(--stroke-thick) solid var(--ink);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--sheen), var(--shadow);
+  overflow: hidden;
+}
+.bookscroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 18px 16px;
+}
+.bookscroll .hint {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 18px 4px;
+}
+.bookhead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  margin: 14px 0 10px;
+}
+.bookhead::after {
+  content: '';
+  flex: 1;
+  border-top: var(--stroke) solid rgba(255, 255, 255, 0.12);
+}
+.bookgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 16px 8px;
+  justify-items: center;
+  padding-bottom: 6px;
+}
+.bcell {
+  width: var(--cw-hand);
+  display: grid;
+  gap: 4px;
+}
+.bcell .card {
+  --cw: var(--cw-hand);
+}
+/* The collection owns two of everything; the copies still unspent draw as a
+   stack of card backs behind the face. */
+.copystack {
+  position: relative;
+}
+.copystack::before,
+.copystack::after {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: calc(var(--cw-hand) * 0.055);
+  background: linear-gradient(180deg, #00919f 0%, #00d3e3 50%, #68ddf4 100%);
+  border: 1.5px solid var(--ink);
+  box-shadow: 1px 1.5px 0 rgba(148, 236, 253, 0.6);
+}
+.copystack.s2::before {
+  content: '';
+  transform: translate(6px, 5px) rotate(1.8deg);
+}
+.copystack.s2::after {
+  content: '';
+  transform: translate(3px, 2.5px) rotate(0.9deg);
+}
+.copystack.s1::after {
+  content: '';
+  transform: translate(3.5px, 3px) rotate(1.2deg);
+}
+/* Hover blows the card up to reading size, the way a collection browser does. */
+.bcell .card:hover {
+  transform: translateY(-10px) scale(1.45);
+  z-index: 60;
+  filter: drop-shadow(0 14px 22px rgba(0, 0, 0, 0.42));
+}
+.bcell .card.full {
+  filter: grayscale(0.8) brightness(0.92) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+  cursor: default;
+}
+.bcell .card[data-cmd],
+.bcell .card[data-bdrag] {
+  cursor: grab;
+}
+.bcell .card[data-cmd]:active,
+.bcell .card[data-bdrag]:active {
+  cursor: grabbing;
+}
+.bcap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 20px;
+  padding: 0 2px;
+}
+.bcount {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 26px;
+  text-align: center;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1.5px solid var(--ink);
+  background: var(--glass-dark);
+  color: var(--chrome-text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+.bcount.spent {
+  background: rgba(72, 82, 118, 0.85);
+  color: rgba(233, 238, 255, 0.62);
+}
+.bcount.leaderchip {
+  font-size: 9.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+/* The card currently standing as the deck's leader, ringed in the select amber. */
+.bcell .card.isleader {
+  outline: 3px solid var(--select);
+  outline-offset: 2px;
+}
+.bcapbtns { display: flex; gap: 4px; }
+.builder button.tiny { font-size: 11px; padding: 1px 7px; }
+
+.bookbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 14px;
+  border-top: var(--stroke-thick) solid var(--ink);
+  background: var(--glass);
+  box-shadow: var(--sheen);
+}
+.bookbar input {
+  flex: 1;
+  max-width: 340px;
+  font: inherit;
+  padding: 5px 14px;
+  border: var(--stroke) solid var(--ink);
+  border-radius: 999px;
+  background: var(--fill-3);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+/* Rarity filter. Lighting none and lighting all four both mean everything, so
+   the row reads as a narrowing rather than as a required choice. */
+.rchips {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.rchip {
+  font-size: 12px;
+  padding: 3px 11px;
+}
+.builder label { display: flex; gap: 6px; align-items: center; font-size: 13px; }
+/* --- dropdown ---------------------------------------------------------------
+   Ours, not the browser's. Chrome draws a native select's list in a layer no
+   stylesheet reaches, so the list here is ordinary elements and the button is
+   only the part that reports the value. See src/ui/dropdown.ts for why the list
+   is fixed rather than absolute. */
+
+.ddfield {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.ddfield > span {
+  flex: none;
+  color: var(--muted);
+}
+.dropdown {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  max-width: 240px;
+}
+.ddbtn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 9px;
+  font: inherit;
+  text-align: left;
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.3);
+  border: var(--stroke) solid var(--ink);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--sheen);
+  cursor: pointer;
+}
+.ddbtn:hover {
+  background: rgba(0, 0, 0, 0.18);
+}
+.dropdown.open .ddbtn {
+  border-color: var(--select);
+}
+.ddvalue {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ddvalue.placeheld {
+  color: var(--muted);
+}
+/* A caret drawn rather than typed, so it does not depend on a glyph. */
+.ddcaret {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 120ms ease;
+}
+.dropdown.open .ddcaret {
+  transform: translateY(1px) rotate(-135deg);
+  border-color: var(--select);
+}
+/* Fixed, because .deckpanel clips with overflow: hidden. Placed from script. */
+.ddlist {
+  display: none;
+  position: fixed;
+  z-index: 95;
+  max-width: min(340px, calc(100vw - 16px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+  /* Lifted a little clear of the tooltip fill: this one floats over rows of a
+     similar colour, so the ink edge alone was not enough to separate it. */
+  background: var(--panel-lift);
+  border: var(--stroke) solid var(--ink);
+  border-radius: var(--radius-sm);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    var(--shadow-lift);
+}
+.dropdown.open .ddlist {
+  display: block;
+}
+.ddlist:focus {
+  outline: none;
+}
+.ddgroup {
+  padding: 7px 9px 3px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ddopt {
+  padding: 5px 9px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.ddopt:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+/* The keyboard's place in the list, which the pointer does not move. */
+.ddopt.active {
+  background: rgba(255, 255, 255, 0.13);
+}
+/* The value actually held, marked the way the selected toggle in a row is. */
+.ddopt.on {
+  color: var(--select);
+  font-weight: 700;
+}
+.ddopt.on.active,
+.ddopt.on:hover {
+  background: rgba(217, 130, 27, 0.16);
+}
+
+/* The deck rail. */
+.deckpanel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: linear-gradient(180deg, var(--fill-2), var(--fill-1));
+  border: var(--stroke-thick) solid var(--ink);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--sheen), var(--shadow);
+  overflow: hidden;
+}
+.leaderplate {
+  background-size: cover;
+  background-position: right 30%;
+  border-bottom: var(--stroke-thick) solid var(--ink);
+  padding: 10px 12px;
+  display: grid;
+  align-content: center;
+  min-height: 56px;
+}
+/* The leader, readable without leaving the rail: the card plus its numbers. */
+.leaderbox {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-bottom: var(--stroke) solid var(--hairline);
+}
+.leaderbox .card {
+  --cw: 118px;
+  cursor: grab;
+  flex: none;
+}
+.leaderbox .card:active {
+  cursor: grabbing;
+}
+/* The empty leader slot, waiting for a summon to be dragged in. */
+.leaderslot {
+  flex: 1;
+  min-height: 130px;
+  display: grid;
+  place-content: center;
+  border: 2px dashed var(--edge);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 12.5px;
+  text-align: center;
+  padding: 10px;
+}
+/* Lit while a summon that could stand as the leader is mid-drag. */
+.leaderbox.leaderdrop {
+  outline: 3px solid var(--select);
+  outline-offset: -3px;
+  border-radius: 6px;
+  background: rgba(217, 130, 27, 0.12);
+}
+.leaderfacts .hint {
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.leaderfacts {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  align-content: start;
+}
+.leaderfacts strong {
+  font-family: var(--font-display);
+  font-size: 14px;
+}
+.leaderfacts .hstat {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.leaderfacts .hpower {
+  font-size: 11.5px;
+  line-height: 1.3;
+}
+.leaderfacts .hpower b {
+  color: var(--accent);
+}
+.deckname {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--fill-3);
+  border: 1.5px solid rgba(255, 255, 255, 0.34);
+  border-radius: var(--radius-sm);
+  padding: 3px 9px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  min-width: 0;
+}
+.leadername {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.94);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+.leaderrow {
+  padding: 8px 12px;
+  border-bottom: var(--stroke) solid var(--hairline);
+}
+.leaderrow .dropdown { max-width: none; }
+.builder .issues {
+  color: var(--danger);
+  font-size: 12px;
+  margin: 6px 12px 2px;
+  padding-left: 16px;
+}
+.deckscroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 10px;
+}
+.deckrows { display: grid; gap: 4px; }
+.deckrows .blurb, .mydecks .blurb { font-size: 12px; color: var(--muted); margin: 4px 2px; }
+.deckrow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  text-align: left;
+  border-radius: var(--radius-sm);
+  border-width: 1.5px;
+  background-size: cover;
+  background-position: right center;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+.deckrow:hover:not(:disabled) { transform: none; filter: brightness(1.04); }
+.deckrow { cursor: grab; }
+.deckrow:active { cursor: grabbing; }
+/* Lit while a card is being dragged in. */
+.deckpanel.dropready {
+  outline: 3px solid var(--select);
+  outline-offset: -1px;
+  box-shadow: var(--sheen), 0 0 18px rgba(217, 130, 27, 0.5);
+}
+.rowchip {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 27px;
+  text-align: center;
+  padding: 2px 3px;
+  border-radius: 5px;
+  border: 1.5px solid var(--ink);
+  background: var(--glass-dark);
+  color: var(--chrome-text);
+}
+.rowname {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rowcount {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--fill-3);
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  padding: 0 6px;
+}
+.mydecks-h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  margin: 16px 0 6px;
+}
+.mydecks-h::after {
+  content: '';
+  flex: 1;
+  border-top: var(--stroke) solid rgba(255, 255, 255, 0.12);
+}
+.mydeck {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--fill-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  margin-bottom: 4px;
+}
+.mydeck .mdname {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mydeck .mdmeta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.deckfoot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px 5px;
+  border-top: var(--stroke-thick) solid var(--ink);
+  background: var(--glass);
+  box-shadow: var(--sheen);
+}
+.deckfoot .primary { flex: 1; }
+.deckfoot2 {
+  display: flex;
+  gap: 8px;
+  padding: 0 10px 10px;
+  background: var(--glass);
+}
+.deckfoot2 button { font-size: 12px; padding: 3px 12px; }
+.countpill {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border: var(--stroke) solid var(--ink);
+  border-radius: 999px;
+  background: var(--fill-3);
+  box-shadow: var(--sheen);
+  white-space: nowrap;
+}
+.good { color: var(--ok); }
+.bad { color: var(--danger); }
+.builder textarea { width: 100%; font: inherit; padding: 6px; }
+
+/* Seven colour tabs stop fitting beside the title well before the layout has
+   to change. Rather than wrap them one per line, they take their own row and
+   scroll sideways. */
+@media (max-width: 1024px) {
+  .bheader { min-width: 0; flex-wrap: wrap; gap: 8px 10px; padding: 8px 10px; }
+  .bheader .tabs {
+    order: 3;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    padding-bottom: 2px;
+    /* Without this a nowrap scroller still reports its full content width as
+       its minimum, and the whole builder gets sized to seven tabs in a row. */
+    min-width: 0;
+    flex: 1 1 100%;
+  }
+  .bheader .tabs .tab { flex: none; }
+}
+
+/* Narrow enough that the rail and the book cannot both keep their desktop
+   sizes, but wide enough to stay side by side. Only the widths give. */
+@media (max-width: 900px) {
+  /* The app grid sizes its column to this, and this sized itself to the widest
+     thing inside it, so the builder laid out wider than the screen and was then
+     clipped. Capping it here makes everything below fit. */
+  .buildwrap { max-width: 100vw; min-width: 0; }
+  /* A narrower rail, so the book keeps a usable number of columns. */
+  .bmain { grid-template-columns: minmax(0, 1fr) 268px; gap: 10px; padding: 10px; }
+  .leaderbox .card { --cw: 92px; }
+  /* The 150px floor is wider than the cards themselves here, which cost a whole
+     column to padding. Tightened to just over a card. */
+  .bookgrid { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 14px 6px; }
+  .bookscroll { padding: 6px 10px 14px; }
+
+  /* Search on its own line, filters under it, so neither is squeezed to an
+     arrow the way the example-deck picker was. */
+  .bookbar { flex-wrap: wrap; gap: 8px 10px; padding: 8px 10px; }
+  .bookbar input { flex: 1 0 100%; max-width: none; min-width: 0; }
+  .bookbar .rchips { flex: 0 1 auto; }
+  .bookbar .ddfield { flex: 1 1 auto; min-width: 10rem; }
+
+  /* A name field and a Save button that fill their row are sized for the
+     desktop rail. Both take their own width instead. */
+  .deckname { justify-self: start; width: auto; max-width: min(100%, 18rem); }
+  .deckfoot { flex-wrap: wrap; }
+  .deckfoot .primary { flex: 0 0 auto; }
+}
+
+/* Two columns need a rail of 268 plus a book wide enough for three cards, so
+   below about 780 they are both cramped and stacking wins. */
+@media (max-width: 780px) {
+  .bmain {
+    grid-template-columns: 1fr;
+    /* max-content on the second row, or the deck panel gets compressed to the
+       leftovers and clips its own footer away. */
+    grid-template-rows: auto max-content;
+    overflow-y: auto;
+  }
+  /* The book is what the screen is for, so it keeps most of the height. A
+     definite height rather than a minimum, since its own scroller sizes it. */
+  .book { height: 56vh; min-height: 0; }
+  .deckpanel { max-height: none; }
+  /* Natural height would collapse it to nothing, since it is the flex child
+     that was meant to absorb the leftovers. */
+  .deckscroll { min-height: 26vh; max-height: 38vh; }
+}
+
+/* --- action feedback -------------------------------------------------------
+   One-shot animations computed off the state diff: what the last action did,
+   drawn on the bodies it did it to. While an attack lunge is mid-flight the
+   board holds these (and the HP flips) back until the moment of impact. */
+
+.board {
+  --fxd: 0ms;
+}
+.board.smacking {
+  --fxd: 310ms;
+}
+.board.smacking .flipnow .flin {
+  animation-delay: var(--fxd);
+  animation-fill-mode: both;
+}
+
+.unitfx {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 6;
+}
+.unitfx i {
+  position: absolute;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Damage: a red flash on the card while it shakes. */
+.unitfx.fx-damage {
+  background: radial-gradient(
+    circle at 50% 45%,
+    rgba(253, 29, 0, 0.6) 0%,
+    rgba(253, 29, 0, 0.24) 46%,
+    transparent 72%
+  );
+  opacity: 0;
+  animation: fxflash 560ms ease-out var(--fxd, 0ms) both;
+}
+.card.hitfx {
+  animation: hitshake 430ms cubic-bezier(0.36, 0.07, 0.19, 0.97) var(--fxd, 0ms) both;
+}
+/* Reform: the body shakes itself apart, puffs out and returns as another card. */
+.unitfx.fx-reform {
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(12, 21, 52, 0.72) 0%,
+    rgba(71, 82, 110, 0.34) 44%,
+    transparent 74%
+  );
+  opacity: 0;
+  animation: fxflash 620ms ease-out var(--fxd, 0ms) both;
+}
+.card.reformfx {
+  animation: reformpoof 700ms cubic-bezier(0.36, 0.07, 0.19, 0.97) var(--fxd, 0ms) both;
+}
+@keyframes reformpoof {
+  0%,
+  44% {
+    filter: none;
+  }
+  8%,
+  24%,
+  40% {
+    transform: translateX(-5px) rotate(-2deg);
+  }
+  16%,
+  32% {
+    transform: translateX(5px) rotate(2deg);
+  }
+  54% {
+    transform: scale(1.12);
+    opacity: 0.15;
+    filter: blur(3px) brightness(1.7);
+  }
+  66% {
+    transform: scale(0.9);
+    opacity: 0.35;
+    filter: blur(1px);
+  }
+  100% {
+    transform: none;
+    opacity: 1;
+    filter: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card.reformfx,
+  .unitfx.fx-reform {
+    animation-duration: 1ms;
+  }
+}
+
+@keyframes hitshake {
+  10%,
+  90% {
+    transform: translateX(-2px);
+  }
+  20%,
+  80% {
+    transform: translateX(4px) rotate(1deg);
+  }
+  30%,
+  50%,
+  70% {
+    transform: translateX(-6px) rotate(-1.5deg);
+  }
+  40%,
+  60% {
+    transform: translateX(6px) rotate(1.5deg);
+  }
+}
+@keyframes fxflash {
+  0% {
+    opacity: 0;
+  }
+  18% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Healing: a green wash and plusses drifting up off the body. */
+.unitfx.fx-heal {
+  background: radial-gradient(circle, rgba(71, 207, 121, 0.42) 0%, transparent 70%);
+  opacity: 0;
+  animation: fxflash 760ms ease-out var(--fxd, 0ms) both;
+}
+.unitfx.fx-heal i {
+  bottom: 24%;
+  color: #7fd6a4;
+  text-shadow:
+    -1px -1px 0 #0b3a20,
+    1px -1px 0 #0b3a20,
+    -1px 1px 0 #0b3a20,
+    1px 1px 0 #0b3a20;
+  animation: fxrise 780ms ease-out both;
+}
+.unitfx.fx-heal i::after {
+  content: '+';
+}
+.unitfx.fx-heal i:nth-child(1) {
+  left: 20%;
+  animation-delay: calc(var(--fxd, 0ms) + 40ms);
+}
+.unitfx.fx-heal i:nth-child(2) {
+  left: 46%;
+  font-size: 18px;
+  animation-delay: calc(var(--fxd, 0ms) + 170ms);
+}
+.unitfx.fx-heal i:nth-child(3) {
+  left: 70%;
+  animation-delay: calc(var(--fxd, 0ms) + 300ms);
+}
+@keyframes fxrise {
+  0% {
+    transform: translateY(8px) scale(0.6);
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-30px) scale(1.15);
+    opacity: 0;
+  }
+}
+
+/* Buffs: a golden ring bursts outward and arrows lift. */
+.unitfx.fx-buff::before {
+  content: '';
+  position: absolute;
+  inset: 7%;
+  border-radius: inherit;
+  border: 3px solid rgba(216, 168, 0, 0.95);
+  box-shadow:
+    0 0 16px rgba(216, 168, 0, 0.85),
+    inset 0 0 12px rgba(216, 168, 0, 0.5);
+  opacity: 0;
+  animation: fxring 640ms ease-out var(--fxd, 0ms) both;
+}
+.unitfx.fx-buff i {
+  bottom: 26%;
+  width: calc(var(--cw) * 0.15);
+  height: calc(var(--cw) * 0.15);
+  background: var(--buff-arrow) center / contain no-repeat;
+  animation: fxrise 720ms ease-out both;
+}
+.unitfx.fx-buff i:nth-child(1) {
+  left: 22%;
+  animation-delay: calc(var(--fxd, 0ms) + 60ms);
+}
+.unitfx.fx-buff i:nth-child(2) {
+  left: 48%;
+  font-size: 17px;
+  animation-delay: calc(var(--fxd, 0ms) + 180ms);
+}
+.unitfx.fx-buff i:nth-child(3) {
+  left: 72%;
+  animation-delay: calc(var(--fxd, 0ms) + 300ms);
+}
+@keyframes fxring {
+  0% {
+    transform: scale(0.55);
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.18);
+    opacity: 0;
+  }
+}
+
+/* Debuffs: a purple pall settles and arrows sink. */
+.unitfx.fx-debuff {
+  background: radial-gradient(circle, rgba(255, 104, 245, 0.48) 0%, transparent 72%);
+  opacity: 0;
+  animation: fxflash 760ms ease-out var(--fxd, 0ms) both;
+}
+.unitfx.fx-debuff i {
+  top: 22%;
+  width: calc(var(--cw) * 0.15);
+  height: calc(var(--cw) * 0.15);
+  background: var(--debuff-arrow) center / contain no-repeat;
+  animation: fxsink 780ms ease-in both;
+}
+.unitfx.fx-debuff i:nth-child(1) {
+  left: 22%;
+  animation-delay: calc(var(--fxd, 0ms) + 60ms);
+}
+.unitfx.fx-debuff i:nth-child(2) {
+  left: 48%;
+  font-size: 17px;
+  animation-delay: calc(var(--fxd, 0ms) + 180ms);
+}
+.unitfx.fx-debuff i:nth-child(3) {
+  left: 72%;
+  animation-delay: calc(var(--fxd, 0ms) + 300ms);
+}
+@keyframes fxsink {
+  0% {
+    transform: translateY(-8px);
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(22px);
+    opacity: 0;
+  }
+}
+
+/* A flip whose effect fires for free flashes a gold ring as it lands. */
+.hpmini.flipnow.fired::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 6px;
+  border: 2px solid #ffd34d;
+  box-shadow: 0 0 12px rgba(255, 195, 26, 0.9);
+  opacity: 0;
+  animation: fxflash 700ms ease-out calc(var(--fxd, 0ms) + 520ms) both;
+  pointer-events: none;
+}
+
+/* A leader down to its last two cards. The same red the debt counter uses as it
+   nears the limit, pulsing at the pace of the music that comes with it. */
+.card .lastbreath {
+  position: absolute;
+  inset: -3px;
+  border-radius: calc(var(--cw) * 0.075);
+  pointer-events: none;
+  border: var(--stroke-thick) solid rgba(224, 0, 22, 0.9);
+  animation: lastbreath 1.15s ease-in-out infinite;
+}
+@keyframes lastbreath {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 2px rgba(224, 0, 22, 0.25),
+      0 0 12px 2px rgba(224, 0, 22, 0.45);
+  }
+  50% {
+    box-shadow:
+      0 0 0 5px rgba(224, 0, 22, 0.4),
+      0 0 26px 7px rgba(224, 0, 22, 0.85);
+  }
+}
+
+/* --- corpses ----------------------------------------------------------------
+   A body that just died stays in its cell: it takes the hit, its last HP cards
+   turn over, and then it crumbles, so a lethal clash never just blinks away.
+   A body bounced to hand departs upward instead. */
+
+/* --- wound tokens ----------------------------------------------------------
+   A pool of wounds lands as tokens scattered over the card. They hold, then
+   resolve: at the usual rate they pair off and each pair converges and pops into
+   a point of damage, while an amplifier makes every wound a point on its own so
+   they go one at a time. --tx/--ty place a token and --mx/--my say where its
+   pair meets, both as fractions of the card width so the scatter survives a
+   resize. The flip they cause is held back by --fxd until all of this is done. */
+.unit .wtoks {
+  position: absolute;
+  top: 16px;
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: var(--cw-board);
+  height: calc(var(--cw-board) * var(--card-ratio));
+  pointer-events: none;
+  z-index: 11;
+}
+.unit .wtok {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--cw-board) * 0.3);
+  height: calc(var(--cw-board) * 0.3);
+  margin: calc(var(--cw-board) * -0.15) 0 0 calc(var(--cw-board) * -0.15);
+  opacity: 0;
+  will-change: transform, opacity;
+  /* Each token starts a beat after the one before it, so a big pool reads as a
+     scatter rather than a single flash. */
+  animation-delay: calc(var(--woundfxd, 0ms) + var(--wi) * 45ms);
+  animation-duration: 860ms;
+  animation-fill-mode: both;
+  animation-timing-function: ease-out;
+}
+.unit .wtok.merge {
+  animation-name: wtokmerge;
+}
+.unit .wtok.spend {
+  animation-name: wtokspend;
+}
+.unit .wtok.idle {
+  animation-name: wtokidle;
+}
+
+/* Two tokens converge on the point between them and pop: that pop is the point
+   of damage, and the HP card turns over as it lands. */
+@keyframes wtokmerge {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.3);
+  }
+  14% {
+    opacity: 1;
+    transform: translate(calc(var(--cw-board) * var(--tx) * 1.15), calc(var(--cw-board) * var(--ty) * 1.15))
+      scale(1.1);
+  }
+  22%,
+  58% {
+    opacity: 1;
+    transform: translate(calc(var(--cw-board) * var(--tx)), calc(var(--cw-board) * var(--ty))) scale(1);
+  }
+  88% {
+    opacity: 1;
+    transform: translate(calc(var(--cw-board) * var(--mx)), calc(var(--cw-board) * var(--my))) scale(1.05);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(var(--cw-board) * var(--mx)), calc(var(--cw-board) * var(--my))) scale(1.9);
+  }
+}
+
+/* One wound, one point: it swells where it fell and goes. */
+@keyframes wtokspend {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.3);
+  }
+  14% {
+    opacity: 1;
+    transform: translate(calc(var(--cw-board) * var(--tx) * 1.15), calc(var(--cw-board) * var(--ty) * 1.15))
+      scale(1.1);
+  }
+  22%,
+  58% {
+    opacity: 1;
+    transform: translate(calc(var(--cw-board) * var(--tx)), calc(var(--cw-board) * var(--ty))) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(var(--cw-board) * var(--tx)), calc(var(--cw-board) * var(--ty))) scale(1.9);
+  }
+}
+
+/* Left over under the rate, or on a body that died first: it just fades. */
+@keyframes wtokidle {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.3);
+  }
+  14% {
+    opacity: 1;
+    transform: translate(calc(var(--cw-board) * var(--tx) * 1.15), calc(var(--cw-board) * var(--ty) * 1.15))
+      scale(1.1);
+  }
+  22%,
+  70% {
+    opacity: 1;
+    transform: translate(calc(var(--cw-board) * var(--tx)), calc(var(--cw-board) * var(--ty))) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(var(--cw-board) * var(--tx)), calc(var(--cw-board) * var(--ty))) scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .unit .wtok {
+    animation-duration: 1ms;
+  }
+}
+
+/* --- sealed slots ----------------------------------------------------------
+   Drawn over the card area of a unit cell, empty or occupied alike: the seal is
+   a property of the whole row, and an occupied slot is the one about to matter.
+   Sits above a corpse so a body crumbling under it stays sealed. The 16px offset
+   clears the caption and the grid gap above the card, same as .corpse below. */
+.unit .lockfx {
+  position: absolute;
+  top: 16px;
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: var(--cw-board);
+  height: calc(var(--cw-board) * var(--card-ratio));
+  border-radius: var(--radius);
+  pointer-events: none;
+  z-index: 9;
+  opacity: 0.85;
+}
+@keyframes lockin {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0.85;
+  }
+}
+@keyframes lockout {
+  from {
+    opacity: 0.85;
+  }
+  to {
+    opacity: 0;
+  }
+}
+.unit .lockfx.lockin {
+  animation: lockin 420ms ease-out;
+}
+.unit .lockfx.lockout {
+  animation: lockout 420ms ease-in forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .unit .lockfx.lockin,
+  .unit .lockfx.lockout {
+    animation-duration: 1ms;
+  }
+}
+
+.corpse {
+  position: absolute;
+  top: 16px;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  z-index: 8;
+}
+.corpsein {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+.corpsein .card {
+  cursor: default;
+}
+.corpsein.die {
+  animation: corpsedie 1050ms ease calc(var(--fxd, 0ms) + 550ms) both;
+}
+.corpsein.depart {
+  animation: corpsedepart 700ms ease var(--fxd, 0ms) both;
+}
+@keyframes corpsedie {
+  0% {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+  7% {
+    transform: translateX(-5px) rotate(-1.5deg);
+  }
+  14% {
+    transform: translateX(5px) rotate(1.5deg);
+  }
+  21% {
+    transform: translateX(-3px);
+  }
+  32% {
+    transform: none;
+    filter: grayscale(0.85) brightness(0.8);
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(16px) rotate(5deg) scale(0.9);
+    filter: grayscale(1) brightness(0.55);
+  }
+}
+@keyframes corpsedepart {
+  0% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-26px) scale(0.9);
+  }
+}
+
+/* Healing turns an HP card back face down: the flip runs in reverse under a
+   green flash. */
+.hpmini.unflipnow {
+  perspective: 300px;
+  z-index: 5;
+}
+.hpmini.unflipnow .flin {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  animation: hpunflip 520ms ease var(--fxd, 0ms) both;
+}
+@keyframes hpunflip {
+  from {
+    transform: rotateY(180deg);
+  }
+  to {
+    transform: rotateY(360deg);
+  }
+}
+.hpmini.unflipnow::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 6px;
+  border: 2px solid #7fd6a4;
+  box-shadow: 0 0 12px rgba(45, 128, 93, 0.85);
+  opacity: 0;
+  animation: fxflash 900ms ease-out var(--fxd, 0ms) both;
+  pointer-events: none;
+}
+
+/* --- debt danger ------------------------------------------------------------
+   The stack heats up as the count closes on the limit: a red pulse that
+   thickens and quickens, and a count that grows with it. */
+
+.debtzone .debtnum {
+  font-weight: 700;
+  font-size: 1em;
+}
+.debtzone.danger1 .debtstack,
+.debtzone.danger2 .debtstack,
+.debtzone.danger3 .debtstack {
+  border-radius: 8px;
+  animation: debtpulse var(--dbs, 2.2s) ease-in-out infinite;
+}
+.debtzone.danger1 .debtstack {
+  --dbw: 2px;
+  --dbg: rgba(253, 29, 0, 0.4);
+  --dbs: 2.2s;
+}
+.debtzone.danger2 .debtstack {
+  --dbw: 3.5px;
+  --dbg: rgba(253, 29, 0, 0.6);
+  --dbs: 1.3s;
+}
+.debtzone.danger3 .debtstack {
+  --dbw: 5px;
+  --dbg: rgba(231, 27, 0, 0.8);
+  --dbs: 0.75s;
+}
+@keyframes debtpulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 var(--dbw) var(--dbg);
+  }
+  50% {
+    box-shadow:
+      0 0 0 calc(var(--dbw) + 2.5px) var(--dbg),
+      0 0 20px 3px var(--dbg);
+  }
+}
+/* Debt just went up. The counter takes the hit: the whole readout knocks
+   sideways and settles, and the line that carries the number swells and comes
+   back down, so a number changing on its own is never the only thing that
+   happened. Held back by --fxd, the same beat the flips and the damage wait for,
+   or the debt lands before the blow that caused it. */
+.debtzone.jolt {
+  animation: debtjolt 440ms cubic-bezier(0.36, 0.07, 0.19, 0.97) var(--fxd, 0ms) both;
+}
+.debtzone.jolt .zlabel {
+  animation: debtswell 520ms cubic-bezier(0.22, 1.6, 0.4, 1) var(--fxd, 0ms) both;
+}
+@keyframes debtjolt {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  14% {
+    transform: translateX(-5px) rotate(-1.2deg);
+  }
+  32% {
+    transform: translateX(4px) rotate(1deg);
+  }
+  50% {
+    transform: translateX(-3px) rotate(-0.6deg);
+  }
+  68% {
+    transform: translateX(2px) rotate(0.4deg);
+  }
+  86% {
+    transform: translateX(-1px);
+  }
+}
+@keyframes debtswell {
+  0% {
+    transform: scale(1);
+  }
+  24% {
+    transform: scale(1.42);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.debtzone.danger1 .debtnum {
+  font-size: 1.2em;
+  color: #ff3e38;
+}
+.debtzone.danger2 .debtnum {
+  font-size: 1.45em;
+  color: #ff2423;
+}
+.debtzone.danger3 .debtnum {
+  font-size: 1.8em;
+  color: #e71b00;
+  animation: debtnumpulse 0.75s ease-in-out infinite;
+}
+@keyframes debtnumpulse {
+  0%,
+  100% {
+    text-shadow: 0 0 2px rgba(231, 27, 0, 0.4);
+  }
+  50% {
+    text-shadow: 0 0 9px rgba(231, 27, 0, 0.95);
+  }
+}
+
+/* --- history motion --------------------------------------------------------- */
+
+/* A tile written by the action just taken pops into the strip. */
+.histile.fresh {
+  animation: histin 480ms cubic-bezier(0.2, 1.2, 0.4, 1) both;
+}
+@keyframes histin {
+  0% {
+    transform: translateX(-44px) scale(0.5);
+    opacity: 0;
+  }
+  60% {
+    transform: translateX(3px) scale(1.1);
+    opacity: 1;
+  }
+  100% {
+    transform: none;
+  }
+}
+.histpop .histlines {
+  display: grid;
+  gap: 3px;
+  max-height: 190px;
+  overflow-y: auto;
+  width: 100%;
+}
+/* The popup stands 6px clear of the tile, and the pointer has to cross that gap
+   to reach it. Without something under the gap the hover lapses on the way and
+   the popup it was travelling to disappears. */
+.histpop::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -10px;
+  width: 10px;
+}
+.histpop .histlines p {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--text);
+  text-align: left;
+}
+
+/* --- effect banner and arrow ------------------------------------------------
+   A board pick asked by a flip or trigger: a slim banner names the effect and
+   the gold arrow runs from its source card to the cursor. */
+
+.fxbanner {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(84%, 560px);
+  padding: 6px 16px 6px 8px;
+  pointer-events: auto;
+  background: var(--glass);
+  border: var(--stroke-thick) solid var(--ink);
+  border-radius: 999px;
+  box-shadow:
+    var(--sheen),
+    0 0 0 3px rgba(216, 168, 0, 0.4),
+    var(--shadow-lift);
+  z-index: 55;
+  animation: bannerin 240ms cubic-bezier(0.2, 1.1, 0.4, 1);
+}
+@keyframes bannerin {
+  from {
+    transform: translate(-50%, -20px);
+    opacity: 0;
+  }
+}
+/* How many of these are stacked up, so a repeat reads as the next one. */
+.fxbanner .fxmore {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.fxbanner .fxart {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 2px solid var(--ink);
+  background-size: cover;
+  background-position: center 30%;
+  flex: none;
+}
+.fxbanner .fxtext {
+  font-size: 13px;
+  color: var(--text);
+}
+.fxbanner .fxtext b {
+  font-family: var(--font-display);
+  margin-right: 4px;
+}
+.fxbanner button {
+  font-size: 12px;
+  padding: 3px 12px;
+  flex: none;
+}
+
+/* --- trap reveal ------------------------------------------------------------
+   A sprung trap pops onto the stage burning white, the flash burns off, the
+   card holds a beat, and the whole thing fades away. */
+
+.trapreveal {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 70;
+  pointer-events: none;
+  animation: traphold 2s ease forwards;
+}
+.trapreveal .card {
+  --cw: var(--cw-big);
+  cursor: default;
+  animation: trappop 320ms cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  filter: drop-shadow(0 18px 40px rgba(13, 26, 31, 0.55));
+}
+.trapreveal .card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: #fff;
+  animation: trapwhite 480ms ease-out both;
+}
+@keyframes trappop {
+  from {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+}
+@keyframes trapwhite {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes traphold {
+  0%,
+  76% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* The pill that brings a hidden reveal-choice back. */
+.showpill {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: auto;
+  z-index: 55;
+}
+
+/* --- flip callouts ----------------------------------------------------------
+   Each free flip effect that fires announces itself: a pill with the card and
+   its flip line floats up off the body it was protecting, one after another. */
+
+.flipcallout {
+  position: absolute;
+  z-index: 72;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 300px;
+  padding: 5px 13px 5px 6px;
+  background: var(--glass-dark);
+  color: var(--chrome-text);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  box-shadow:
+    0 0 0 2px rgba(255, 211, 77, 0.55),
+    0 6px 14px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  animation: calloutin 1500ms ease both;
+}
+@keyframes calloutin {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 10px) scale(0.8);
+  }
+  12% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+  82% {
+    opacity: 1;
+    transform: translate(-50%, -7px);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -15px);
+  }
+}
+.flipcallout .fcart {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  background-size: cover;
+  background-position: center 30%;
+  flex: none;
+}
+.flipcallout .fctext {
+  font-size: 12px;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.flipcallout .fctext b {
+  font-family: var(--font-display);
+  margin-right: 4px;
+}
+
+/* --- deferred choices ------------------------------------------------------ */
+
+/* A reveal choice darkens the stage and floats the revealed row above it. */
+.prompt.choice {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-content: center;
+  gap: 12px;
+  background: rgba(2, 5, 18, 0.66);
+  backdrop-filter: blur(2px);
+  text-align: center;
+}
+.prompt.choice h2,
+.prompt.choice p {
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(13, 26, 31, 0.8);
+}
+.prompt.choice .revealgrid,
+.prompt.choice .debtpick {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  max-width: min(90vw, 900px);
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 8px;
+}
+.prompt.choice .card.dimmed {
+  filter: grayscale(0.7) brightness(0.6);
+}
+/* Revealed cards print at hand size, and a legal one lifts under the cursor:
+   clicking it takes it, with no confirm step. */
+.prompt.choice .revealgrid .card {
+  --cw: var(--cw-hand);
+}
+.revealgrid .card.targetable {
+  cursor: pointer;
+}
+.revealgrid .card.targetable:hover {
+  transform: translateY(-8px) scale(1.07);
+  filter: drop-shadow(0 12px 20px rgba(0, 0, 0, 0.45));
+  z-index: 5;
+}
+.prompt.choice .row {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+/* --- debt, hung off the leader --------------------------------------------- */
+/* It used to live in a fixed column at the board's edge, which meant it did not
+   move when the cards did and shifted across them on every resize. Now it hangs
+   beside the leader whose debt it is, in the leader's own units, so it travels
+   and scales with the card. */
+.leadercell {
+  position: relative;
+  display: contents;
+}
+.lane > .leadercell {
+  display: block;
+}
+.leadercell .debtzone {
+  position: absolute;
+  top: 50%;
+  /* Just clear of the card: right:100% puts its edge against the leader's, and
+     the gap beyond that is measured in card widths so it holds at any size. */
+  right: calc(100% + 0.05 * var(--cw-board));
+  transform: translateY(-50%);
+  width: calc(var(--cw-board) * 0.92);
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  pointer-events: auto;
+}
+.leadercell .zlabel {
+  font-size: calc(var(--cw-board) * 0.115);
+  white-space: nowrap;
+}
+.leadercell .debtcard {
+  height: calc(var(--cw-board) * 0.2);
+  font-size: calc(var(--cw-board) * 0.105);
+  padding: 0 calc(var(--cw-board) * 0.05) calc(var(--cw-board) * 0.02);
+}
+.leadercell .debtstack {
+  width: 100%;
+}
+
+/* --- match clock ---------------------------------------------------------- */
+/* A rope that burns down. The bar is the message; the number is the footnote. */
+.clock {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.clock-idle { visibility: hidden; }
+
+.clock-label {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.66rem;
+}
+
+.clock-track {
+  position: relative;
+  display: block;
+  width: 132px;
+  height: 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--line) 55%, transparent);
+  overflow: hidden;
+}
+.clock-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--left, 100%);
+  border-radius: 999px;
+  background: var(--accent);
+  /* Steps rather than a slide: the bar is redrawn each second, and easing
+     between two redraws reads as lag rather than smoothness. */
+  transition: width 240ms linear;
+}
+
+.clock-count {
+  font-variant-numeric: tabular-nums;
+  min-width: 2ch;
+  text-align: right;
+  color: var(--text);
+}
+
+/* Your own turn is calm and wide. Answering on somebody else's turn is not. */
+.clock-response .clock-track { width: 84px; }
+.clock-response .clock-fill { background: var(--select); }
+
+/* Someone else's clock: still visible, because knowing they are nearly out is
+   part of the game, but it must not compete with your own. */
+.clock-theirs { opacity: 0.62; }
+
+/* The rope catches. Colour first, then movement, because colour is readable at
+   the edge of vision and movement is what makes it impossible to miss. */
+.clock-rope .clock-fill { background: var(--danger); }
+.clock-rope .clock-count { color: var(--danger); font-weight: 600; }
+.clock-rope.clock-mine { animation: ropepulse 1s ease-in-out infinite; }
+
+@keyframes ropepulse {
+  0%, 100% { border-color: var(--line); }
+  50% { border-color: var(--danger); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clock-fill { transition: none; }
+  .clock-rope.clock-mine { animation: none; border-color: var(--danger); }
+}
+
+/* --- online queue --------------------------------------------------------- */
+.queue { max-width: 44rem; margin: 0 auto; padding: 2rem 1rem 4rem; }
+.queue h2 { margin-bottom: 0.35rem; }
+
+.qactions { display: flex; flex-direction: column; gap: 14px; margin: 1.6rem 0 0; }
+/* Most people press this one, so it is the only large thing on the screen. */
+.qbig { font-size: 1.05rem; padding: 0.75rem 1rem; }
+.qprivate { display: flex; flex-wrap: wrap; gap: 10px; }
+.qprivate button { flex: 1 1 12rem; }
+
+.qstatus {
+  display: flex; align-items: center; gap: 9px;
+  margin: 1rem 0 0; color: var(--muted); font-size: 0.92rem;
+}
+.qfail { color: var(--danger); }
+
+.qspin {
+  width: 13px; height: 13px; flex: 0 0 auto;
+  border: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: qspin 900ms linear infinite;
+}
+@keyframes qspin { to { transform: rotate(360deg); } }
+
+.qcode {
+  margin: 1.4rem 0 0; padding: 1rem 1.1rem;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface);
+  text-align: center;
+}
+.qcodelabel { margin: 0; font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.qcodevalue {
+  margin: 0.4rem 0; cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 2rem; letter-spacing: 0.12em; color: var(--text);
+}
+.qcodevalue:hover { color: var(--accent); }
+.qcodehint { margin: 0 0 0.7rem; font-size: 0.78rem; color: var(--muted); }
+
+.qjoin { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; margin: 1.4rem 0 0; }
+.qjoin label { display: block; font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.qjoin input {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 1.3rem; letter-spacing: 0.14em; text-transform: uppercase;
+  width: 8ch; padding: 0.35rem 0.5rem;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--text);
+}
+.qleave { margin-top: 1.4rem; }
+
+@media (prefers-reduced-motion: reduce) { .qspin { animation-duration: 3s; } }
+
+/* --- the other player's hand ---------------------------------------------- */
+/* A fan held up from above the screen, the way a person actually holds cards:
+   splayed on an arc, each card square to the curve, the middle hanging lowest,
+   and the tops cropped away by the edge of the bar. Face down, because that is
+   all you are entitled to see, but positioned exactly so a card they play has a
+   gap to fly out of and a card they draw has a place to land. */
+:root {
+  --enemyhand-h: 104px;
+  /* The inspector column on the right. Both hands centre on the board rather
+     than on the window, so this is what they subtract to find it. */
+  --rail-w: 268px;
+  /* The End Turn pill's fixed width, reserved by the turn banner so the two
+     can never meet however long the player names are. */
+  --endturn-w: 122px;
+  --ehcard-w: 66px;
+}
+
+.enemyhand {
+  /* Spans the bar and shifts onto the lane's axis, the same offset the player's
+     own hand uses, so both fans and the slots between them share one centre line
+     whatever the buttons beside them happen to say. */
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  transform: translateX(var(--hand-shift, 0px));
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 14px;
+  min-width: 0;
+  /* The fan is taller than the bar on purpose; this is the crop. */
+  overflow: hidden;
+}
+
+.ehwho {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ehcount {
+  display: inline-block;
+  min-width: 1.6ch;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.ehfan {
+  /* Every card is placed by hand, so the fan is a canvas rather than a row. */
+  position: relative;
+  display: block;
+  flex: 0 0 auto;
+  width: var(--fanw, 0px);
+  height: 100%;
+  margin: 0 auto;
+}
+
+.ehcard {
+  position: absolute;
+  left: var(--x, 0px);
+  /* Lifted so the tops run off the edge of the bar and only the lower part of
+     each card shows, which is what makes it read as held rather than dealt. */
+  top: -30px;
+  width: var(--ehcard-w);
+  height: calc(var(--ehcard-w) * 1.4);
+  border-radius: 6px;
+  border: 1.5px solid var(--ink);
+  overflow: hidden;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+  /* The hand hangs from a grip above the screen, so that is where it pivots.
+     A pivot below the card spreads the tops and closes the bottoms, which is how
+     you hold your own hand; theirs is the other way up and has to open downward.
+     The swing does the arc by itself: a card turned away from straight down also
+     rises, so the middle hangs lowest without being told to. */
+  transform-origin: 50% -55%;
+  /* The translate is written first so it applies outside the rotation, moving
+     the already-turned card straight down the page rather than along its own
+     tilted axis. */
+  transform: translateY(var(--dip, 0px)) rotate(var(--rot, 0deg));
+  /* Each card lies on the one before it, left to right, the way a fan is spread
+     out of a hand rather than stacked from the middle. */
+  z-index: calc(var(--z, 0) * 1);
+  transition: transform 180ms ease;
+}
+
+/* Their cards face them, so the back reads upside down from this side of the
+   table. Only the artwork is turned: doing it on the card itself would fight the
+   pivot the fan is built on. */
+.ehcard::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: var(--cardback);
+  background-size: cover;
+  background-position: center;
+  transform: rotate(180deg);
+}
+
+/* The whole fan lifts a little when looked at, so a big hand can be counted. */
+.enemyhand:hover .ehcard {
+  transform: translateY(calc(var(--dip, 0px) + 14px)) rotate(var(--rot, 0deg));
+}
+
+/* Only when both hands are revealed, which is a two-players-one-screen thing. */
+.ehface {
+  position: absolute;
+  inset: 2px;
+  border-radius: 4px;
+  background-size: cover;
+  background-position: center;
+}
+
+.ehempty {
+  align-self: center;
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.topbar .topright {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  /* The enemy's fan spans the whole strip and a phone has no room beside it, so
+     the scheme toggle drops out of the bar here. It stays on the menu, which is
+     where it gets set anyway, and Concede has to remain reachable. */
+  /* Above the hand. The fan spans the whole bar and is positioned, so it paints
+     over anything static beside it and was eating every click on Concede. */
+  position: relative;
+  z-index: 2;
+}
+
+body.mobile .topbar .themeset {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ehcard { transition: none; }
+  .enemyhand:hover .ehcard { transform: translateY(var(--dip, 0px)) rotate(var(--rot, 0deg)); }
+}
+
+/* --- magnified card (mobile) ----------------------------------------------- */
+/* Press and hold a card and it fills the screen. The inspector panel is gone on
+   a phone: it was too small to read and too wide to spare. */
+.zoomlayer {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  background: var(--scrim-invert);
+  backdrop-filter: blur(2px);
+  padding: 18px;
+}
+.cardzoom {
+  display: grid;
+  justify-items: center;
+  gap: 16px;
+}
+/* On the card, not on its parent: .card sets its own --cw, so anything set
+   further out never reaches it. This is why the magnified card came out the size
+   of a board card. */
+.cardzoom .card {
+  --cw: min(86vw, calc((100vh - 150px) / var(--card-ratio)));
+  cursor: default;
+}
+.cardzoom button {
+  padding: 9px 22px;
+  font-size: 15px;
+}
+
+/* The panel beside the board is a desktop affordance; a phone gets the hold. */
+body.mobile .rail {
+  display: none;
+}
+
+/* --- mobile ---------------------------------------------------------------- */
+/* Below the design width the table stops scaling and rearranges instead. Past a
+   point, smaller is not readable, and the answer is a different arrangement
+   rather than the same one further away.
+
+   The two changes that matter: the inspector rail stops being a column and
+   becomes a sheet over the board, which is the only way to give the lane the
+   full width; and the hand sits lower and larger, because a thumb needs a bigger
+   target than a cursor does. */
+body.mobile #app {
+  grid-template-rows: var(--enemyhand-h) minmax(0, 1fr) calc(var(--cw-hand) * var(--card-ratio) + 30px);
+}
+
+body.mobile {
+  --enemyhand-h: 74px;
+  --ehcard-w: 46px;
+  --cw-hand: clamp(84px, 13vh, 112px);
+  --rail-w: 0px;
+  /* Card size is normally set by viewport height, which is right on a desktop
+     where height is what runs out first. On a phone width runs out first, so the
+     card takes whichever of the two is more binding.
+     The width term is the lane budget divided five ways: 220px covers the two
+     gutters, the board padding, the four gaps between slots and the sliver each
+     unit carries beyond its card. Floored so it stops shrinking before it stops
+     being a card. */
+  --cw-board: min(clamp(44px, 9.5vh, 74px), max(40px, calc((100vw - 150px) / 6.05)));
+}
+
+/* Everything the width budget above accounts for, tightened to earn the room. */
+body.mobile .side {
+  grid-template-columns: calc(var(--cw-board) * 1.02) minmax(0, 1fr) 44px;
+}
+body.mobile .lane {
+  gap: 8px;
+}
+body.mobile .unit {
+  width: calc(var(--cw-board) + 16px);
+}
+
+/* One column: the lane gets everything. */
+body.mobile .stage {
+  grid-template-columns: minmax(0, 1fr);
+  /* The closed sheet is parked below the stage, and a transformed element still
+     counts toward scrollable overflow, so without this the page scrolls by the
+     height of a panel nobody can see. */
+  overflow: hidden;
+}
+
+/* The inspector slides up over the board rather than taking a column from it.
+   Hidden until something is actually being looked at, so it never costs space
+   it is not using. */
+body.mobile .rail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 60;
+  max-height: 62%;
+  overflow-y: auto;
+  border-top: var(--stroke-thick) solid var(--ink);
+  box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.28);
+  transform: translateY(100%);
+  transition: transform 200ms ease;
+}
+body.mobile .rail.open {
+  transform: translateY(0);
+}
+
+/* The history log is pinned to the far left, which on a desktop sits in the
+   board's 48px padding and on a phone sits directly on top of the debt zone.
+   Debt is how you lose the game; the log is a convenience. The log gives way. */
+body.mobile .history {
+  display: none;
+}
+
+/* A callout is as wide as the sentence it carries, and on a phone that is wider
+   than the phone. */
+body.mobile .flipcallout {
+  max-width: calc(100vw - 24px);
+}
+
+/* HP cards, the debt stack and the slot captions all sized off viewport height
+   like everything else was, so none of them tightened when the table did. */
+body.mobile {
+  --hpw: calc(var(--cw-board) * 0.42);
+}
+
+/* A caption that outgrows its slot runs into the next one's, and two slot labels
+   side by side read as one. */
+body.mobile .lane .caption {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9px;
+}
+
+/* The debt stack lives in the same 44px gutter as everything else on that side,
+   and a card name does not fit in 44px. The level badge is what the stack is
+   actually read for: how much you owe and in what sizes. The names are still on
+   the cards themselves, one tap away. */
+body.mobile .debtcard {
+  height: 15px;
+  padding: 0 3px 2px;
+  gap: 0;
+  font-size: 9px;
+  width: 100%;
+  justify-content: center;
+}
+body.mobile .debtcard .dnm {
+  display: none;
+}
+/* A grid item is min-width:auto by default, so wide content stretches the track
+   rather than being constrained by it: the 44px gutter was being pushed out to
+   106px by the debt label, straight over the lane. This is the fix; max-width
+   alone cannot do anything about a column that content is widening. */
+body.mobile .side > * {
+  min-width: 0;
+}
+body.mobile .debtzone,
+body.mobile .debtstack {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+body.mobile .zlabel {
+  font-size: 9px;
+  white-space: nowrap;
+}
+body.mobile .zempty,
+body.mobile .zmore {
+  font-size: 8px;
+}
+
+/* Only on a phone. On a desktop the piles sit where they always did and there is
+   room for them; it is the short mobile side that crowds them onto the centre
+   line between the two players.
+   The row is content sized, so a tall midcol can stretch it past the height the
+   board gave that side and everything stretches with it. Capped here so the lean
+   below has a real half to lean inside. */
+body.mobile .side {
+  grid-auto-rows: minmax(0, 100%);
+}
+body.mobile .side.theirs .zonecol {
+  transform: translateY(-14%);
+}
+body.mobile .side.mine .zonecol {
+  transform: translateY(14%);
+}
+
+/* The count badge already says what the pile holds, so on a phone the word under
+   it is height the side does not have to give. */
+body.mobile .pile .caption {
+  display: none;
+}
+body.mobile .zonecol {
+  gap: 4px;
+}
+
+/* The deck and discard piles sit in a 44px gutter on mobile, and a 54px card
+   does not. Shrunk to fit the column they were always meant to live in. */
+body.mobile .minicard {
+  /* Small enough that deck and discard stacked together fit inside one player's
+     half of the table. They used to come to more than a side is tall and hung
+     across the divider onto the other player's board. */
+  width: 30px;
+  height: 42px;
+}
+body.mobile .pilecount {
+  font-size: 9px;
+  padding: 0 3px;
+  min-width: 14px;
+  /* Sits on the pile's corner rather than outside it: in a 44px gutter the
+     nine pixels it hangs off by are nine pixels off the screen. */
+  top: -5px;
+  right: -2px;
+}
+body.mobile .pile .caption,
+body.mobile .side .caption {
+  font-size: 9px;
+  letter-spacing: 0.02em;
+}
+
+/* The side gutters carry debt and the piles, and on a phone they eat the lane. */
+body.mobile .board {
+  padding: 6px;
+}
+
+/* Buttons get thumb-sized, and the wordmark chip drops: the name of the game is
+   not what anyone needs on a 700px screen. */
+body.mobile .topbar {
+  padding: 0 10px;
+  gap: 8px;
+}
+body.mobile .topbar button {
+  padding: 7px 12px;
+  font-size: 13px;
+}
+body.mobile .ehwho {
+  font-size: 11px;
+}
+body.mobile .topbar label {
+  display: none;
+}
+
+/* The setup screen is a list on a phone rather than a grid of wide cards. */
+body.mobile .decks {
+  grid-template-columns: minmax(0, 1fr);
+}
+body.mobile .setup {
+  padding: 18px 14px 48px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.mobile .rail { transition: none; }
+}
+
+/* Thumbnails that cropped a whole drawing with background-size: cover clip an
+   inner layer instead, because one cell of a sheet cannot be cropped by the
+   background shorthand. The layer is exactly cell-shaped and as tall as the box,
+   which is what cover came to on boxes this shape. */
+.hisart,
+.fcart,
+.fxart,
+.bsrcart,
+.ehface {
+  overflow: hidden;
+}
+.fcart,
+.fxart {
+  position: relative;
+}
+.sprfit {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  height: 100%;
+  aspect-ratio: 219 / 157;
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+
+/* --- the little guy --------------------------------------------------------
+   A background layer of his own, under the menu and over the velvet, so he
+   passes behind the deck cards rather than in front of them. The transform is
+   written every frame from guy.ts; everything here is what does not move. */
+
+.guylayer {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  display: none;
+}
+.guylayer.on {
+  display: block;
+}
+.guy {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc(var(--guy-h) * 240 / 230);
+  height: var(--guy-h);
+  will-change: transform;
+}
+.guy img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  /* Drawn at a few pixels an inch, so it stays that way blown up. */
+  image-rendering: pixelated;
+  /* Hard offset first, then the soft one under it: the same shadow the title
+     plate and the cards throw, at the size he is. */
+  filter: drop-shadow(3px 4px 0 rgba(4, 9, 31, 0.5))
+    drop-shadow(0 10px 9px rgba(0, 0, 0, 0.38));
+}
+.guy img.on {
+  opacity: 1;
+}
+
+/* The rules page reuses the setup shell: same plate, same width, but set as a
+   document rather than a menu. Numbered clauses hang their number in the
+   margin so the text block stays flush and scannable. */
+.rulesview,
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+.rulesview .inner {
+  max-width: 780px;
+}
+.rulesview .back {
+  margin-bottom: 18px;
+}
+.rulesview h2 {
+  margin: 28px 0 8px;
+}
+.rule {
+  color: var(--muted);
+  margin: 0 0 7px;
+  padding-left: 4.6em;
+  text-indent: -4.6em;
+  line-height: 1.5;
+  max-width: 68ch;
+}
+/* The number sets its own column, so the sentence needs no space of its own:
+   every clause then starts on the same left edge whatever the number's width. */
+.rule b {
+  display: inline-block;
+  width: 4.6em;
+  text-indent: 0;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The online lobby: one narrow column of controls, in the order a player works
+   down it. Public matchmaking first, then the private-code pair, then the way
+   out, each group separated by a rule rather than by spacing alone. */
+.onlineview .inner {
+  max-width: 420px;
+}
+.lobby {
+  border: var(--stroke-thick) solid var(--ink);
+  border-radius: var(--radius);
+  /* A panel surface rather than the chrome plate: every label and note inside
+     is written in the page's own text and muted tokens, which need the page's
+     own ground under them to read in either scheme. It also keeps the buttons
+     visible, since those are --glass and would vanish into a --glass panel. */
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  padding: 18px 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.lobby .eyebrow {
+  margin: 0 0 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.lobbyrow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.lobbyrow > span {
+  color: var(--muted);
+  font-size: 14px;
+  min-width: 46px;
+}
+.lobbyinput {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  border: var(--stroke) solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--sunk);
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+}
+.lobbyinput::placeholder {
+  color: var(--muted);
+  opacity: 0.75;
+  letter-spacing: 0.08em;
+}
+.lobbyinput:focus-visible {
+  outline: var(--stroke) solid var(--accent);
+  outline-offset: 1px;
+}
+.lobbynote {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.lobbyerr {
+  margin: 0;
+  color: var(--accent-2, #f435a9);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.roomcode {
+  color: var(--accent);
+  letter-spacing: 0.16em;
+  font-variant-numeric: tabular-nums;
+}
+.lobbyrow .dropdown {
+  max-width: none;
+}
+.lobbyrow .ddbtn {
+  padding: 9px 12px;
+  border-radius: var(--radius);
+  font-size: 14px;
+  color: var(--text);
+  background: var(--sunk);
+}
+.lobbybtn {
+  width: 100%;
+  padding: 11px 16px;
+  font-size: 15px;
+  border-radius: var(--radius);
+  border-width: var(--stroke-thick);
+}
+.lobbybtn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.lobbyrule {
+  width: 100%;
+  border: 0;
+  border-top: var(--stroke) solid var(--hairline);
+  margin: 2px 0;
+}
+
+/* The room code sits in a read-only field so it can be selected and copied by
+   hand wherever the clipboard API is not allowed. */
+.codeshare {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.codeshare .roomcode {
+  text-align: center;
+  font-size: 18px;
+  font-weight: 600;
+  cursor: text;
+}
+.codeshare .copybtn {
+  width: auto;
+  flex: none;
+  min-width: 92px;
+  padding: 9px 14px;
+  font-size: 14px;
+}
+
+/* Name and blurb in the save dialog: label to the left of the control so the
+   two rows line up, the way the lobby fields do. */
+.savefield {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.savefield > span {
+  color: var(--muted);
+  font-size: 14px;
+  min-width: 52px;
+  padding-top: 9px;
+}
+.savefield input,
+.savefield textarea {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  border: var(--stroke) solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--sunk);
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  resize: vertical;
+}
+.savefield input:focus-visible,
+.savefield textarea:focus-visible {
+  outline: var(--stroke) solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The save dialog is not answering something on the board, so it sits in the
+   middle of the screen rather than tucked above the enemy hand. */
+.promptlayer.savelayer {
+  position: fixed;
+  inset: 0;
+  height: auto;
+  place-items: center;
+  background: rgba(4, 9, 31, 0.55);
+  pointer-events: auto;
+}
+.blurbwrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.blurbwrap textarea {
+  width: 100%;
+}
+.charcount {
+  color: var(--muted);
+  font-size: 11px;
+  opacity: 0.75;
+  align-self: flex-end;
+  font-variant-numeric: tabular-nums;
+}

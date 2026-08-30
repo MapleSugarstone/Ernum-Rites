@@ -1,0 +1,47 @@
+# What ships is the web app: index.html, src, assets, and the config that builds
+# them. Everything below is either regenerated, enormous, or only ever mattered
+# on this machine.
+#
+# Source is kept even when the site does not serve it. The C# engine is half the
+# project and the only thing the TypeScript side checks itself against, and these
+# are all needed by .github/workflows/deploy.yml, which gates the Pages deploy on
+# `npm test` and `npm run typecheck` before it builds:
+#   tests/, conformance/cards.json, replays/   `npm test` runs before the build
+#   scripts/, worker/                          `npm run typecheck` covers both
+# Dropping those does not slim the site down, it just stops it deploying.
+
+# --- build output and dependencies ------------------------------------------
+node_modules/
+dist/
+.wrangler/
+*.local
+*.log
+
+# --- training and measurement output ----------------------------------------
+# runs/ alone is around 600 MB of tournament output.
+runs/
+rarity-snapshot.json
+
+# --- working notes and backups ----------------------------------------------
+claude-notes/
+card-backups/
+Notes.txt
+Example board for a player.png
+
+# --- editor and OS ----------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# --- .NET build output ------------------------------------------------------
+# The C# source under csharp/ is tracked; only what dotnet regenerates is not.
+bin/
+obj/
+*.user
+.vs/
+*.nupkg
+
+# bwp theme snapshots
+src/.bwp/

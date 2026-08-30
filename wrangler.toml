@@ -1,0 +1,26 @@
+name = "ernum-rites-server"
+main = "worker/index.ts"
+compatibility_date = "2026-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Set to the GitHub Pages origin (and any custom domain) once deployed.
+[vars]
+ALLOWED_ORIGINS = "http://localhost:5173"
+
+[[durable_objects.bindings]]
+name = "MATCH_ROOM"
+class_name = "MatchRoom"
+
+# One instance for the whole deployment: the only place that knows which room
+# a waiting player is sitting in.
+[[durable_objects.bindings]]
+name = "LOBBY"
+class_name = "Lobby"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["MatchRoom"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Lobby"]

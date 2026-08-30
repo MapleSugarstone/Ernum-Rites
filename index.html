@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ernum Rites</title>
+    <meta
+      name="description"
+      content="A fast paced card game about universal rites of debt and destruction!"
+    />
+    <link rel="icon" href="/favicon.png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Ernum Rites" />
+    <meta
+      property="og:description"
+      content="A fast paced card game about universal rites of debt and destruction!"
+    />
+    <!-- Crawlers want an absolute URL here; fill the origin in once the site has one. -->
+    <meta property="og:image" content="/preview.png" />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="640" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Ernum Rites" />
+    <meta
+      name="twitter:description"
+      content="A fast paced card game about universal rites of debt and destruction!"
+    />
+    <meta name="twitter:image" content="/preview.png" />
+    <link rel="stylesheet" href="/src/ui/styles.css" />
+    <script>
+      // Before first paint, or the page flashes the dark ground on its way to
+      // the light one. src/ui/theme.ts owns this key and sets it again later.
+      try {
+        var t = localStorage.getItem('ernum.theme');
+        document.documentElement.dataset.theme = t === 'light' ? 'light' : 'dark';
+      } catch (e) {
+        document.documentElement.dataset.theme = 'dark';
+      }
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
