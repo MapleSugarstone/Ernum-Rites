@@ -12,6 +12,7 @@ import {
   takeWounds,
 } from './engine/effects';
 import { everyDeck, starterDecks, type StarterDeck } from './cards';
+import { HIDDEN_ID } from './engine/redact';
 import {
   BROWSE_TABS,
   DECK_SIZE,
@@ -1248,7 +1249,7 @@ function applyActionFx(
   actor: PlayerIdx,
 ): void {
   computeSmackFx(prev, next, action);
-  computeHandPlayFx(prev, action, actor);
+  computeHandPlayFx(prev, next, action, actor);
   computeDeckOutFx(prev, next);
   computeDebtFx(prev, next);
   computeDrawFx(prev, next);
@@ -1773,15 +1774,59 @@ function handIndexOf(action: Action): number | null {
   }
 }
 
-function computeHandPlayFx(prev: GameState, action: Action, actor: PlayerIdx): void {
+/**
+ * What the card they just played actually was.
+ *
+ * Their hand is a row of placeholders online, so the id in it says nothing. The
+ * card is public the moment it is played, though, so it is read back out of
+ * wherever it landed. Offline the hand already holds the real id and this never
+ * has to look.
+ */
+function playedCardId(
+  prev: GameState,
+  next: GameState,
+  action: Action,
+  actor: PlayerIdx,
+  index: number,
+): string | null {
+  const fromHand = prev.players[actor].hand[index];
+  if (fromHand && fromHand !== HIDDEN_ID) return fromHand;
+  const p = next.players[actor];
+  switch (action.type) {
+    case 'PLAY_SUMMON':
+    case 'REPLACE_SUMMON': {
+      const slot = 'slot' in action ? action.slot : null;
+      const body = slot === null ? null : p.slots[slot];
+      return body?.cardId ?? null;
+    }
+    case 'PLAY_SUPPORTER':
+      return p.supporters.at(-1)?.cardId ?? null;
+    case 'PLAY_STAGE':
+      return p.stage;
+    // A spell or a trap is spent, and spent cards land in the discard.
+    case 'CAST_SPELL':
+    case 'CAST_TRAP':
+      return p.discard.at(-1) ?? null;
+    default:
+      return null;
+  }
+}
+
+function computeHandPlayFx(
+  prev: GameState,
+  next: GameState,
+  action: Action,
+  actor: PlayerIdx,
+): void {
   handPlayFx = null;
   // Only the hand you cannot see needs explaining; your own card is under your
   // cursor already.
   if (actor === viewSeat()) return;
   const index = handIndexOf(action);
   if (index === null) return;
-  const cardId = prev.players[actor].hand[index];
-  if (!cardId) return;
+  const cardId = playedCardId(prev, next, action, actor, index);
+  // Better nothing than a placeholder flying out of their fan.
+  if (!cardId || cardId === HIDDEN_ID) return;
   const to =
     action.type === 'PLAY_SUMMON' || action.type === 'REPLACE_SUMMON'
       ? ({ kind: 'summon', player: actor, slot: 'slot' in action ? action.slot : 0 } as TargetRef)
@@ -3871,9 +3916,12 @@ function renderOnline(): string {
   // custom deck, which lives only in this browser, cannot be used against another
   // player. The room rejects an unknown key, and offering one here would only be
   // an option that always fails.
+  // A deck you built travels to the room with the join, so it can be brought
+  // online like any other. The group is dropped when there is nothing in it.
   const deckGroups = [
+    { label: 'Your decks', options: savedDeckList().map((d) => ({ value: d.key, label: d.name })) },
     { label: 'Starter decks', options: starterDecks.map((d) => ({ value: d.key, label: d.name })) },
-  ];
+  ].filter((g) => g.options.length > 0);
   const status = o.error
     ? `<p class="lobbyerr lobbystatus">${esc(o.error)}</p>`
     : badName && o.name.trim().length > 0
@@ -4527,7 +4575,10 @@ async function startOnline(how: 'public' | 'host' | 'join'): Promise<void> {
   o.roomCode = reply.code ?? null;
   o.phase = 'connecting';
   render();
-  client.connect(reply.roomId, reply.kind, o.deckKey, o.name.trim(), reply.code);
+  // A saved deck is not one the room can look up, so it travels with the join.
+  const saved = savedDecks().find((d) => d.key === o.deckKey);
+  const deck = saved ? { leaderId: saved.leaderId, cards: saved.cards } : undefined;
+  client.connect(reply.roomId, reply.kind, o.deckKey, o.name.trim(), reply.code, deck);
 }
 
 /** Leave cleanly, so a half-made room does not sit in the queue. */

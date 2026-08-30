@@ -1,5 +1,8 @@
 import { allCards, card, tryCard } from '../engine/registry';
 import { canBeLeader, colorsOf, deckIdentity } from '../engine/identity';
+import { DECK_SIZE, counts, deckProblems } from '../engine/decklist';
+
+export { DECK_SIZE, counts };
 import {
   COLORS,
   COLOR_NAME,
@@ -144,32 +147,12 @@ export function clearSuggestions(): void {
 
 // --- legality ---------------------------------------------------------------
 
-export const DECK_SIZE = 48;
 
-export function counts(cards: string[]): Map<string, number> {
-  const m = new Map<string, number>();
-  for (const id of cards) m.set(id, (m.get(id) ?? 0) + 1);
-  return m;
-}
+
 
 /** Everything wrong with a deck, in the order a builder would want to fix it. */
 export function problems(b: BuilderState): string[] {
-  const out: string[] = [];
-  if (!b.leaderId) out.push('Pick a leader: drag any summon onto the leader slot.');
-  else if (!canBeLeader(b.leaderId)) out.push('That card cannot be a leader.');
-  const identity = deckIdentity(b.leaderId);
-  const off = new Set<string>();
-  for (const [id, n] of counts(b.cards)) {
-    const def = tryCard(id);
-    if (!def) continue;
-    if (!colorsOf(def).every((c) => identity.includes(c))) off.add(def.name);
-    if (n > COPY_LIMIT) out.push(`${def.name}: ${n} copies (limit ${COPY_LIMIT}).`);
-  }
-  if (off.size > 0) out.push(`Outside your leader's colors: ${[...off].join(', ')}.`);
-  if (b.cards.length !== DECK_SIZE) {
-    out.push(`${b.cards.length}/${DECK_SIZE} cards.`);
-  }
-  return out;
+  return deckProblems(b.leaderId, b.cards);
 }
 
 export function isLegal(b: BuilderState): boolean {

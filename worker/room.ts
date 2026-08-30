@@ -1,6 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import '../src/cards';
 import { deckByKey, hasDeck } from '../src/cards';
+import { deckProblems } from '../src/engine/decklist';
 import type { Action } from '../src/engine/actions';
 import { applyAction, createGame } from '../src/engine/engine';
 import { digestShort } from '../src/engine/digest';
@@ -17,6 +18,8 @@ interface Seat {
   socket: WebSocket;
   name: string;
   deckKey: string;
+  /** Set only for a deck the room cannot look up, already checked as legal. */
+  deck?: { leaderId: string; cards: string[] };
 }
 
 /**
@@ -98,13 +101,25 @@ export class MatchRoom extends DurableObject {
       // so the room does not take a client's word for it.
       const bad = nameProblem(msg.name);
       if (bad) return this.send(socket, { type: 'error', reason: bad });
-      // Only decks the room can rebuild from their key work online; custom decks
-      // live in one browser and never reach the authority.
+      // A deck the room knows by key is rebuilt from it. Anything else is one the
+      // player built, which lives in their browser, so it arrives with the join
+      // and is checked here against the same rules the builder enforces. The
+      // check is the point: the cards come from the client and nothing else in
+      // the room ever looks at them again.
       if (!hasDeck(msg.deckKey)) {
-        return this.send(socket, {
-          type: 'error',
-          reason: 'That deck cannot be used online. Pick a starter deck and try again.',
-        });
+        if (!msg.deck) {
+          return this.send(socket, {
+            type: 'error',
+            reason: 'That deck could not be read. Open the deckbuilder, save it again, and retry.',
+          });
+        }
+        const faults = deckProblems(msg.deck.leaderId, msg.deck.cards);
+        if (faults.length > 0) {
+          return this.send(socket, {
+            type: 'error',
+            reason: `That deck is not legal: ${faults[0]}`,
+          });
+        }
       }
       // Checked before a seat is given rather than after the match goes wrong.
       // The room runs the same build it is comparing against, so a client that
@@ -117,7 +132,7 @@ export class MatchRoom extends DurableObject {
       }
       const seat = this.seats.findIndex((s) => s === null);
       if (seat < 0) return this.send(socket, { type: 'error', reason: 'room is full' });
-      this.seats[seat] = { socket, name: msg.name.trim(), deckKey: msg.deckKey };
+      this.seats[seat] = { socket, name: msg.name.trim(), deckKey: msg.deckKey, deck: msg.deck };
       this.send(socket, {
         type: 'seated',
         seat: seat as PlayerIdx,
@@ -156,7 +171,9 @@ export class MatchRoom extends DurableObject {
 
   private async startMatch(): Promise<void> {
     const decks = this.seats.map((s, i) => {
-      const d = deckByKey(s!.deckKey);
+      // A custom deck came in with the join and was checked then; anything else
+      // the room rebuilds from its key.
+      const d = s!.deck ?? deckByKey(s!.deckKey);
       return { name: s!.name || `Player ${i + 1}`, leaderId: d.leaderId, cards: d.cards };
     });
     // Seeded from the room so a replay of the same actions reproduces the match.

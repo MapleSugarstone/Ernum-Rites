@@ -13,7 +13,18 @@ export type ClientMessage =
    * client that disagrees with it, because two builds that disagree about a
    * card diverge partway through a match rather than at the start.
    */
-  | { type: 'join'; deckKey: string; name: string; version: string }
+  /**
+   * `deck` carries a deck the room cannot look up. A custom deck lives in one
+   * browser, so the cards come with the join and the room checks them against
+   * the same rules the builder does before seating anyone.
+   */
+  | {
+      type: 'join';
+      deckKey: string;
+      name: string;
+      version: string;
+      deck?: { leaderId: string; cards: string[] };
+    }
   | { type: 'action'; action: Action; version: number }
   | { type: 'resync' }
   /**

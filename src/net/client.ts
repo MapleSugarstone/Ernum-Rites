@@ -100,7 +100,14 @@ export class NetClient {
 
   // --- the match socket -----------------------------------------------------
 
-  connect(roomId: string, kind: RoomKind, deckKey: string, name: string, code?: string): void {
+  connect(
+    roomId: string,
+    kind: RoomKind,
+    deckKey: string,
+    name: string,
+    code?: string,
+    deck?: { leaderId: string; cards: string[] },
+  ): void {
     this.close();
     const ws = this.base.replace(/^http/, 'ws');
     const params = new URLSearchParams({ kind });
@@ -120,7 +127,7 @@ export class NetClient {
       'open',
       () => {
         this.status.connected = true;
-        this.send({ type: 'join', deckKey, name, version: BUILD_VERSION });
+        this.send({ type: 'join', deckKey, name, version: BUILD_VERSION, deck });
         this.measureSkew();
         this.pingTimer = window.setInterval(() => this.measureSkew(), PING_EVERY_MS);
       },
