@@ -15,11 +15,22 @@ import { nameProblem } from './protocol';
 import type { ClientMessage, RoomKind, ServerMessage } from './protocol';
 
 interface Seat {
-  socket: WebSocket;
+  /** Null once a party player drops mid-match: the seat stays, the socket goes. */
+  socket: WebSocket | null;
   name: string;
   deckKey: string;
   /** Set only for a deck the room cannot look up, already checked as legal. */
   deck?: { leaderId: string; cards: string[] };
+}
+
+/**
+ * How many players this room seats, read off its own name. The lobby mints
+ * `prv3-`/`prv4-` names for party rooms and plain `prv-`/`pub-` for the rest.
+ */
+function seatCountFor(name: string | undefined): number {
+  if (name?.startsWith('prv3-')) return 3;
+  if (name?.startsWith('prv4-')) return 4;
+  return 2;
 }
 
 /**
@@ -30,7 +41,10 @@ interface Seat {
  * player being timed is exactly the person who benefits from a slow one.
  */
 export class MatchRoom extends DurableObject {
-  private seats: (Seat | null)[] = [null, null];
+  private seats: (Seat | null)[] = Array.from(
+    { length: seatCountFor(this.ctx.id.name) },
+    () => null,
+  );
   private state: GameState | null = null;
   private clock: Clock | null = null;
   /**
@@ -69,14 +83,56 @@ export class MatchRoom extends DurableObject {
       void this.handle(socket, msg);
     });
     socket.addEventListener('close', () => {
-      const idx = this.seats.findIndex((s) => s?.socket === socket);
-      if (idx >= 0) {
-        this.seats[idx] = null;
-        this.clock = null;
-        void this.ctx.storage.deleteAlarm();
-        this.broadcast({ type: 'opponentLeft' });
-      }
+      void this.handleClose(socket);
     });
+  }
+
+  private async handleClose(socket: WebSocket): Promise<void> {
+    const idx = this.seats.findIndex((s) => s?.socket === socket);
+    if (idx < 0) return;
+    if (this.seats.length === 2) {
+      this.seats[idx] = null;
+      this.clock = null;
+      await this.ctx.storage.deleteAlarm();
+      this.broadcast({ type: 'opponentLeft' });
+      return;
+    }
+    // A party room. Before the match starts a drop just frees the seat.
+    const seat = idx as PlayerIdx;
+    if (this.state === null) {
+      this.seats[idx] = null;
+      this.broadcastWaiting();
+      return;
+    }
+    // Mid-match the seat stays so the roster keeps its shape; the socket goes,
+    // and a player still in the game concedes, which eliminates them and
+    // leaves everyone else playing.
+    const gone = this.seats[idx]!;
+    gone.socket = null;
+    if (this.state.winner !== null || this.state.drawn) return;
+    if (this.state.players[seat].eliminated) return;
+    this.broadcast({ type: 'playerLeft', seat, name: gone.name });
+    const result = applyAction(this.state, seat, { type: 'CONCEDE' });
+    if (result.ok) {
+      this.state = result.state;
+      await this.restartClock();
+      this.pushState({ action: { type: 'CONCEDE' }, actor: seat });
+    }
+  }
+
+  /** The lobby roster, sent to everyone already seated while the room fills. */
+  private broadcastWaiting(): void {
+    const seated = this.seats.filter((s): s is Seat => s !== null);
+    const msg: ServerMessage = {
+      type: 'waiting',
+      players: seated.length,
+      needed: this.seats.length,
+      names: seated.map((s) => s.name),
+      ...(this.code ? { code: this.code } : {}),
+    };
+    for (const s of seated) {
+      if (s.socket) this.send(s.socket, msg);
+    }
   }
 
   private async handle(socket: WebSocket, msg: ClientMessage): Promise<void> {
@@ -141,7 +197,7 @@ export class MatchRoom extends DurableObject {
         ...(this.code ? { code: this.code } : {}),
       });
       if (this.seats.every((s) => s !== null)) await this.startMatch();
-      else this.send(socket, { type: 'waiting', players: 1, ...(this.code ? { code: this.code } : {}) });
+      else this.broadcastWaiting();
       return;
     }
 
@@ -178,9 +234,9 @@ export class MatchRoom extends DurableObject {
     });
     // Seeded from the room so a replay of the same actions reproduces the match.
     const seed = Math.floor(Math.random() * 0x7fffffff);
-    // Who opens is a coin toss, taken off the seed rather than a second roll so
+    // Who opens is a die roll, taken off the seed rather than a second roll so
     // the seed on its own still reproduces the whole match.
-    this.state = createGame([decks[0], decks[1]], seed, (seed & 1) as PlayerIdx);
+    this.state = createGame(decks, seed, (seed % this.seats.length) as PlayerIdx);
     await this.restartClock();
     this.pushState();
   }
@@ -254,7 +310,7 @@ export class MatchRoom extends DurableObject {
     // against the state it computed itself without learning anything private.
     const digest = digestShort(publicView(this.state));
     this.seats.forEach((s, i) => {
-      if (!s) return;
+      if (!s?.socket) return;
       const seat = i as PlayerIdx;
       this.send(s.socket, {
         type: 'state',
@@ -276,6 +332,8 @@ export class MatchRoom extends DurableObject {
   }
 
   private broadcast(msg: ServerMessage): void {
-    for (const s of this.seats) if (s) this.send(s.socket, msg);
+    for (const s of this.seats) {
+      if (s?.socket) this.send(s.socket, msg);
+    }
   }
 }

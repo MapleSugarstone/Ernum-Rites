@@ -3,11 +3,14 @@ import { robotCopy } from './generated';
 import { randInt, shuffle } from './rng';
 import { registerChoiceResolver, runChoiceResolver } from './choices';
 import {
-  DEBT_LIMIT,
+  debtLimitOf,
   emptyMana,
   findSummon,
   HAND_LIMIT,
   levelOf,
+  livingOpponents,
+  livingPlayers,
+  otherPlayer,
   remainingHp,
   strengthOf,
   type FlipOffer,
@@ -195,10 +198,11 @@ export function addDebt(
   // tie looks like; endGame settles who the tie belongs to.
   if (amount <= 0) return;
   const p = state.players[player];
+  const limit = debtLimitOf(state);
   p.debtCount += amount;
-  log(state, player, `${reason} Debt is now ${p.debtCount}/${DEBT_LIMIT}.`);
-  if (p.debtCount >= DEBT_LIMIT) {
-    endGame(state, player === 0 ? 1 : 0, `${p.name} reached ${DEBT_LIMIT} debt.`);
+  log(state, player, `${reason} Debt is now ${p.debtCount}/${limit}.`);
+  if (p.debtCount >= limit) {
+    playerLoses(state, player, `${p.name} reached ${limit} debt.`);
   }
 }
 
@@ -208,7 +212,7 @@ export function clearDebt(state: GameState, player: PlayerIdx, amount: number): 
   const paid = Math.min(amount, p.debtCount);
   if (paid === 0) return;
   p.debtCount -= paid;
-  log(state, player, `${p.name} pays off ${paid} debt, down to ${p.debtCount}/${DEBT_LIMIT}.`);
+  log(state, player, `${p.name} pays off ${paid} debt, down to ${p.debtCount}/${debtLimitOf(state)}.`);
 }
 
 /** Pull `count` cards off the top of the deck as face-down HP. Returns how many landed. */
@@ -326,6 +330,7 @@ export function fireTrigger(
   summon: SummonInstance | null,
   name: TriggerName,
   targets: TargetRef[] = [],
+  oppMode?: OppMode,
 ): void {
   if (!summon || state.winner !== null) return;
   const def = tryCard(summon.cardId);
@@ -339,7 +344,7 @@ export function fireTrigger(
   const quiet = state.log.length;
   const at = refFor(state, summon);
   try {
-    fn(makeEffectCtx(state, summon.owner, summon, def, targets));
+    fn(makeEffectCtx(state, summon.owner, summon, def, targets, oppMode));
   } finally {
     triggerDepth--;
   }
@@ -420,22 +425,27 @@ export function dealDamage(
   return muted;
 }
 
-/** Whether the other side is fielding anything that forbids this player supporters. */
+/** Whether any other side is fielding anything that forbids this player supporters. */
 export function supporterLocked(state: GameState, owner: PlayerIdx): boolean {
-  const foe = state.players[owner === 0 ? 1 : 0];
-  for (const s of [...foe.slots, foe.leader]) {
-    if (s && tryCard(s.cardId)?.supporterLock) return true;
+  for (const foeIdx of livingOpponents(state, owner)) {
+    const foe = state.players[foeIdx];
+    for (const s of [...foe.slots, foe.leader]) {
+      if (s && tryCard(s.cardId)?.supporterLock) return true;
+    }
+    if (foe.stage && tryCard(foe.stage)?.supporterLock) return true;
   }
-  return !!foe.stage && !!tryCard(foe.stage)?.supporterLock;
+  return false;
 }
 
-/** Wounds convert at 2 per damage, or 1 while the other side fields an amplifier. */
+/** Wounds convert at 2 per damage, or 1 while any other side fields an amplifier. */
 function woundRate(state: GameState, owner: PlayerIdx): number {
-  const foe = state.players[owner === 0 ? 1 : 0];
-  for (const s of [...foe.slots, foe.leader]) {
-    if (s && tryCard(s.cardId)?.woundAmplify) return 1;
+  for (const foeIdx of livingOpponents(state, owner)) {
+    const foe = state.players[foeIdx];
+    for (const s of [...foe.slots, foe.leader]) {
+      if (s && tryCard(s.cardId)?.woundAmplify) return 1;
+    }
+    if (foe.stage && tryCard(foe.stage)?.woundAmplify) return 1;
   }
-  if (foe.stage && tryCard(foe.stage)?.woundAmplify) return 1;
   return 2;
 }
 
@@ -515,7 +525,13 @@ export function destroySummon(state: GameState, summon: SummonInstance): void {
   if (summon.isLeader) {
     p.leader = null;
     log(state, summon.owner, `${def.name} has died.`);
-    endGame(state, summon.owner === 0 ? 1 : 0, `${p.name} lost their leader.`);
+    // Party elimination sweeps the board, but the leader left it a line ago, so
+    // its card and HP reach the discard pile here or nowhere.
+    if (livingPlayers(state).length > 2) {
+      p.discard.push(summon.cardId);
+      for (const h of summon.hp) p.discard.push(h.cardId);
+    }
+    playerLoses(state, summon.owner, `${p.name} lost their leader.`);
     return;
   }
   const slot = p.slots.indexOf(summon);
@@ -598,7 +614,8 @@ export function endGame(state: GameState, winner: PlayerIdx, reason: string): vo
       const swing = state.battle?.attacker;
       const attacker =
         swing && (swing.kind === 'summon' || swing.kind === 'leader') ? swing.player : undefined;
-      const leadersStanding = state.players.every((q) => q.leader !== null);
+      // Players already eliminated in a party game have no leader to stand.
+      const leadersStanding = state.players.every((q) => q.eliminated || q.leader !== null);
       if (attacker !== undefined && leadersStanding) {
         state.winner = attacker;
         state.winReason = `${state.winReason ?? ''} ${reason} The attacker takes the trade.`.trim();
@@ -617,6 +634,60 @@ export function endGame(state: GameState, winner: PlayerIdx, reason: string): vo
   state.replaceQueue = [];
   state.flipQueue = [];
   log(state, null, `${state.players[winner].name} wins: ${reason}`);
+}
+
+/**
+ * One player has lost. Head-to-head that ends the match the way it always has,
+ * double-loss tiebreak included. In a party game with three or more players
+ * still standing it only knocks the loser out and play continues.
+ */
+export function playerLoses(state: GameState, loser: PlayerIdx, reason: string): void {
+  // A player already out has nothing left to lose, and must not be able to
+  // hand the win to anyone by conceding again from the spectator seat.
+  if (state.players[loser].eliminated) return;
+  const living = livingPlayers(state);
+  if (living.length <= 2) {
+    endGame(state, living.find((q) => q !== loser) ?? otherPlayer(loser), reason);
+    return;
+  }
+  eliminatePlayer(state, loser, reason);
+}
+
+/**
+ * Knock a party player out and play on. The board is swept silently: firing a
+ * death cascade for a player already out would re-enter the very effects that
+ * eliminated them. Their pending response window, if any, is answered by the
+ * post-action sweep in applyAction rather than here, which cannot reach the
+ * resolvers that live in engine.ts.
+ */
+function eliminatePlayer(state: GameState, loser: PlayerIdx, reason: string): void {
+  const p = state.players[loser];
+  p.eliminated = true;
+  log(state, null, `${p.name} is eliminated: ${reason}`);
+
+  for (const s of [...p.slots, p.leader]) {
+    if (!s) continue;
+    p.discard.push(s.cardId);
+    for (const h of s.hp) p.discard.push(h.cardId);
+  }
+  p.slots = p.slots.map(() => null);
+  p.leader = null;
+  for (const sup of p.supporters) p.discard.push(sup.cardId);
+  p.supporters = [];
+  if (p.stage) {
+    p.discard.push(p.stage);
+    p.stage = null;
+  }
+  p.mana = emptyMana();
+
+  // Nothing may stay owed by a player who is out. Their deferred choices are
+  // settled picklessly rather than dropped: a raid or a scry is holding cards
+  // out of every zone, and some of them belong to players still in the game.
+  state.replaceQueue = state.replaceQueue.filter((r) => r.player !== loser);
+  state.flipQueue = state.flipQueue.filter((f) => f.player !== loser);
+  const orphaned = state.choiceQueue.filter((c) => c.player === loser);
+  state.choiceQueue = state.choiceQueue.filter((c) => c.player !== loser);
+  for (const ch of orphaned) runChoiceResolver(state, ch, {});
 }
 
 // --- library and zone verbs -------------------------------------------------
@@ -681,6 +752,9 @@ export function raidDeck(
     cards: looked,
     legal: looked.map((_, i) => i),
     optional: true,
+    // Party resolvers cannot infer "whoever isn't choosing", so the raided
+    // player rides along. Left off head-to-head to keep the digest contract.
+    ...(state.players.length > 2 ? { victim } : {}),
   });
 }
 
@@ -1128,18 +1202,81 @@ export function takeFromDebt(
   return null;
 }
 
+/**
+ * Whoever the action being applied belongs to. Module state rather than game
+ * state so the wire format and digest stay untouched; applyAction sets and
+ * clears it around every reduce.
+ */
+let actingPlayer: PlayerIdx | null = null;
+
+export function setActingPlayer(p: PlayerIdx | null): void {
+  actingPlayer = p;
+}
+
+/**
+ * The enemy an effect means when it says "the enemy" and nobody was asked.
+ * With one living opponent there is nothing to decide. In a party game the
+ * responsible enemy is the other side of the battle when there is one, then
+ * the caster of the spell being answered, then whoever's action set the effect
+ * off, then the next living opponent in turn order. Every branch collapses to
+ * the other player in a 2-player game.
+ */
+export function defaultOpp(state: GameState, me: PlayerIdx): PlayerIdx {
+  const foes = livingOpponents(state, me);
+  if (foes.length === 1) return foes[0];
+  if (foes.length === 0) return otherPlayer(me);
+  const b = state.battle;
+  if (b && b.attacker.kind !== 'color' && b.defender.kind !== 'color') {
+    const att = b.attacker.player;
+    const def = b.defender.player;
+    if (att === me && foes.includes(def)) return def;
+    if (def === me && foes.includes(att)) return att;
+  }
+  const sp = state.pending?.spell;
+  if (sp && foes.includes(sp.caster)) return sp.caster;
+  if (actingPlayer !== null && foes.includes(actingPlayer)) return actingPlayer;
+  return foes[0];
+}
+
+/**
+ * How a context resolves its `opp`. `fixed` is a pick the action carried in;
+ * `track` raises a flag on the first read so the engine can reject the action
+ * with NEEDS_ENEMY and the client can go ask. No mode reads defaultOpp quietly.
+ */
+export type OppMode = { kind: 'fixed'; player: PlayerIdx } | { kind: 'track' };
+
+let oppWanted = false;
+
+export function clearOppWanted(): void {
+  oppWanted = false;
+}
+
+export function oppWasWanted(): boolean {
+  return oppWanted;
+}
+
+/** The `opp` getter every context shares. A fixed pick that has since been
+ * eliminated falls back to the default rather than aiming at an empty seat. */
+function resolveOpp(state: GameState, me: PlayerIdx, mode: OppMode | undefined): PlayerIdx {
+  if (mode?.kind === 'fixed' && !state.players[mode.player].eliminated) return mode.player;
+  if (mode?.kind === 'track') oppWanted = true;
+  return defaultOpp(state, me);
+}
+
 export function makeEffectCtx(
   state: GameState,
   me: PlayerIdx,
   source: SummonInstance | null,
   def: CardDef,
   targets: TargetRef[],
+  oppMode?: OppMode,
 ): EffectCtx {
-  const opp: PlayerIdx = me === 0 ? 1 : 0;
   return {
     state,
     me,
-    opp,
+    get opp(): PlayerIdx {
+      return resolveOpp(state, me, oppMode);
+    },
     source,
     card: def,
     targets,
@@ -1441,13 +1578,15 @@ export function makeFlipCtx(
   holder: SummonInstance,
   def: CardDef,
   depth = 0,
+  oppMode?: OppMode,
 ): FlipCtx {
   const me = holder.owner;
-  const opp: PlayerIdx = me === 0 ? 1 : 0;
   return {
     state,
     me,
-    opp,
+    get opp(): PlayerIdx {
+      return resolveOpp(state, me, oppMode);
+    },
     holder,
     card: def,
     ...baseHelpers(state, me, def.id),
@@ -1495,7 +1634,7 @@ function makeFlipCheckCtx(
   return {
     state,
     me,
-    opp: me === 0 ? 1 : 0,
+    opp: defaultOpp(state, me),
     holder,
     debtSummons: (player: PlayerIdx) => debtSummonRefs(state, player),
     summonsOf: (player: PlayerIdx, includeLeader = false) =>
@@ -1525,7 +1664,7 @@ export function flipWouldFire(state: GameState, offer: FlipOffer): boolean {
 export function effectiveStrength(state: GameState, summon: SummonInstance): number {
   const def = card(summon.cardId);
   let total = strengthOf(summon, def);
-  for (const controller of [0, 1] as PlayerIdx[]) {
+  for (let controller = 0 as PlayerIdx; controller < state.players.length; controller++) {
     const stageId = state.players[controller].stage;
     if (stageId) {
       const bonus = tryCard(stageId)?.stageHooks?.strengthBonus;
@@ -1558,7 +1697,7 @@ export function strengthSourcesOf(
   };
   // A modifier from before sources were recorded reads as the body's own doing.
   for (const m of summon.strengthMods) add(m.source ?? summon.cardId, m.amount);
-  for (const controller of [0, 1] as PlayerIdx[]) {
+  for (let controller = 0 as PlayerIdx; controller < state.players.length; controller++) {
     const stageId = state.players[controller].stage;
     const stageBonus = stageId && tryCard(stageId)?.stageHooks?.strengthBonus;
     if (stageId && stageBonus) add(stageId, stageBonus({ state, controller, summon, def }));

@@ -372,7 +372,7 @@ export const tripleCards: CardDef[] = [
  */
 registerChoiceResolver('static-raid', (state, choice, pick) => {
   const cards = [...(choice.cards ?? [])];
-  const victim = otherPlayer(choice.player);
+  const victim = choice.victim ?? otherPlayer(choice.player);
   if (pick.index !== undefined) {
     const [id] = cards.splice(pick.index, 1);
     toHand(state, choice.player, robotCopy(id));

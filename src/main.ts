@@ -52,6 +52,7 @@ import {
   flipWouldFire,
   legalAttackTargets,
   manaKindFor,
+  NEEDS_ENEMY,
   powerBlockers,
   strengthSourcesOf,
   targetCandidates,
@@ -63,9 +64,15 @@ import {
   allSummons,
   currentActor,
   DEBT_LIMIT,
+  debtLimitOf,
   DRAW_PER_TURN,
   HAND_LIMIT,
+  isParty,
+  livingOpponents,
+  nextLiving,
   OPENING_HAND,
+  PARTY_DEBT_LIMIT,
+  PARTY_HAND_BONUS,
   SUMMON_SLOTS,
   findSummon,
   isOver,
@@ -167,7 +174,18 @@ interface Ui {
     roomCode: string | null;
     seat: PlayerIdx | null;
     error: string | null;
+    /** Seats a hosted game deals: 2 head-to-head, 3 or 4 for party mode. */
+    party: 2 | 3 | 4;
+    /** Who is in the room while it fills, from the room's waiting pushes. */
+    roster: { players: number; needed: number; names: string[] } | null;
+    /** The local player chose to keep watching after being eliminated. */
+    spectating: boolean;
   };
+  /**
+   * A party action the engine sent back for an enemy pick: the player clicks
+   * an enemy leader (or their side) and the action goes out again with it.
+   */
+  enemyPick: { build: (enemy: PlayerIdx) => Action } | null;
   picks: [string, string];
   state: GameState | null;
   botSeat: PlayerIdx | null;
@@ -201,7 +219,11 @@ const ui: Ui = {
     roomCode: null,
     seat: null,
     error: null,
+    party: 2,
+    roster: null,
+    spectating: false,
   },
+  enemyPick: null,
   picks: ['deepcurrent', 'emberchoir'],
   state: null,
   botSeat: null,
@@ -1004,7 +1026,7 @@ let deckGiftFx: { player: PlayerIdx; cardId: string; count: number }[] = [];
 
 function computeDeckGifts(prev: GameState, next: GameState): void {
   deckGiftFx = [];
-  for (const player of [0, 1] as PlayerIdx[]) {
+  for (let player = 0 as PlayerIdx; player < next.players.length; player++) {
     // A deck that ran out took its whole discard pile back, which is a reshuffle
     // rather than a gift and would otherwise read as forty cards flying in.
     if (next.players[player].deckOuts !== prev.players[player].deckOuts) continue;
@@ -1110,7 +1132,7 @@ function computeWoundFx(prev: GameState, next: GameState): void {
 /** Seals that went up or came down this action, so each one animates once. */
 function computeLockFx(prev: GameState, next: GameState): void {
   lockIn = new Set();
-  for (const player of [0, 1] as PlayerIdx[]) {
+  for (let player = 0 as PlayerIdx; player < next.players.length; player++) {
     const was = prev.players[player].replaceLocked > 0;
     const now = next.players[player].replaceLocked > 0;
     if (now && !was) {
@@ -1215,7 +1237,7 @@ function computeUnitFx(prev: GameState, next: GameState): void {
  */
 function computeDrawFx(prev: GameState, next: GameState): void {
   drawFx = [];
-  for (const player of [0, 1] as PlayerIdx[]) {
+  for (let player = 0 as PlayerIdx; player < next.players.length; player++) {
     const before = prev.players[player];
     const after = next.players[player];
     const gained = after.hand.length - before.hand.length;
@@ -1385,7 +1407,7 @@ function computeSoundFx(prev: GameState, next: GameState, action: Action, actor:
 
   // A leader arrives on its own during the awake step rather than by an action,
   // so it is heard from the diff like everything else.
-  for (let seat = 0 as PlayerIdx; seat < 2; seat = (seat + 1) as PlayerIdx) {
+  for (let seat = 0 as PlayerIdx; seat < next.players.length; seat = (seat + 1) as PlayerIdx) {
     const arrived = next.players[seat].leader;
     if (prev.players[seat].leader || !arrived) continue;
     cue(CARD_VOICE[card(arrived.cardId).id] ?? 'play');
@@ -1455,7 +1477,7 @@ function computeSoundFx(prev: GameState, next: GameState, action: Action, actor:
   }
 
   // --- debt ----------------------------------------------------------------
-  for (let seat = 0 as PlayerIdx; seat < 2; seat = (seat + 1) as PlayerIdx) {
+  for (let seat = 0 as PlayerIdx; seat < next.players.length; seat = (seat + 1) as PlayerIdx) {
     const d = next.players[seat].debtCount - prev.players[seat].debtCount;
     if (d > 0) cue('debtUp', landed + 240);
     else if (d < 0) cue('debtDown', landed + 240);
@@ -1593,7 +1615,7 @@ let debtFx = new Set<PlayerIdx>();
 
 function computeDebtFx(prev: GameState, next: GameState): void {
   debtFx = new Set();
-  for (const player of [0, 1] as PlayerIdx[]) {
+  for (let player = 0 as PlayerIdx; player < next.players.length; player++) {
     if (next.players[player].debtCount > prev.players[player].debtCount) debtFx.add(player);
   }
 }
@@ -1606,7 +1628,7 @@ function computeDeckOutFx(prev: GameState, next: GameState): void {
   // Both seats, and whose notice it is decided at play time: a deck usually runs
   // out on the draw that starts a turn, which on a shared screen is the moment
   // the view changes hands.
-  for (const player of [0, 1] as PlayerIdx[]) {
+  for (let player = 0 as PlayerIdx; player < next.players.length; player++) {
     const times = next.players[player].deckOuts - prev.players[player].deckOuts;
     let owed = 0;
     // Each turn of the pile costs more than the last, so several in one action
@@ -1900,15 +1922,15 @@ const GIFT_STEP = 260;
 
 /** Where a card put into somebody's deck flies from: whatever card put it there. */
 function giftOrigin(to: PlayerIdx): DOMRect | null {
-  const from = otherPlayer(to);
   const theirs = effectCallouts.filter(
-    (c) => (c.ref.kind === 'summon' || c.ref.kind === 'leader') && c.ref.player === from,
+    (c) => (c.ref.kind === 'summon' || c.ref.kind === 'leader') && c.ref.player !== to,
   );
   const pick = theirs[theirs.length - 1];
+  const fallback = ui.state ? nextLiving(ui.state, to) : otherPlayer(to);
   const el = pick
     ? (boardElFor(pick.ref) ??
       document.querySelector<HTMLElement>(`.board [data-cardid="${CSS.escape(pick.cardId)}"]`))
-    : boardElFor({ kind: 'leader', player: from });
+    : boardElFor({ kind: 'leader', player: fallback });
   return el ? el.getBoundingClientRect() : null;
 }
 
@@ -2155,11 +2177,20 @@ function unitHtml(state: GameState, ref: TargetRef, caption: string): string {
         card(state.players[me].hand[ui.selection.index] ?? '')?.type === 'summon');
     // A body that just died here stays visible while its death plays out.
     const corpse = corpseFx.find((c) => c.key === corpseKey(ref))?.html ?? '';
-    // A leader cell before the leader lands takes no drops and no clicks.
+    // A leader cell before the leader lands takes no drops and no clicks,
+    // except while an enemy pick is asking: the seat can be named before its
+    // leader has taken the field.
     if (ref.kind !== 'summon') {
+      const pickable =
+        !!ui.enemyPick &&
+        ref.kind === 'leader' &&
+        ref.player !== me &&
+        !state.players[ref.player].eliminated;
       return `<div class="unit">
         <div class="caption">${esc(caption)}</div>
-        <div class="slot-empty">no leader yet</div>
+        <div class="slot-empty${pickable ? ' droppable targetable' : ''}"${
+          pickable ? ` data-act="leader" data-player="${ref.player}"` : ''
+        }>no leader yet</div>
         <div class="hpfan"></div>
         ${corpse}
       </div>`;
@@ -2178,6 +2209,14 @@ function unitHtml(state: GameState, ref: TargetRef, caption: string): string {
   const classes: string[] = [];
   if (s.sapped) classes.push('sapped');
   if (candidateKeys().has(key) || playKeys().has(key)) classes.push('targetable');
+  if (
+    ui.enemyPick &&
+    ref.kind === 'leader' &&
+    ref.player !== me &&
+    !state.players[ref.player].eliminated
+  ) {
+    classes.push('targetable');
+  }
   if (attackKeys().has(key)) classes.push('attackable');
   if (ui.selection?.kind === 'summon' && refKey(ui.selection.ref) === key) classes.push('selected');
 
@@ -2326,9 +2365,10 @@ function debtStackHtml(state: GameState, player: PlayerIdx): string {
   // The stack heats up as the count nears the limit: a red outline that
   // thickens and pulses faster, and a count that grows and reddens with it.
   const d = p.debtCount;
-  const tier = d >= DEBT_LIMIT - 2 ? 3 : d >= DEBT_LIMIT - 5 ? 2 : d >= DEBT_LIMIT - 8 ? 1 : 0;
+  const limit = debtLimitOf(state);
+  const tier = d >= limit - 2 ? 3 : d >= limit - 5 ? 2 : d >= limit - 8 ? 1 : 0;
   return `<div class="debtzone${tier ? ` danger${tier}` : ''}${debtFx.has(player) ? ' jolt' : ''}">
-    <span class="zlabel">debt <span class="debtnum">${d}</span>/${DEBT_LIMIT}</span>
+    <span class="zlabel">debt <span class="debtnum">${d}</span>/${limit}</span>
     <div class="debtstack">${rows || '<span class="zempty">empty</span>'}</div>
     ${more > 0 ? `<span class="zmore">+${more} more</span>` : ''}
   </div>`;
@@ -2387,7 +2427,8 @@ function sideHtml(state: GameState, player: PlayerIdx, mine: boolean): string {
   const support = supportRow(state, player);
   // The first column is empty on purpose: it is the room the leader's debt hangs
   // into, reserved in card widths so it scales with the card it belongs to.
-  return `<div class="side ${mine ? 'mine' : 'theirs'}">
+  const out = state.players[player].eliminated ? ' eliminated' : '';
+  return `<div class="side ${mine ? 'mine' : 'theirs'}${out}" data-player="${player}">
     <div class="debtgutter"></div>
     <div class="midcol">${mine ? lane + support : support + lane}</div>
     <div class="zonecol">${pilesHtml(state, player)}</div>
@@ -2466,7 +2507,9 @@ function historyHtml(state: GameState): string {
         ${def ? renderCard(def) : ''}
         <div class="histlines">${g.texts.map((t) => `<p>${esc(t)}</p>`).join('')}</div>
       </div>`;
-      return `<div class="histile ${side}${fresh}">${face}${pop}</div>`;
+      return `<div class="histile ${side}${fresh}"${
+        g.player === null ? '' : ` data-player="${g.player}"`
+      }>${face}${pop}</div>`;
     })
     .join('');
   return tiles;
@@ -2505,13 +2548,19 @@ function endTurnHtml(state: GameState): string {
   const ready = canAct() && !busy && !isOver(state);
   // Green means the turn is spent: nothing left to play, swing or activate.
   const done = ready && !anyActionsLeft(state, viewSeat());
-  const label = !canAct() ? 'Enemy Turn' : busy ? 'Waiting…' : 'End Turn';
+  // With three enemies "Enemy Turn" says too little, so the button names them.
+  const enemyLabel = isParty(state)
+    ? `${esc(state.players[state.active].name.split(' ')[0])}'s Turn`
+    : 'Enemy Turn';
+  const label = !canAct() ? enemyLabel : busy ? 'Waiting…' : 'End Turn';
   return `<button class="endturn${ready ? ' ready' : ''}${done ? ' alldone' : ''}" data-act="btn" data-cmd="end-turn"
     ${ready ? '' : 'disabled'}>${label}</button>`;
 }
 
 /** The board's last markup, so an unchanged board is left standing. */
 let lastBoardHtml = '';
+/** Whose turn the party carousel last slid to, so each turn slides once. */
+let lastActiveSlid: PlayerIdx | null = null;
 /** The same for the play-by-play strip, which redraws on the same renders. */
 let lastHistoryHtml = '';
 
@@ -2547,8 +2596,33 @@ function renderBoard(): void {
   const landed = trapFx ? 1500 : smackFx ? 310 : 0;
   el.style.setProperty('--woundfxd', `${landed}ms`);
   el.style.setProperty('--fxd', `${landed + woundLeadMs()}ms`);
+  el.classList.toggle('party', isParty(state));
+  // Party: the opponents' boards sit next to each other in turn order, one in
+  // view at a time, and the row slides to whoever's turn begins.
+  const opps: PlayerIdx[] = [];
+  for (let step = 1; step < state.players.length; step++) {
+    opps.push(((me + step) % state.players.length) as PlayerIdx);
+  }
+  const oppRow = isParty(state)
+    ? `<div class="opprow">${opps
+        .map(
+          (p) => `<div class="oppseat">
+          <div class="oppname${state.active === p && !isOver(state) ? ' turnnow' : ''}">${esc(
+            state.players[p].name,
+          )}${state.players[p].eliminated ? '<span class="outtag">eliminated</span>' : ''}</div>
+          ${sideHtml(state, p, false)}
+        </div>`,
+        )
+        .join('')}</div>
+      <div class="oppdots">${opps
+        .map(
+          (p, i) =>
+            `<button class="oppdot${i === 0 ? ' on' : ''}" data-act="btn" data-cmd="oppdot:${i}" aria-label="${esc(state.players[p].name)}"></button>`,
+        )
+        .join('')}</div>`
+    : sideHtml(state, them, false);
   const html = `
-    ${sideHtml(state, them, false)}
+    ${oppRow}
     <div class="divider">${fuseHtml()}</div>
     ${sideHtml(state, me, true)}
     ${actionBarHtml(state)}
@@ -2560,7 +2634,26 @@ function renderBoard(): void {
   // flicker this guards against rather than any real saving in string work.
   if (html === lastBoardHtml) return;
   lastBoardHtml = html;
+  // A rebuilt carousel forgets where it was swiped to; hand the offset back.
+  const rowScroll = el.querySelector<HTMLElement>('.opprow')?.scrollLeft ?? 0;
   el.innerHTML = html;
+  if (rowScroll > 0) {
+    const row = el.querySelector<HTMLElement>('.opprow');
+    if (row) row.scrollLeft = rowScroll;
+  }
+  // The carousel slides itself to whoever's turn began, once per turn, and
+  // stays wherever it was scrolled to for the rest of it.
+  if (isParty(state) && state.active !== lastActiveSlid && !isOver(state)) {
+    lastActiveSlid = state.active;
+    const at = opps.indexOf(state.active);
+    if (at >= 0) {
+      const seat = el.querySelectorAll<HTMLElement>('.opprow .oppseat')[at];
+      seat?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+      document
+        .querySelectorAll<HTMLElement>('.oppdot')
+        .forEach((d, i) => d.classList.toggle('on', i === at));
+    }
+  }
   syncFuse(el);
 }
 
@@ -2592,6 +2685,23 @@ function promptHtml(state: GameState): string {
       <h2>${title}</h2>
       <p>${esc(state.winReason ?? '')}</p>
       <div class="row">${btn('new-game', 'New match', 'primary')}</div>
+    </div>`;
+  }
+
+  // A party player knocked out picks between watching and leaving. Choosing to
+  // stay stands the overlay down and leaves the grayed board.
+  if (p.eliminated && !ui.online.spectating) {
+    return `<div class="banner">
+      <h2>You are eliminated</h2>
+      <p>The game goes on without you. Stay to watch it end, or head back to the menu.</p>
+      <div class="row">${btn('spectate', 'Keep watching', 'primary')}${btn('leave-match', 'Leave')}</div>
+    </div>`;
+  }
+
+  if (ui.enemyPick) {
+    return `<div class="fxbanner">
+      <span class="fxtext"><b>Choose an enemy.</b> Click their leader.</span>
+      ${btn('cancel-enemy', 'Cancel')}
     </div>`;
   }
 
@@ -2693,16 +2803,24 @@ function promptHtml(state: GameState): string {
     let pile = '';
     if (spec?.kind === 'debt' || spec?.kind === 'discard') {
       const kind = spec.kind;
-      const owner = spec.side === 'enemy' ? otherPlayer(me) : me;
+      // Enemy piles fan out in a party game; a name over each keeps them apart.
+      const owners = spec.side === 'enemy' ? livingOpponents(state, me) : [me];
       const cands = candidateKeys();
-      const zone = kind === 'debt' ? state.players[owner].debt : state.players[owner].discard;
-      const cardsHtml = zone
-        .map((id, index) =>
-          renderCard(card(id), {
-            classes: cands.has(refKey({ kind, player: owner, index })) ? ['targetable'] : [],
-            data: { act: kind, player: owner, index, cardid: id },
-          }),
-        )
+      const cardsHtml = owners
+        .map((owner) => {
+          const zone = kind === 'debt' ? state.players[owner].debt : state.players[owner].discard;
+          const cardsOf = zone
+            .map((id, index) =>
+              renderCard(card(id), {
+                classes: cands.has(refKey({ kind, player: owner, index })) ? ['targetable'] : [],
+                data: { act: kind, player: owner, index, cardid: id },
+              }),
+            )
+            .join('');
+          const label =
+            owners.length > 1 ? `<p class="pileowner">${esc(state.players[owner].name)}</p>` : '';
+          return label + cardsOf;
+        })
         .join('');
       pile = `<div class="debtpick">${cardsHtml || '<p>The pile is empty.</p>'}</div>`;
     }
@@ -2723,9 +2841,15 @@ function promptHtml(state: GameState): string {
     const picked = ui.selection?.kind === 'hand' ? card(p.hand[ui.selection.index] ?? '') : null;
     const traps = liveTraps(state, me);
     const spring = picked && live(picked) ? btn('trap', `Spring ${picked.name}`, 'primary') : '';
+    const attacker = state.pending.battle?.attacker;
+    const rival = state.pending.spell
+      ? state.pending.spell.caster
+      : attacker && attacker.kind !== 'color'
+        ? attacker.player
+        : otherPlayer(me);
     const what = state.pending.spell
-      ? `${esc(state.players[otherPlayer(me)].name)} casts ${esc(card(state.pending.spell.cardId).name)}.`
-      : `${esc(state.players[otherPlayer(me)].name)} is attacking.`;
+      ? `${esc(state.players[rival].name)} casts ${esc(card(state.pending.spell.cardId).name)}.`
+      : `${esc(state.players[rival].name)} is attacking.`;
     return `<div class="prompt urgent">
       <h2>${state.pending.spell ? 'Spell cast' : 'Battle declared'}</h2>
       <p>${what} ${traps > 0 ? 'Click a trap in your hand to spring it, or let' : 'Let'} it through.</p>
@@ -3419,22 +3543,19 @@ function ehCardWidth(): number {
   return parseFloat(getComputedStyle(document.body).getPropertyValue('--ehcard-w')) || 66;
 }
 
-function renderTopbar(): void {
-  const state = ui.state;
-  const el = document.getElementById('topbar');
-  if (!state || !el) return;
-  const me = viewSeat();
-  const them = otherPlayer(me);
+/**
+ * One opponent's held fan, pivoting from a grip above the screen. `shrink`
+ * scales the cards down when several opponents share the bar.
+ *
+ * Every card is placed by hand rather than left to margins, because a card
+ * turned about a point overhead also slides sideways, outward at the ends and
+ * not at all in the middle. Left to itself that eats the spacing and the fan
+ * bunches in the centre, so the slide is measured and subtracted back out.
+ */
+function enemyHandHtml(state: GameState, them: PlayerIdx, shrink: number, solo: boolean): string {
   const other = state.players[them];
   const n = other.hand.length;
-
-  // A held fan, pivoting from a grip above the screen.
-  //
-  // Every card is placed by hand rather than left to margins, because a card
-  // turned about a point overhead also slides sideways, outward at the ends and
-  // not at all in the middle. Left to itself that eats the spacing and the fan
-  // bunches in the centre, so the slide is measured and subtracted back out.
-  const CARD_W = ehCardWidth();
+  const CARD_W = ehCardWidth() * shrink;
   const CARD_H = CARD_W * 1.4;
   /** Where the grip sits above the card's own centre, matching transform-origin. */
   const PIVOT = CARD_H * 1.05;
@@ -3478,15 +3599,41 @@ function renderTopbar(): void {
     })
     .join('');
 
-  el.innerHTML = `
-    <div class="enemyhand" style="--fanw:${fanW}px;--fanw-max:${fanWMax}px">
-      <span class="ehwho"><span class="ehname">${esc(other.name)}</span><span class="ehcount">${n}</span></span>
+  const active = state.active === them && !isOver(state);
+  const cls = solo
+    ? 'enemyhand'
+    : `enemyhand seatfan${active ? ' ehactive' : ''}${other.eliminated ? ' ehout' : ''}`;
+  const sizing = solo ? '' : `;--ehcard-w:${CARD_W.toFixed(1)}px`;
+  return `<div class="${cls}" style="--fanw:${fanW}px;--fanw-max:${fanWMax}px${sizing}">
+      <span class="ehwho"><span class="ehname">${esc(other.name)}</span><span class="ehcount">${
+        other.eliminated ? 'out' : n
+      }</span></span>
       <span class="ehfan">${backs || '<span class="ehempty">no cards</span>'}</span>
-    </div>
+    </div>`;
+}
+
+function renderTopbar(): void {
+  const state = ui.state;
+  const el = document.getElementById('topbar');
+  if (!state || !el) return;
+  const me = viewSeat();
+  const opps: PlayerIdx[] = [];
+  for (let step = 1; step < state.players.length; step++) {
+    opps.push(((me + step) % state.players.length) as PlayerIdx);
+  }
+  const solo = opps.length === 1;
+  const shrink = solo ? 1 : opps.length === 2 ? 0.8 : 0.66;
+  const fans = opps.map((p) => enemyHandHtml(state, p, shrink, solo)).join('');
+
+  // Party bars carry several fans, so the mixer, theme toggle and the reveal
+  // checkbox make way; volume and theme are still on the menu screens, and
+  // online hands arrive hidden whatever the checkbox says.
+  el.innerHTML = `
+    ${solo ? fans : `<div class="ehrow">${fans}</div>`}
     <span class="topright">
-      ${mixerHtml()}
+      ${solo ? mixerHtml() : ''}
       ${
-        ui.botSeat === null
+        solo && ui.botSeat === null
           ? `<label><input type="checkbox" data-act="reveal" ${ui.revealAll ? 'checked' : ''}> reveal hands</label>`
           : ''
       }
@@ -3636,6 +3783,7 @@ function mountGame(): void {
     <footer class="hand" id="hand"></footer>`;
   lastBoardHtml = '';
   lastHistoryHtml = '';
+  lastActiveSlid = null;
 }
 
 /**
@@ -3674,6 +3822,7 @@ function render(): void {
   }
   // Every screen, not just the table: the setup list has to fit too.
   syncLayout();
+  document.body.classList.toggle('party', !!ui.state && isParty(ui.state));
   // The board is rebuilt from scratch on every action, and a fresh element
   // starts its animation over. Handing the marks the time as a negative delay
   // drops each one back into the phase it was already in.
@@ -3786,9 +3935,10 @@ function renderRules(): string {
     <h2>2. Winning and Losing</h2>
     ${sec('2-1.', 'The game ends when a player is defeated. The other player wins.')}
     ${sec('2-1-1.', 'There are two conditions for defeat.')}
-    ${sec('2-1-1-1.', `When your debt reaches ${DEBT_LIMIT} or more.`)}
+    ${sec('2-1-1-1.', `When your debt reaches ${DEBT_LIMIT} or more (${PARTY_DEBT_LIMIT} in a party game).`)}
     ${sec('2-1-1-2.', 'When your leader dies.')}
     ${sec('2-2.', 'Both players can be defeated at once. If both leaders are still in play then the attacking player wins. Otherwise the game is a draw.')}
+    ${sec('2-3.', `Party games seat 3 or 4 players. A defeated player is eliminated instead: their cards leave the board and their turns are skipped. The last player standing wins. Everyone opens with ${PARTY_HAND_BONUS} extra cards, and a card that names "the enemy" makes you choose one by clicking their leader.`)}
 
     <h2>3. Debt</h2>
     ${sec('3-1.', 'Debt is the clock. It never goes down unless a card says it does.')}
@@ -3828,7 +3978,7 @@ function renderRules(): string {
     ${sec('7-1-2.', `Draw step. Draw ${DRAW_PER_TURN} cards. The player who takes the first turn skips this step on that turn.`)}
     ${sec('7-1-3.', 'Main step. Play cards, use Powers, and declare attacks. You may do these in any order and as often as the rules allow.')}
     ${sec('7-1-4.', 'End step. Effects that last until end of turn expire.')}
-    ${sec('7-2.', `Each player opens the game with ${OPENING_HAND} cards.`)}
+    ${sec('7-2.', `Each player opens the game with ${OPENING_HAND} cards (${OPENING_HAND + PARTY_HAND_BONUS} in a party game).`)}
 
     <h2>8. Playing Cards and Paying</h2>
     ${sec('8-1.', 'Once a turn you may place a card from your hand face down in your supporter row. Any card can be a supporter.')}
@@ -3934,13 +4084,19 @@ function renderOnline(): string {
     : o.phase === 'seeking'
       ? '<p class="lobbynote">Looking for an opponent&hellip;</p>'
       : o.phase === 'waiting'
-        ? `<p class="lobbynote">Waiting for an opponent.${
-            o.roomCode ? ' Share this code:' : ''
-          }</p>${
+        ? `<p class="lobbynote">${
+            o.roster && o.roster.needed > 2
+              ? `Waiting for players (${o.roster.players}/${o.roster.needed}).`
+              : 'Waiting for an opponent.'
+          }${o.roomCode ? ' Share this code:' : ''}</p>${
             o.roomCode
               ? `<div class="codeshare"><input class="lobbyinput roomcode" data-act="ocopy"
                   readonly value="${esc(o.roomCode)}"><button class="lobbybtn copybtn"
                   data-act="btn" data-cmd="o-copy">${ui.copied ? 'Copied' : 'Copy'}</button></div>`
+              : ''
+          }${
+            o.roster && o.roster.needed > 2 && o.roster.names.length > 0
+              ? `<p class="lobbynote roster">${o.roster.names.map(esc).join(' &middot; ')}</p>`
               : ''
           }`
         : o.phase === 'connecting'
@@ -3960,12 +4116,31 @@ function renderOnline(): string {
         groups: deckGroups,
       })}</div>
 
+      <div class="lobbyrow"><span>Players</span><div class="seats partyseats">${(
+        [
+          [2, 'Duel'],
+          [3, '3 Player'],
+          [4, '4 Player'],
+        ] as const
+      )
+        .map(
+          ([n, label]) =>
+            `<button data-act="btn" data-cmd="o-party:${n}" class="seattile${
+              o.party === n ? ' on' : ''
+            }" ${busy ? 'disabled' : ''}>${label}</button>`,
+        )
+        .join('')}</div></div>
+
       <p class="lobbynote">Turns last ${CLOCK_SECONDS.turn} seconds, responses last
-        ${CLOCK_SECONDS.response} seconds.</p>
+        ${CLOCK_SECONDS.response} seconds.${
+          o.party > 2 ? ' Party games are hosted: share the code with everyone joining.' : ''
+        }</p>
 
       ${status}
 
-      <button class="lobbybtn" data-act="btn" data-cmd="o-seek" ${blocked ? 'disabled' : ''}>Seek a random game</button>
+      <button class="lobbybtn" data-act="btn" data-cmd="o-seek" ${
+        blocked || o.party > 2 ? 'disabled' : ''
+      } ${o.party > 2 ? 'title="Random games are head-to-head. Host to play a party game."' : ''}>Seek a random game</button>
       <button class="lobbybtn" data-act="btn" data-cmd="o-host" ${blocked ? 'disabled' : ''}>Host a private game</button>
 
       <hr class="lobbyrule">
@@ -4460,9 +4635,11 @@ function netClient(): NetClient {
       ui.online.roomCode = code ?? ui.online.roomCode;
       render();
     },
-    onWaiting(_players, code) {
+    onWaiting(players, code, needed, names) {
       ui.online.phase = 'waiting';
       if (code) ui.online.roomCode = code;
+      ui.online.roster =
+        needed !== undefined ? { players, needed, names: names ?? [] } : null;
       render();
     },
     onState(state, seat, clock, move) {
@@ -4539,6 +4716,11 @@ function netClient(): NetClient {
     onOpponentLeft() {
       failOnline('Your opponent left the match.');
     },
+    onPlayerLeft(_seat, name) {
+      // A party drop is an elimination rather than the end: the room concedes
+      // for them and the state push that follows carries the consequences.
+      popNotice(`${name} left the match`, 'They are eliminated. The game goes on.', 'bad');
+    },
     onError(reason) {
       failOnline(reason);
     },
@@ -4566,6 +4748,9 @@ function failOnline(reason: string): void {
   ui.online.phase = 'idle';
   ui.online.roomCode = null;
   ui.online.seat = null;
+  ui.online.roster = null;
+  ui.online.spectating = false;
+  ui.enemyPick = null;
   ui.online.error = reason;
   ui.screen = 'online';
   render();
@@ -4594,7 +4779,7 @@ async function startOnline(how: 'public' | 'host' | 'join'): Promise<void> {
     how === 'public'
       ? await client.findPublicGame()
       : how === 'host'
-        ? await client.hostPrivateGame()
+        ? await client.hostPrivateGame(o.party === 2 ? undefined : o.party)
         : await client.joinPrivateGame(o.code);
 
   if (!reply.ok) {
@@ -4621,6 +4806,9 @@ function leaveOnline(): void {
   ui.online.phase = 'idle';
   ui.online.roomCode = null;
   ui.online.seat = null;
+  ui.online.roster = null;
+  ui.online.spectating = false;
+  ui.enemyPick = null;
   ui.online.error = null;
 }
 
@@ -4636,6 +4824,17 @@ function dispatch(action: Action): void {
   if (ui.online.phase === 'playing' && net) {
     const sent = net.play(action);
     if (!sent.ok) {
+      if (sent.reason === NEEDS_ENEMY) {
+        // The card says "the enemy" and there is more than one: hold the action
+        // and ask for a leader click, then send it again with the pick on it.
+        ui.enemyPick = { build: (enemy) => ({ ...action, enemy }) as Action };
+        ui.selection = null;
+        ui.targeting = null;
+        ui.error = null;
+        ui.drag = null;
+        render();
+        return;
+      }
       ui.error = sent.reason;
     } else {
       // The room owns the state from here, but the prompts that produced this
@@ -4842,6 +5041,20 @@ function offerTarget(ref: TargetRef): boolean {
 }
 
 /**
+ * An enemy-pick click. The prompt asks for the leader, but anything standing
+ * on a living enemy's side names that player just as well.
+ */
+function offerEnemy(ref: TargetRef): boolean {
+  const pick = ui.enemyPick;
+  if (!pick || !ui.state || ref.kind === 'color') return false;
+  const enemy = ref.player;
+  if (enemy === viewSeat() || ui.state.players[enemy].eliminated) return false;
+  ui.enemyPick = null;
+  dispatch(pick.build(enemy));
+  return true;
+}
+
+/**
  * Deckbuilder commands. Returns true when the command was one of ours, so the
  * main handler can carry on with the match commands otherwise.
  */
@@ -4913,6 +5126,11 @@ function handleBuilderCommand(cmd: string): boolean {
       ui.inspect = null;
       ui.inspectRef = null;
       break;
+    case 'o-party': {
+      const n = Number(arg);
+      if ((n === 2 || n === 3 || n === 4) && ui.online.phase === 'idle') ui.online.party = n;
+      break;
+    }
     case 'o-seek':
       void startOnline('public');
       break;
@@ -5161,7 +5379,9 @@ function startMatch(decks: [DeckList, DeckList]): void {
   const seat = viewSeat();
   popNotice(
     `You are Player ${seat + 1}`,
-    seat === ui.state.startingPlayer ? 'You go first.' : `Player ${otherPlayer(seat) + 1} goes first.`,
+    seat === ui.state.startingPlayer
+      ? 'You go first.'
+      : `Player ${ui.state.startingPlayer + 1} goes first.`,
   );
   clearActionFx();
   scheduleBot();
@@ -5225,7 +5445,34 @@ function handleCommand(cmd: string): void {
   if (cmd === 'cancel') {
     ui.selection = null;
     ui.targeting = null;
+    ui.enemyPick = null;
     ui.error = null;
+    return render();
+  }
+  if (cmd === 'cancel-enemy') {
+    ui.enemyPick = null;
+    return render();
+  }
+  if (cmd.startsWith('oppdot:')) {
+    const at = Number(cmd.slice(7));
+    const seats = document.querySelectorAll<HTMLElement>('.opprow .oppseat');
+    seats[at]?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    // Lit here as well as by the scroll listener, so a tap answers at once.
+    document
+      .querySelectorAll<HTMLElement>('.oppdot')
+      .forEach((d, i) => d.classList.toggle('on', i === at));
+    return;
+  }
+  if (cmd === 'spectate') {
+    ui.online.spectating = true;
+    return render();
+  }
+  if (cmd === 'leave-match') {
+    leaveOnline();
+    ui.screen = 'setup';
+    ui.state = null;
+    ui.selection = null;
+    ui.targeting = null;
     return render();
   }
   if (cmd === 'skip-choice') {
@@ -5941,6 +6188,28 @@ mountDropdowns({
     }
   },
 });
+// The party carousel's dots follow the swipe. Scroll does not bubble, so the
+// listener rides the capture phase and cheaply ignores everything else.
+window.addEventListener(
+  'scroll',
+  (ev) => {
+    const row = ev.target instanceof HTMLElement ? ev.target : null;
+    if (!row || !row.classList.contains('opprow')) return;
+    const seats = [...row.querySelectorAll<HTMLElement>('.oppseat')];
+    if (seats.length === 0) return;
+    const centre = row.scrollLeft + row.clientWidth / 2;
+    const off = (s: HTMLElement) => Math.abs(s.offsetLeft + s.offsetWidth / 2 - centre);
+    let best = 0;
+    seats.forEach((s, i) => {
+      if (off(s) < off(seats[best])) best = i;
+    });
+    document
+      .querySelectorAll<HTMLElement>('.oppdot')
+      .forEach((d, i) => d.classList.toggle('on', i === best));
+  },
+  true,
+);
+
 root.addEventListener('click', (ev) => {
   if (suppressClick) {
     suppressClick = false;
@@ -5977,6 +6246,7 @@ root.addEventListener('click', (ev) => {
   if (!canAct()) return render();
 
   const ref = refFromEl(el);
+  if (ref && offerEnemy(ref)) return;
   if (ref && offerChoice(ref)) return;
   if (ref && offerTarget(ref)) return;
 

@@ -30,7 +30,7 @@ export function redactFor(state: GameState, viewer: PlayerIdx): GameState {
   // not need either value.
   out.seed = 0;
   out.rngState = 0;
-  for (const idx of [0, 1] as PlayerIdx[]) {
+  for (let idx = 0 as PlayerIdx; idx < out.players.length; idx++) {
     const p = out.players[idx];
     p.deck = p.deck.map(() => HIDDEN_ID);
     if (idx !== viewer) p.hand = p.hand.map(() => HIDDEN_ID);
@@ -71,7 +71,7 @@ export function publicView(state: GameState): GameState {
   // as well is what makes the authority and a client agree once it is gone.
   out.seed = 0;
   out.rngState = 0;
-  for (const idx of [0, 1] as PlayerIdx[]) {
+  for (let idx = 0 as PlayerIdx; idx < out.players.length; idx++) {
     const p = out.players[idx];
     p.deck = p.deck.map(() => HIDDEN_ID);
     p.hand = p.hand.map(() => HIDDEN_ID);

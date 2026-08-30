@@ -97,8 +97,13 @@ export class Lobby extends DurableObject {
     return { roomId };
   }
 
-  /** A room only somebody holding the code can find, or null when too many are live. */
-  async hostPrivate(): Promise<{ roomId: string; code: string } | null> {
+  /**
+   * A room only somebody holding the code can find, or null when too many are
+   * live. A party size rides in the room's name: the MatchRoom reads its own
+   * seat count from it, so a tampering client can only mislead a room nobody
+   * else is routed to.
+   */
+  async hostPrivate(size?: 3 | 4): Promise<{ roomId: string; code: string } | null> {
     await this.load();
     this.sweep();
     if (this.codes.size >= MAX_CODES) {
@@ -108,7 +113,7 @@ export class Lobby extends DurableObject {
     let code = makeCode();
     // Vanishingly unlikely, but a collision would put two matches in one room.
     while (this.codes.has(code)) code = makeCode();
-    const roomId = `prv-${crypto.randomUUID()}`;
+    const roomId = `${size ? `prv${size}` : 'prv'}-${crypto.randomUUID()}`;
     this.codes.set(code, { roomId, expiresAt: Date.now() + CODE_MS });
     await this.save();
     return { roomId, code };
@@ -123,9 +128,11 @@ export class Lobby extends DurableObject {
       await this.save();
       return null;
     }
-    // A code is good for one guest. Leaving it live would let a third player
-    // knock on a room that is already full.
-    this.codes.delete(code.toUpperCase());
+    // A head-to-head code is good for one guest: leaving it live would let a
+    // third player knock on a room that is already full. A party code has to
+    // seat several guests, so it lives out its clock and the room's own
+    // "room is full" answer turns away anyone extra.
+    if (!/^prv[34]-/.test(entry.roomId)) this.codes.delete(code.toUpperCase());
     await this.save();
     return { roomId: entry.roomId };
   }

@@ -58,7 +58,12 @@ export default {
     }
 
     if (url.pathname === '/api/queue/host' && request.method === 'POST') {
-      const hosted = await lobby(env).hostPrivate();
+      const partyRaw = url.searchParams.get('party');
+      if (partyRaw !== null && partyRaw !== '3' && partyRaw !== '4') {
+        return reply({ ok: false, reason: 'A party game seats 3 or 4 players.' }, 400);
+      }
+      const party = partyRaw === null ? undefined : ((Number(partyRaw) as 3 | 4));
+      const hosted = await lobby(env).hostPrivate(party);
       if (!hosted) return reply({ ok: false, reason: 'Too many lobbies open right now. Try again in a minute.' }, 503);
       return reply({ ok: true, roomId: hosted.roomId, kind: 'private', code: hosted.code });
     }

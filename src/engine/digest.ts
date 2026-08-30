@@ -89,7 +89,10 @@ function playerString(state: GameState, idx: PlayerIdx): string {
     `:T${p.spellTax}` +
     `:G${p.stage ?? '-'}` +
     slots +
-    `:h=${summonString(p.leader)}`
+    `:h=${summonString(p.leader)}` +
+    // Party-only marker. Never printed in a 2-player game, where nobody is
+    // eliminated, so the v2 strings the C# engine builds are unaffected.
+    (p.eliminated ? ':E1' : '')
   );
 }
 
@@ -105,8 +108,9 @@ export function digestOf(state: GameState): string {
     `|A${state.actions}` +
     `|R${state.rngState}`;
 
-  out += playerString(state, 0);
-  out += playerString(state, 1);
+  for (let i = 0 as PlayerIdx; i < state.players.length; i++) {
+    out += playerString(state, i);
+  }
 
   out += '|PEND:';
   if (!state.pending) out += '-';
@@ -121,6 +125,9 @@ export function digestOf(state: GameState): string {
       `${state.pending.player}:S:${state.pending.spell.caster}:` +
       `${state.pending.spell.cardId}:` +
       state.pending.spell.targets.map(refString).join(';');
+    // Party-only fields, printed only when set so 2-player strings never change.
+    if (state.pending.spell.enemy !== undefined) out += `:e${state.pending.spell.enemy}`;
+    if (state.pending.queue?.length) out += `:Q${state.pending.queue.join(',')}`;
   }
 
   out += '|RQ:';
@@ -147,7 +154,9 @@ export function digestOf(state: GameState): string {
               `${c.player}/${c.source}/${c.effect}/` +
               `${(c.refs ?? []).map(refString).join(';')}/` +
               `${(c.cards ?? []).join(';')}/${(c.legal ?? []).join(';')}/` +
-              `${c.optional ? 1 : 0}/${c.at ? refString(c.at) : '-'}`,
+              `${c.optional ? 1 : 0}/${c.at ? refString(c.at) : '-'}` +
+              // Party-only, printed only when set: see the eliminated marker.
+              (c.victim !== undefined ? `/v${c.victim}` : ''),
           )
           .join(',');
 

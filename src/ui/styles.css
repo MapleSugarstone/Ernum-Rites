@@ -5021,6 +5021,125 @@ body.mobile .setup .mixer {
   body.mobile .rail { transition: none; }
 }
 
+/* --- party mode: 3-4 players -------------------------------------------------
+   The opponents share the top band the single opponent used to fill: each one
+   a full-size board, side by side in a carousel that shows one at a time. The
+   row slides itself to whoever's turn begins, and the dots under it jump it by
+   hand. Scroll behaviour is left auto here: renders restore the offset
+   instantly and only the turn-change slide asks to be smooth. */
+.opprow {
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+.opprow::-webkit-scrollbar { display: none; }
+.opprow .oppseat {
+  flex: 0 0 100%;
+  min-width: 0;
+  scroll-snap-align: center;
+}
+/* Room for the dot row between the carousel and the divider. */
+.board.party {
+  grid-template-rows: 1fr auto auto 1fr;
+}
+.oppname {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.oppname.turnnow {
+  color: var(--text);
+  text-shadow: 0 0 8px rgba(217, 130, 27, 0.7);
+}
+.outtag {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(180, 40, 40, 0.25);
+  color: #e08080;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.side.eliminated {
+  filter: grayscale(1);
+  opacity: 0.55;
+}
+.oppdots {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  padding: 4px 0;
+}
+.oppdot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  padding: 0;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.oppdot.on {
+  background: var(--select);
+  border-color: var(--select);
+}
+
+/* Several small fans share the bar, each named beside its own cards. In flow
+   rather than pinned over the bar, so they take only the room to the left of
+   the controls and can never slide under them. Spread evenly rather than
+   bunched at the centre: each hand reads as its own player, sitting roughly
+   over their board below. */
+.ehrow {
+  position: relative;
+  align-self: stretch;
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  justify-content: space-evenly;
+  gap: 12px;
+  overflow: hidden;
+}
+.ehrow .enemyhand {
+  position: relative;
+  inset: auto;
+  transform: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: visible;
+}
+.ehrow .ehwho {
+  position: static;
+  transform: none;
+}
+.ehrow .enemyhand.ehactive .ehname {
+  color: #f0d055;
+}
+.ehrow .enemyhand.ehout {
+  opacity: 0.45;
+}
+
+/* Per-seat tint on the play-by-play tiles, so four players stay tellable. */
+body.party .histile[data-player='0'] .hisart { box-shadow: inset 0 0 0 2px rgba(122, 176, 255, 0.65); }
+body.party .histile[data-player='1'] .hisart { box-shadow: inset 0 0 0 2px rgba(255, 158, 110, 0.65); }
+body.party .histile[data-player='2'] .hisart { box-shadow: inset 0 0 0 2px rgba(150, 226, 140, 0.65); }
+body.party .histile[data-player='3'] .hisart { box-shadow: inset 0 0 0 2px rgba(226, 140, 226, 0.65); }
+
+/* The bar cannot seat three readable fans on a phone; the counts carry it. */
+body.mobile .ehrow .ehfan { display: none; }
+body.mobile .ehrow .enemyhand { flex: 0 1 auto; }
+
 /* Thumbnails that cropped a whole drawing with background-size: cover clip an
    inner layer instead, because one cell of a sheet cannot be cropped by the
    background shorthand. The layer is exactly cell-shaped and as tall as the box,

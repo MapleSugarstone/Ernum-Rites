@@ -24,7 +24,7 @@ import type { ClientMessage, QueueReply, RoomKind, ServerMessage } from '../../w
 
 export interface NetHandlers {
   onSeated(seat: PlayerIdx, kind: RoomKind, code?: string): void;
-  onWaiting(players: number, code?: string): void;
+  onWaiting(players: number, code?: string, needed?: number, names?: string[]): void;
   onState(
     state: GameState,
     seat: PlayerIdx,
@@ -35,6 +35,8 @@ export interface NetHandlers {
   onRejected(reason: string): void;
   onTimedOut(player: PlayerIdx, action: string): void;
   onOpponentLeft(): void;
+  /** A party player dropped mid-match; the room conceded for them and play goes on. */
+  onPlayerLeft(seat: PlayerIdx, name: string): void;
   onError(reason: string): void;
   /** Raised when this client's own copy stopped matching the room's. */
   onDesync(): void;
@@ -82,8 +84,8 @@ export class NetClient {
     return this.queue('/api/queue/public');
   }
 
-  hostPrivateGame(): Promise<QueueReply> {
-    return this.queue('/api/queue/host');
+  hostPrivateGame(party?: 3 | 4): Promise<QueueReply> {
+    return this.queue('/api/queue/host', party ? `?party=${party}` : '');
   }
 
   joinPrivateGame(code: string): Promise<QueueReply> {
@@ -196,7 +198,7 @@ export class NetClient {
         return this.handlers.onSeated(msg.seat, msg.kind, msg.code);
 
       case 'waiting':
-        return this.handlers.onWaiting(msg.players, msg.code);
+        return this.handlers.onWaiting(msg.players, msg.code, msg.needed, msg.names);
 
       case 'pong': {
         // Round trip halved is the one-way delay, so the room's clock at the
@@ -239,6 +241,9 @@ export class NetClient {
 
       case 'opponentLeft':
         return this.handlers.onOpponentLeft();
+
+      case 'playerLeft':
+        return this.handlers.onPlayerLeft(msg.seat, msg.name);
 
       case 'error':
         return this.handlers.onError(msg.reason);

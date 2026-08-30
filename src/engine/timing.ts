@@ -70,8 +70,8 @@ export function displayedMs(kind: ClockKind): number {
 /** A running clock, as it travels over the wire. */
 export interface Clock {
   kind: ClockKind;
-  /** Who is on the clock. The other player is waiting and cannot time out. */
-  player: 0 | 1;
+  /** Who is on the clock. Everyone else is waiting and cannot time out. */
+  player: import('./types').PlayerIdx;
   /** Wall clock ms since the epoch, on the room's clock, when the bar empties. */
   endsAt: number;
   /** How long this clock ran in total, so a client can draw the fraction left. */

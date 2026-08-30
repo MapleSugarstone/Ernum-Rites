@@ -1,4 +1,5 @@
 import { tryCard } from '../engine/registry';
+import { livingOpponents } from '../engine/state';
 import { COLOR_NAME, COLORS, type CardDef, type Color, type PlayerIdx } from '../engine/types';
 import { holderRef } from './build';
 
@@ -74,11 +75,13 @@ function curse(
   };
 }
 
-/** Whether the victim's opponent fields a card that doubles curse effects. */
+/** Whether any of the victim's opponents fields a card that doubles curse effects. */
 function potent(c: { state: import('../engine/state').GameState; me: PlayerIdx }): boolean {
-  const foe = c.state.players[c.me === 0 ? 1 : 0];
-  for (const s of [...foe.slots, foe.leader]) {
-    if (s && tryCard(s.cardId)?.cursePotency) return true;
+  for (const foeIdx of livingOpponents(c.state, c.me)) {
+    const foe = c.state.players[foeIdx];
+    for (const s of [...foe.slots, foe.leader]) {
+      if (s && tryCard(s.cardId)?.cursePotency) return true;
+    }
   }
   return false;
 }

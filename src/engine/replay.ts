@@ -20,6 +20,8 @@ export interface WireAction {
   powerIndex?: number;
   target?: WireRef;
   targets?: WireRef[];
+  /** Party-only enemy pick. Written only when set, so 2-player replays never carry it. */
+  enemy?: number;
 }
 
 export interface ReplayDeck {
@@ -84,16 +86,23 @@ export function refFromWire(w: WireRef): TargetRef {
 }
 
 export function actionToWire(a: Action): WireAction {
+  const enemy = 'enemy' in a && a.enemy !== undefined ? { enemy: a.enemy } : {};
   switch (a.type) {
-    case 'PLAY_SUPPORTER':
     case 'PLAY_STAGE':
+      return { type: a.type, handIndex: a.handIndex, ...enemy };
+    case 'PLAY_SUPPORTER':
       return { type: a.type, handIndex: a.handIndex };
     case 'REPLACE_SUMMON':
-      return { type: a.type, handIndex: a.handIndex, targets: (a.targets ?? []).map(refToWire) };
+      return {
+        type: a.type,
+        handIndex: a.handIndex,
+        targets: (a.targets ?? []).map(refToWire),
+        ...enemy,
+      };
     case 'PAY_FLIP':
       return a.handIndex === undefined
-        ? { type: a.type }
-        : { type: a.type, handIndex: a.handIndex };
+        ? { type: a.type, ...enemy }
+        : { type: a.type, handIndex: a.handIndex, ...enemy };
     case 'SAP_SUPPORTER':
       return { type: a.type, index: a.index };
     case 'PLAY_SUMMON':
@@ -102,8 +111,10 @@ export function actionToWire(a: Action): WireAction {
         handIndex: a.handIndex,
         slot: a.slot,
         targets: (a.targets ?? []).map(refToWire),
+        ...enemy,
       };
     case 'CAST_SPELL':
+      return { type: a.type, handIndex: a.handIndex, targets: a.targets.map(refToWire), ...enemy };
     case 'CAST_TRAP':
       return { type: a.type, handIndex: a.handIndex, targets: a.targets.map(refToWire) };
     case 'ACTIVATE_POWER':
@@ -112,6 +123,7 @@ export function actionToWire(a: Action): WireAction {
         source: refToWire(a.source),
         powerIndex: a.powerIndex,
         targets: a.targets.map(refToWire),
+        ...enemy,
       };
     case 'DECLARE_ATTACK':
       return { type: a.type, source: refToWire(a.source), target: refToWire(a.target) };
@@ -128,23 +140,31 @@ export function actionToWire(a: Action): WireAction {
 
 export function actionFromWire(w: WireAction): Action {
   const targets = (w.targets ?? []).map(refFromWire);
+  const enemy = w.enemy !== undefined ? { enemy: w.enemy as PlayerIdx } : {};
   switch (w.type) {
     case 'PLAY_SUPPORTER':
       return { type: 'PLAY_SUPPORTER', handIndex: w.handIndex ?? 0 };
     case 'SAP_SUPPORTER':
       return { type: 'SAP_SUPPORTER', index: w.index ?? 0 };
     case 'PLAY_SUMMON':
-      return { type: 'PLAY_SUMMON', handIndex: w.handIndex ?? 0, slot: w.slot ?? 0, targets };
+      return {
+        type: 'PLAY_SUMMON',
+        handIndex: w.handIndex ?? 0,
+        slot: w.slot ?? 0,
+        targets,
+        ...enemy,
+      };
     case 'CAST_SPELL':
-      return { type: 'CAST_SPELL', handIndex: w.handIndex ?? 0, targets };
+      return { type: 'CAST_SPELL', handIndex: w.handIndex ?? 0, targets, ...enemy };
     case 'PLAY_STAGE':
-      return { type: 'PLAY_STAGE', handIndex: w.handIndex ?? 0 };
+      return { type: 'PLAY_STAGE', handIndex: w.handIndex ?? 0, ...enemy };
     case 'ACTIVATE_POWER':
       return {
         type: 'ACTIVATE_POWER',
         source: refFromWire(w.source!) as SourceRef,
         powerIndex: w.powerIndex ?? 0,
         targets,
+        ...enemy,
       };
     case 'DECLARE_ATTACK':
       return {
@@ -163,13 +183,13 @@ export function actionFromWire(w: WireAction): Action {
         ...(w.index !== undefined ? { index: w.index } : {}),
       };
     case 'REPLACE_SUMMON':
-      return { type: 'REPLACE_SUMMON', handIndex: w.handIndex ?? 0, targets };
+      return { type: 'REPLACE_SUMMON', handIndex: w.handIndex ?? 0, targets, ...enemy };
     case 'DECLINE_REPLACE':
       return { type: 'DECLINE_REPLACE' };
     case 'PAY_FLIP':
       return w.handIndex === undefined
-        ? { type: 'PAY_FLIP' }
-        : { type: 'PAY_FLIP', handIndex: w.handIndex };
+        ? { type: 'PAY_FLIP', ...enemy }
+        : { type: 'PAY_FLIP', handIndex: w.handIndex, ...enemy };
     case 'DECLINE_FLIP':
       return { type: 'DECLINE_FLIP' };
     case 'END_TURN':

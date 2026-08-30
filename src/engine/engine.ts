@@ -1,11 +1,12 @@
 import type { Action, ApplyResult, SourceRef } from './actions';
 import {
   assignHp,
+  clearOppWanted,
   destroySummon,
   drawCards,
   effectiveStrength,
-  endGame,
   flipWouldFire,
+  oppWasWanted,
   strengthSourcesOf,
   supporterLocked,
   fireTrigger,
@@ -13,12 +14,15 @@ import {
   makeEffectCtx,
   makeFlipCtx,
   newSummon,
+  playerLoses,
   resolveClash,
+  setActingPlayer,
   toDebt,
   clearSpellBonus,
   takeSpellBonus,
   toDiscard,
   toHand,
+  type OppMode,
 } from './effects';
 import { card, tryCard } from './registry';
 import { runChoiceResolver } from './choices';
@@ -30,14 +34,19 @@ import {
   emptyMana,
   findSummon,
   isOver,
+  isParty,
+  livingOpponents,
   MAX_ACTIONS,
   MAX_TURNS,
+  nextLiving,
   OPENING_HAND,
   OPENING_HAND_BONUS,
   otherPlayer,
+  PARTY_HAND_BONUS,
   powersOf,
   SUMMON_SLOTS,
   type GameState,
+  type PendingSpell,
   type PlayerState,
   type SummonInstance,
 } from './state';
@@ -84,10 +93,13 @@ function newPlayer(list: DeckList): PlayerState {
 }
 
 export function createGame(
-  decks: [DeckList, DeckList],
+  decks: DeckList[],
   seed: number = (Date.now() & 0x7fffffff) >>> 0,
   startingPlayer: PlayerIdx = 0,
 ): GameState {
+  if (decks.length < 2 || decks.length > 4) {
+    throw new Error(`A game seats 2 to 4 players, not ${decks.length}.`);
+  }
   const state: GameState = {
     battle: null,
     seed,
@@ -97,7 +109,7 @@ export function createGame(
     active: startingPlayer,
     startingPlayer,
     phase: 'awake',
-    players: [newPlayer(decks[0]), newPlayer(decks[1])],
+    players: decks.map(newPlayer),
     pending: null,
     dyingOwner: null,
     dyingCardId: null,
@@ -117,7 +129,10 @@ export function createGame(
   state.players.forEach((p, idx) => {
     shuffle(rng, p.deck);
     // The player going second opens a card up on the one going first.
-    const size = OPENING_HAND + (idx === startingPlayer ? 0 : OPENING_HAND_BONUS);
+    const size =
+      OPENING_HAND +
+      (isParty(state) ? PARTY_HAND_BONUS : 0) +
+      (idx === startingPlayer ? 0 : OPENING_HAND_BONUS);
     for (let i = 0; i < size; i++) {
       const id = p.deck.shift();
       if (id) toHand(state, idx as PlayerIdx, id);
@@ -295,16 +310,16 @@ function finishTurn(state: GameState): void {
   if (state.winner !== null) return;
   state.players[state.active].mana = emptyMana();
   if (state.winner !== null) return;
-  startTurn(state, otherPlayer(state.active));
+  startTurn(state, nextLiving(state, state.active));
 }
 
 // --- targeting --------------------------------------------------------------
 
-function sidesFor(spec: TargetSpec, me: PlayerIdx): PlayerIdx[] {
+function sidesFor(state: GameState, spec: TargetSpec, me: PlayerIdx): PlayerIdx[] {
   const side = spec.side ?? 'any';
   if (side === 'ally') return [me];
-  if (side === 'enemy') return [otherPlayer(me)];
-  return [me, otherPlayer(me)];
+  if (side === 'enemy') return livingOpponents(state, me);
+  return [me, ...livingOpponents(state, me)];
 }
 
 /**
@@ -336,7 +351,7 @@ export function targetCandidates(
     return out;
   }
 
-  for (const player of sidesFor(spec, me)) {
+  for (const player of sidesFor(state, spec, me)) {
     const p = state.players[player];
     if (spec.kind === 'summon') {
       p.slots.forEach((s, slot) => {
@@ -362,6 +377,48 @@ export function targetCandidates(
 
 function sameRef(a: TargetRef, b: TargetRef): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * The rejection a client recognises: this party action's card says "the enemy"
+ * and the action did not name one. The client asks for a leader click and
+ * re-sends the action with `enemy` set; nothing was applied.
+ */
+export const NEEDS_ENEMY = 'NEEDS_ENEMY';
+
+/** A carried enemy pick must point at a living opponent of the actor. */
+function enemyPickError(
+  state: GameState,
+  actor: PlayerIdx,
+  enemy: PlayerIdx | undefined,
+): string | null {
+  if (enemy === undefined) return null;
+  if (!isParty(state)) return 'Only party games pick an enemy.';
+  if (enemy === actor) return 'You cannot pick yourself as the enemy.';
+  if (!state.players[enemy] || state.players[enemy].eliminated) {
+    return 'That player is out of the game.';
+  }
+  return null;
+}
+
+/**
+ * How the primary effect of this action resolves its `opp`: the carried pick
+ * when there is one, tracked when a party game would need to ask, and the
+ * plain 2-player default otherwise.
+ */
+function oppModeFor(
+  state: GameState,
+  actor: PlayerIdx,
+  enemy: PlayerIdx | undefined,
+): OppMode | undefined {
+  if (enemy !== undefined) return { kind: 'fixed', player: enemy };
+  if (isParty(state) && livingOpponents(state, actor).length > 1) return { kind: 'track' };
+  return undefined;
+}
+
+/** The mode a pending spell resolves under, from the pick stored at cast time. */
+function spellOppMode(sp: PendingSpell): OppMode | undefined {
+  return sp.enemy !== undefined ? { kind: 'fixed', player: sp.enemy } : undefined;
 }
 
 function validateTargets(
@@ -430,20 +487,27 @@ export function legalAttackTargets(state: GameState, source: SourceRef): TargetR
   // Stationary bodies never declare attacks; they still hit back as defenders.
   if (card(attacker.cardId).stationary || attacker.rooted) return [];
 
-  const opp = otherPlayer(player);
-  const enemy = state.players[opp];
-
-  // Redirection overrides everything else about who may be hit, the leader rule
-  // included: a leader that redirects is attackable with its slots full.
-  const forced = redirectTargets(state, opp);
-  if (forced.length) return forced;
-
   const targets: TargetRef[] = [];
-  enemy.slots.forEach((s, i) => {
-    if (s) targets.push({ kind: 'summon', player: opp, slot: i });
-  });
-  // The leader is only exposed once the slots in front of it are empty.
-  if (targets.length === 0 && enemy.leader) targets.push({ kind: 'leader', player: opp });
+  for (const opp of livingOpponents(state, player)) {
+    const enemy = state.players[opp];
+
+    // Redirection overrides everything else about who may be hit on that side,
+    // the leader rule included: a leader that redirects is attackable with its
+    // slots full. Other sides are unaffected by it.
+    const forced = redirectTargets(state, opp);
+    if (forced.length) {
+      targets.push(...forced);
+      continue;
+    }
+
+    const side: TargetRef[] = [];
+    enemy.slots.forEach((s, i) => {
+      if (s) side.push({ kind: 'summon', player: opp, slot: i });
+    });
+    // The leader is only exposed once the slots in front of it are empty.
+    if (side.length === 0 && enemy.leader) side.push({ kind: 'leader', player: opp });
+    targets.push(...side);
+  }
   return targets;
 }
 
@@ -509,8 +573,16 @@ function resolveSpell(
   caster: PlayerIdx,
   id: string,
   targets: TargetRef[],
+  oppMode?: OppMode,
 ): void {
   const def = card(id);
+  // A caster knocked out while the spell sat in its response window is gone,
+  // and their spell goes with them.
+  if (state.players[caster].eliminated) {
+    log(state, null, `${def.name} fizzles: its caster is out of the game.`);
+    toDiscard(state, caster, id);
+    return;
+  }
   const times = state.players[caster].slots.some(
     (s) => s && card(s.cardId).spellEcho,
   )
@@ -521,7 +593,7 @@ function resolveSpell(
   try {
     for (let i = 0; i < times && state.winner === null; i++) {
       if (i > 0) log(state, caster, `${def.name} echoes.`);
-      def.effect?.(makeEffectCtx(state, caster, null, def, targets));
+      def.effect?.(makeEffectCtx(state, caster, null, def, targets, oppMode));
     }
   } finally {
     clearSpellBonus();
@@ -533,17 +605,19 @@ function resolveSpell(
     if (s) fireTrigger(state, s, 'onSpellCast');
   }
   // The spell is already in the discard pile, so its index there is how the
-  // other side's triggers get told which one was cast.
-  const foe = state.players[otherPlayer(caster)];
+  // other sides' triggers get told which one was cast.
   const cast: TargetRef = { kind: 'discard', player: caster, index: p.discard.length - 1 };
-  for (const s of [...foe.slots, foe.leader]) {
-    if (s) fireTrigger(state, s, 'onEnemySpellCast', [cast]);
+  for (const foeIdx of livingOpponents(state, caster)) {
+    const foe = state.players[foeIdx];
+    for (const s of [...foe.slots, foe.leader]) {
+      if (s) fireTrigger(state, s, 'onEnemySpellCast', [cast]);
+    }
   }
 }
 
 function reduce(state: GameState, actor: PlayerIdx, action: Action): string | null {
   if (action.type === 'CONCEDE') {
-    endGame(state, otherPlayer(actor), `${state.players[actor].name} conceded.`);
+    playerLoses(state, actor, `${state.players[actor].name} conceded.`);
     return null;
   }
   if (actor !== currentActor(state)) return 'It is not your turn to act.';
@@ -581,7 +655,13 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
     case 'PLAY_SUMMON': {
       const blocked = mainPhaseBlocker(state);
       if (blocked) return blocked;
-      return placeSummon(state, actor, action.handIndex, action.slot, action.targets ?? []);
+      const badEnemy = enemyPickError(state, actor, action.enemy);
+      if (badEnemy) return badEnemy;
+      const mode = oppModeFor(state, actor, action.enemy);
+      clearOppWanted();
+      const err = placeSummon(state, actor, action.handIndex, action.slot, action.targets ?? [], mode);
+      if (err) return err;
+      return mode?.kind === 'track' && oppWasWanted() ? NEEDS_ENEMY : null;
     }
 
     case 'REPLACE_SUMMON': {
@@ -591,7 +671,13 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
       // Claim the slot first: placing can end the game, and ending the game
       // clears the queue out from under us.
       state.replaceQueue.shift();
-      return placeSummon(state, actor, action.handIndex, entry.slot, action.targets ?? []);
+      const badEnemy = enemyPickError(state, actor, action.enemy);
+      if (badEnemy) return badEnemy;
+      const mode = oppModeFor(state, actor, action.enemy);
+      clearOppWanted();
+      const err = placeSummon(state, actor, action.handIndex, entry.slot, action.targets ?? [], mode);
+      if (err) return err;
+      return mode?.kind === 'track' && oppWasWanted() ? NEEDS_ENEMY : null;
     }
 
     case 'PAY_FLIP': {
@@ -600,6 +686,9 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
       const def = card(offer.cardId);
       const cost = def.flipCost;
       if (!def.flip || !cost) return 'That card asks for nothing.';
+      const badEnemy = enemyPickError(state, actor, action.enemy);
+      if (badEnemy) return badEnemy;
+      const mode = oppModeFor(state, actor, action.enemy);
       if (cost.mana && !canPay(me, cost.mana)) return 'Not enough mana.';
       if (cost.mill && me.deck.length < cost.mill) return 'Not enough deck left to mill.';
       let discardIndex = -1;
@@ -622,8 +711,9 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
       }
       const holder = findSummon(state, offer.holder);
       log(state, actor, `${me.name} pays for ${def.name}'s flip.`);
-      if (holder) def.flip(makeFlipCtx(state, holder, def));
-      return null;
+      clearOppWanted();
+      if (holder) def.flip(makeFlipCtx(state, holder, def, 0, mode));
+      return mode?.kind === 'track' && oppWasWanted() ? NEEDS_ENEMY : null;
     }
 
     case 'DECLINE_FLIP': {
@@ -652,24 +742,43 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
       if (def.type !== 'spell') return `${def.name} is not a spell.`;
       const bad = validateTargets(state, actor, def.targets, action.targets, def);
       if (bad) return bad;
+      const badEnemy = enemyPickError(state, actor, action.enemy);
+      if (badEnemy) return badEnemy;
+      const mode = oppModeFor(state, actor, action.enemy);
       const paid = costFor(me, def);
       if (!canPay(me, paid)) return 'Not enough mana.';
       payCost(state, actor, paid);
       me.hand.splice(action.handIndex, 1);
       log(state, actor, `${me.name} casts ${def.name}.`);
-      const foe = otherPlayer(actor);
-      const holdsSpellTrap = state.players[foe].hand.some(
-        (h) => card(h).type === 'trap' && card(h).spellTrap,
+      // Every living enemy holding a Spell Trap gets a window, one at a time in
+      // turn order. With one opponent this is the same single window as ever.
+      const holders = livingOpponents(state, actor).filter((foe) =>
+        state.players[foe].hand.some((h) => card(h).type === 'trap' && card(h).spellTrap),
       );
-      if (holdsSpellTrap) {
+      if (holders.length > 0) {
+        // The pick is asked for now rather than after the response windows: a
+        // scratch run of the resolution says whether the card will want one.
+        if (mode?.kind === 'track') {
+          clearOppWanted();
+          resolveSpell(structuredClone(state), actor, id, action.targets, mode);
+          if (oppWasWanted()) return NEEDS_ENEMY;
+        }
         state.pending = {
           kind: 'response',
-          player: foe,
+          player: holders[0],
           battle: null,
-          spell: { caster: actor, cardId: id, targets: action.targets },
+          spell: {
+            caster: actor,
+            cardId: id,
+            targets: action.targets,
+            ...(action.enemy !== undefined ? { enemy: action.enemy } : {}),
+          },
+          ...(holders.length > 1 ? { queue: holders.slice(1) } : {}),
         };
       } else {
-        resolveSpell(state, actor, id, action.targets);
+        clearOppWanted();
+        resolveSpell(state, actor, id, action.targets, mode);
+        if (mode?.kind === 'track' && oppWasWanted()) return NEEDS_ENEMY;
       }
       return null;
     }
@@ -681,6 +790,9 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
       if (!id) return 'No card at that hand index.';
       const def = card(id);
       if (def.type !== 'stage') return `${def.name} is not a stage.`;
+      const badEnemy = enemyPickError(state, actor, action.enemy);
+      if (badEnemy) return badEnemy;
+      const mode = oppModeFor(state, actor, action.enemy);
       const paid = costFor(me, def);
       if (!canPay(me, paid)) return 'Not enough mana.';
       payCost(state, actor, paid);
@@ -688,8 +800,9 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
       if (me.stage) toDiscard(state, actor, me.stage);
       me.stage = id;
       log(state, actor, `${me.name} sets the stage: ${def.name}.`);
-      def.effect?.(makeEffectCtx(state, actor, null, def, []));
-      return null;
+      clearOppWanted();
+      def.effect?.(makeEffectCtx(state, actor, null, def, [], mode));
+      return mode?.kind === 'track' && oppWasWanted() ? NEEDS_ENEMY : null;
     }
 
     case 'ACTIVATE_POWER': {
@@ -702,18 +815,25 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
       const power = powersOf(summon, def)[action.powerIndex];
       const bad = validateTargets(state, actor, power.targets, action.targets);
       if (bad) return bad;
+      const badEnemy = enemyPickError(state, actor, action.enemy);
+      if (badEnemy) return badEnemy;
+      const mode = oppModeFor(state, actor, action.enemy);
       payCost(state, actor, power.cost);
       // Sapping is part of the cost, paid before the effect resolves.
       if (power.sapSelf) summon.sapped = true;
       summon.powerUses[power.name] = (summon.powerUses[power.name] ?? 0) + 1;
       log(state, actor, `${def.name} uses ${power.name}.`);
-      power.effect(makeEffectCtx(state, actor, summon, def, action.targets));
-      // Tells the other side a Power resolved, passing the body that used it so
+      clearOppWanted();
+      power.effect(makeEffectCtx(state, actor, summon, def, action.targets, mode));
+      if (mode?.kind === 'track' && oppWasWanted()) return NEEDS_ENEMY;
+      // Tells the other sides a Power resolved, passing the body that used it so
       // a watcher can answer the thing that acted.
       if (state.winner === null) {
-        const watchers = state.players[otherPlayer(actor)];
-        for (const s of [...watchers.slots, watchers.leader]) {
-          if (s) fireTrigger(state, s, 'onEnemyPower', [action.source]);
+        for (const foeIdx of livingOpponents(state, actor)) {
+          const watchers = state.players[foeIdx];
+          for (const s of [...watchers.slots, watchers.leader]) {
+            if (s) fireTrigger(state, s, 'onEnemyPower', [action.source]);
+          }
         }
       }
       return null;
@@ -748,13 +868,16 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
         return null;
       }
 
-      const defenderHoldsTrap = state.players[opp].hand.some(
+      // The window belongs to whoever is being hit, who in a party game is not
+      // always the next player over.
+      const defOwner = action.target.kind === 'color' ? opp : action.target.player;
+      const defenderHoldsTrap = state.players[defOwner].hand.some(
         (id) => card(id).type === 'trap' && !card(id).spellTrap,
       );
       if (defenderHoldsTrap) {
         state.pending = {
           kind: 'response',
-          player: opp,
+          player: defOwner,
           battle: { attacker: action.source, defender: action.target, trapUsed: false },
           spell: null,
         };
@@ -799,7 +922,7 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
         const sp = pending.spell;
         state.pending = null;
         if (def.letSpellResolve) {
-          resolveSpell(state, sp.caster, sp.cardId, sp.targets);
+          resolveSpell(state, sp.caster, sp.cardId, sp.targets, spellOppMode(sp));
         } else {
           log(state, actor, `${card(sp.cardId).name} is countered.`);
           toDiscard(state, sp.caster, sp.cardId);
@@ -850,8 +973,21 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
       }
       if (state.pending.spell) {
         const sp = state.pending.spell;
-        state.pending = null;
-        resolveSpell(state, sp.caster, sp.cardId, sp.targets);
+        // Passing hands the window down the queue before the spell resolves.
+        // A responder eliminated while the window sat open is skipped.
+        const rest = (state.pending.queue ?? []).filter((p) => !state.players[p].eliminated);
+        if (rest.length > 0) {
+          state.pending = {
+            kind: 'response',
+            player: rest[0],
+            battle: null,
+            spell: sp,
+            ...(rest.length > 1 ? { queue: rest.slice(1) } : {}),
+          };
+        } else {
+          state.pending = null;
+          resolveSpell(state, sp.caster, sp.cardId, sp.targets, spellOppMode(sp));
+        }
       } else {
         resolvePendingBattle(state);
       }
@@ -900,6 +1036,7 @@ function placeSummon(
   handIndex: number,
   slot: number,
   targets: TargetRef[] = [],
+  oppMode?: OppMode,
 ): string | null {
   const me = state.players[actor];
   const id = me.hand[handIndex];
@@ -928,7 +1065,7 @@ function placeSummon(
     destroySummon(state, summon);
     return null;
   }
-  fireTrigger(state, summon, 'onEnter', targets);
+  fireTrigger(state, summon, 'onEnter', targets, oppMode);
   const landed: TargetRef[] = [{ kind: 'summon', player: actor, slot }];
   for (const pl of state.players) {
     for (const other of [...pl.slots, pl.leader]) {
@@ -946,6 +1083,59 @@ function placeSummon(
   return null;
 }
 
+/**
+ * After a party-game action, nothing may be left waiting on a player the action
+ * knocked out: their response window answers itself and the turn moves along.
+ * Never fires in a 2-player game, where a loss ends the match instead.
+ */
+function sweepEliminated(state: GameState): void {
+  if (!isParty(state)) return;
+  // Bounded because each pass either settles the one pending window or hands
+  // the turn to a player who may in turn be eliminated, at most once a seat.
+  for (let guard = 0; guard < 8 && !isOver(state); guard++) {
+    const pending = state.pending;
+    if (pending && state.players[pending.player].eliminated) {
+      if (pending.spell) {
+        const rest = (pending.queue ?? []).filter((q) => !state.players[q].eliminated);
+        if (rest.length > 0) {
+          state.pending = {
+            kind: 'response',
+            player: rest[0],
+            battle: null,
+            spell: pending.spell,
+            ...(rest.length > 1 ? { queue: rest.slice(1) } : {}),
+          };
+        } else {
+          state.pending = null;
+          resolveSpell(
+            state,
+            pending.spell.caster,
+            pending.spell.cardId,
+            pending.spell.targets,
+            spellOppMode(pending.spell),
+          );
+        }
+      } else {
+        resolvePendingBattle(state);
+      }
+      continue;
+    }
+    // The turn only moves once nothing else is queued: whatever living players
+    // are still owed settles first, and this sweep runs after each answer.
+    if (
+      !state.pending &&
+      state.choiceQueue.length === 0 &&
+      state.flipQueue.length === 0 &&
+      state.replaceQueue.length === 0 &&
+      state.players[state.active].eliminated
+    ) {
+      startTurn(state, nextLiving(state, state.active));
+      continue;
+    }
+    break;
+  }
+}
+
 export function applyAction(
   state: GameState,
   actor: PlayerIdx,
@@ -955,8 +1145,15 @@ export function applyAction(
   const next = structuredClone(state);
   // What the last action announced belongs to the last action.
   next.fx = [];
-  const error = reduce(next, actor, action);
+  setActingPlayer(actor);
+  let error: string | null;
+  try {
+    error = reduce(next, actor, action);
+  } finally {
+    setActingPlayer(null);
+  }
   if (error) return { ok: false, error };
+  sweepEliminated(next);
   next.version += 1;
   next.actions += 1;
   // A blow that took both leaders leaves nobody to hand the match to. The

@@ -43,7 +43,8 @@ export type ClientMessage =
 /** Sent by the room. */
 export type ServerMessage =
   | { type: 'seated'; seat: PlayerIdx; roomId: string; kind: RoomKind; code?: string }
-  | { type: 'waiting'; players: number; code?: string }
+  /** `needed`/`names` fill the party lobby roster; a 2-player room sends them too. */
+  | { type: 'waiting'; players: number; needed?: number; names?: string[]; code?: string }
   /**
    * `publicDigest` covers only what both players can see, so each client can
    * check the push against its own copy without either side learning anything
@@ -68,6 +69,8 @@ export type ServerMessage =
   | { type: 'timedOut'; player: PlayerIdx; action: Action['type'] }
   | { type: 'pong'; sent: number; now: number }
   | { type: 'opponentLeft' }
+  /** A party player dropped mid-match; the room concedes for them and play goes on. */
+  | { type: 'playerLeft'; seat: PlayerIdx; name: string }
   | { type: 'error'; reason: string };
 
 /** Answers from the matchmaking endpoints, which are plain HTTP rather than sockets. */

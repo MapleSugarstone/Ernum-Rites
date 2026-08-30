@@ -1,6 +1,6 @@
 import type { CardDef, TargetRef } from '../engine/types';
 import { effectiveStrength } from '../engine/effects';
-import { battleAttacker, battleDefender } from '../engine/state';
+import { battleAttacker, battleDefender, livingOpponents } from '../engine/state';
 import { card } from '../engine/registry';
 import { T, colorKit, holderRef, selfRef } from './build';
 
@@ -455,9 +455,16 @@ export const blueCards: CardDef[] = [
     hp: 5,
     text: "Has +1 attack for every 6 cards in the enemy's discard pile.",
     triggers: {
+      // An aura cannot ask questions, so in a party game it reads the fattest
+      // enemy pile. Summing them would outgrow the printed card at four seats.
       strengthBonus: ({ state, controller, summon, source }) =>
         source && summon.uid === source.uid
-          ? Math.floor(state.players[controller === 0 ? 1 : 0].discard.length / 6)
+          ? Math.floor(
+              livingOpponents(state, controller).reduce(
+                (n: number, foe) => Math.max(n, state.players[foe].discard.length),
+                0,
+              ) / 6,
+            )
           : 0,
     },
     powers: [

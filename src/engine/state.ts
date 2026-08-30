@@ -10,6 +10,8 @@ import type {
 
 export const SUMMON_SLOTS = 3;
 export const DEBT_LIMIT = 25;
+/** Party games run longer and spread the damage out, so the cliff sits higher. */
+export const PARTY_DEBT_LIMIT = 30;
 /**
  * Hard stops so a match cannot run forever. Real games end in under thirty
  * turns and a couple of hundred actions, so these only catch a lock.
@@ -20,6 +22,8 @@ export const DRAW_PER_TURN = 2;
 export const OPENING_HAND = 5;
 /** The player going second draws this many extra cards to open. */
 export const OPENING_HAND_BONUS = 0;
+/** Extra opening cards everyone draws in a 3-4 player party game. */
+export const PARTY_HAND_BONUS = 2;
 /** A hand holds no more than this. Cards arriving past it go to the discard pile. */
 export const HAND_LIMIT = 10;
 
@@ -130,6 +134,11 @@ export interface PlayerState {
   turnsTaken: number;
   /** Times this deck has run dry. Each one costs more than the last. */
   deckOuts: number;
+  /**
+   * Knocked out of a party game: board swept, turns skipped, still watching.
+   * Never set in a 2-player game, where a loss ends the match instead.
+   */
+  eliminated?: boolean;
 }
 
 /** A declared battle waiting on the defender's trap window. */
@@ -144,6 +153,8 @@ export interface PendingSpell {
   caster: PlayerIdx;
   cardId: string;
   targets: TargetRef[];
+  /** Enemy the caster picked for the spell's implicit "the enemy". Party games only. */
+  enemy?: PlayerIdx;
 }
 
 /**
@@ -155,6 +166,11 @@ export type Pending = {
   player: PlayerIdx;
   battle: PendingBattle | null;
   spell: PendingSpell | null;
+  /**
+   * Enemies still owed this spell's response window after the current one, in
+   * turn order. Party games only: with one opponent there is never a queue.
+   */
+  queue?: PlayerIdx[];
 };
 
 /** A costed flip waiting on its owner to pay for it or wave it away. */
@@ -181,7 +197,8 @@ export interface GameState {
   active: PlayerIdx;
   startingPlayer: PlayerIdx;
   phase: Phase;
-  players: [PlayerState, PlayerState];
+  /** Two players normally; three or four in a party game. */
+  players: PlayerState[];
   pending: Pending | null;
   /**
    * Owner of the summon currently dying, set only while onOtherDeath triggers
@@ -215,6 +232,45 @@ export interface GameState {
 
 export function otherPlayer(p: PlayerIdx): PlayerIdx {
   return p === 0 ? 1 : 0;
+}
+
+/** Whether this is a 3-4 player party game. */
+export function isParty(state: GameState): boolean {
+  return state.players.length > 2;
+}
+
+/** The debt a player loses at, which sits higher in a party game. */
+export function debtLimitOf(state: GameState): number {
+  return isParty(state) ? PARTY_DEBT_LIMIT : DEBT_LIMIT;
+}
+
+/** Living players in seat order. In a 2-player game, both. */
+export function livingPlayers(state: GameState): PlayerIdx[] {
+  const out: PlayerIdx[] = [];
+  for (let p = 0 as PlayerIdx; p < state.players.length; p++) {
+    if (!state.players[p].eliminated) out.push(p);
+  }
+  return out;
+}
+
+/**
+ * Living opponents of `me`, in turn order starting with whoever acts next
+ * after `me`. In a 2-player game this is always the one other player.
+ */
+export function livingOpponents(state: GameState, me: PlayerIdx): PlayerIdx[] {
+  const n = state.players.length;
+  const out: PlayerIdx[] = [];
+  for (let step = 1; step < n; step++) {
+    const p = ((me + step) % n) as PlayerIdx;
+    if (!state.players[p].eliminated) out.push(p);
+  }
+  return out;
+}
+
+/** The next living player after `from` in seat order. */
+export function nextLiving(state: GameState, from: PlayerIdx): PlayerIdx {
+  const foes = livingOpponents(state, from);
+  return foes.length > 0 ? foes[0] : from;
 }
 
 export function emptyMana(): Record<ManaKind, number> {
@@ -264,7 +320,7 @@ export function findSummon(state: GameState, ref: TargetRef): SummonInstance | n
 /** Every summon in play on both sides, leaders included. */
 export function allSummons(state: GameState): { ref: TargetRef; summon: SummonInstance }[] {
   const out: { ref: TargetRef; summon: SummonInstance }[] = [];
-  for (const p of [0, 1] as PlayerIdx[]) {
+  for (let p = 0 as PlayerIdx; p < state.players.length; p++) {
     state.players[p].slots.forEach((s, i) => {
       if (s) out.push({ ref: { kind: 'summon', player: p, slot: i }, summon: s });
     });
@@ -301,6 +357,11 @@ export interface PendingChoice {
   optional?: boolean;
   /** A ref the resolver needs beyond the pick, e.g. the body being changed. */
   at?: TargetRef;
+  /**
+   * The enemy this effect is aimed at, for resolvers that would otherwise infer
+   * "whoever isn't choosing". Party games only.
+   */
+  victim?: PlayerIdx;
 }
 
 /** Whoever the game is currently waiting on, which is not always the active player. */

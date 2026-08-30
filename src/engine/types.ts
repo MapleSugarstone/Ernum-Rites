@@ -442,7 +442,7 @@ export const MANA_KINDS: ManaKind[] = [...COLORS, 'C'];
 /** A mana cost, e.g. { P: 1, S: 2 } for "PSS", { R: 1, C: 1 } for "RC". */
 export type Cost = Partial<Record<ManaKind, number>>;
 
-export type PlayerIdx = 0 | 1;
+export type PlayerIdx = 0 | 1 | 2 | 3;
 
 export type Phase = 'awake' | 'draw' | 'main' | 'end';
 
