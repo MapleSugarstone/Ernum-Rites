@@ -34,6 +34,12 @@ public sealed class SummonInstance
     public int Wounds { get; set; }
     public List<StrengthMod> StrengthMods { get; set; } = new();
     /// <summary>
+    /// Effect Damage granted to this body after it entered play, on top of what
+    /// its card prints. Held per body rather than per card because a power can
+    /// hand it out, and it dies with the body that earned it.
+    /// </summary>
+    public int EffectDamageMod { get; set; }
+    /// <summary>
     /// Power Shields. Each one stops one instance of damage outright, however
     /// large, and is spent doing it. Robot's keyword.
     /// </summary>
@@ -85,6 +91,7 @@ public sealed class SummonInstance
             Bestowed = Bestowed,
             EnteredTurn = EnteredTurn,
             Override = Override?.Clone(),
+            EffectDamageMod = EffectDamageMod,
             StrengthMods = new List<StrengthMod>(StrengthMods),
             PowerUses = new Dictionary<string, int>(PowerUses, StringComparer.Ordinal),
             Hp = new List<HpCard>(Hp.Count),

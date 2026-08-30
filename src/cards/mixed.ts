@@ -6,7 +6,7 @@ import { effectiveStrength } from '../engine/effects';
 import { fusedRecomp, livingSummon, pepperRobotCopy } from '../engine/generated';
 import { battleAttacker, battleDefender, levelOf, remainingHp } from '../engine/state';
 import { costTotal, type CardDef } from '../engine/types';
-import { T, dualKit, selfRef } from './build';
+import { T, artPath, dualKit, selfRef } from './build';
 
 // Dual-colour cards are where the factions actually pay off.
 const bg = dualKit('BG', 'F', 'R');
@@ -20,7 +20,55 @@ const yg = dualKit('YG', 'S', 'R');
 const yp = dualKit('YP', 'S', 'O');
 const yr = dualKit('YR', 'S', 'P');
 
+/**
+ * The five-colour leader. Its art sits outside the Mixed tree and it carries
+ * more colours than color2 and color3 can hold, so it is spelled out here
+ * rather than run through a pair kit.
+ *
+ * A leader whose identity is every colour makes every card legal in its deck,
+ * which is the point: the ritual has to be paid in all five.
+ */
+const ernum: CardDef = {
+  id: 'm-ernum',
+  name: 'Ernum',
+  color: 'P',
+  identity: ['P', 'O', 'R', 'F', 'S'],
+  type: 'summon',
+  level: 3,
+  strength: 1,
+  hp: 2,
+  factions: ['Ernum'],
+  art: artPath('Ernum/Ernum'),
+  artist: 'klabss',
+  num: '000',
+  text: 'At the start of your turn, loses 1 HP.',
+  triggers: {
+    // Raw, so its own Effect Damage does not amplify the burn it pays.
+    onAwake: (c) => {
+      const me = selfRef(c);
+      if (me) c.rawDamage(me, 1);
+    },
+  },
+  powers: [
+    {
+      name: 'Novelty Ritual',
+      cost: { P: 1, O: 1, R: 1, F: 1, S: 1, C: 1 },
+      text: 'Gains 6 HP, +6 attack and Effect Damage +3, then heal 6 debt.',
+      sapSelf: true,
+      effect: (c) => {
+        const me = selfRef(c);
+        if (!me) return;
+        c.reinforce(me, 6);
+        c.buffStrength(me, 6, 'permanent');
+        c.grantEffectDamage(me, 3);
+        c.clearDebt(c.me, 6);
+      },
+    },
+  ],
+};
+
 export const mixedCards: CardDef[] = [
+  ernum,
   // --- Fish and Machine -----------------------------------------------------
   bg.summon(2, 'robotfish', 'Robotfish', ['Fish', 'Machine'], {
     str: 2,

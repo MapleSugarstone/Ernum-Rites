@@ -29,6 +29,8 @@ public sealed class EffectCtx
     public void Draw(int player, int count) => Effects.DrawCards(State, player, count);
     public void Mill(int player, int count) => Effects.Mill(State, player, count);
     public void Reinforce(TargetRef t, int count) => Effects.Reinforce(State, t, count);
+    public void GrantEffectDamage(TargetRef t, int amount) =>
+        Effects.GrantEffectDamage(State, t, amount);
 
     /// <summary>
     /// Solar's ramp: the top card of the deck goes straight into the supporter
@@ -394,6 +396,8 @@ public sealed class FlipCtx
     public void Draw(int player, int count) => Effects.DrawCards(State, player, count);
     public void Mill(int player, int count) => Effects.Mill(State, player, count);
     public void Reinforce(TargetRef t, int count) => Effects.Reinforce(State, t, count);
+    public void GrantEffectDamage(TargetRef t, int amount) =>
+        Effects.GrantEffectDamage(State, t, amount);
     public void Shield(TargetRef t, int count)
     {
         var s = State.Find(t);
@@ -703,6 +707,13 @@ public static class Effects
     {
         var s = state.Find(t);
         if (s is not null) AssignHp(state, s, count);
+    }
+
+    /// <summary>Effect Damage added to this body for as long as it stays in play.</summary>
+    public static void GrantEffectDamage(GameState state, TargetRef t, int amount)
+    {
+        var s = state.Find(t);
+        if (s is not null) s.EffectDamageMod += amount;
     }
 
     public static void BuffStrength(GameState state, TargetRef t, int amount, ModDuration d)
@@ -1393,9 +1404,10 @@ public static class Effects
             def.EffectDamage + (def.Triggers?.EffectDamageBonus?.Invoke(args) ?? 0);
         foreach (var s in p.Slots)
         {
-            if (s is not null) total += From(Registry.Card(s.CardId));
+            if (s is not null) total += From(Registry.Card(s.CardId)) + s.EffectDamageMod;
         }
-        if (p.Leader is not null) total += From(Registry.Card(p.Leader.CardId));
+        if (p.Leader is not null)
+            total += From(Registry.Card(p.Leader.CardId)) + p.Leader.EffectDamageMod;
         if (p.Stage is not null) total += Registry.TryCard(p.Stage)?.EffectDamage ?? 0;
         return total + _spellBonus;
     }

@@ -252,6 +252,7 @@ export function newSummon(
     wounds: 0,
     shields: 0,
     strengthMods: [],
+    effectDamageMod: 0,
     powerUses: {},
     enteredTurn: state.turn,
   };
@@ -965,6 +966,10 @@ function baseHelpers(state: GameState, me: PlayerIdx, sourceId: string) {
       const s = findSummon(state, target);
       if (s) assignHp(state, s, count);
     },
+    grantEffectDamage: (target: TargetRef, amount: number) => {
+      const s = findSummon(state, target);
+      if (s) s.effectDamageMod += amount;
+    },
     buffStrength: (target: TargetRef, amount: number, duration: 'turn' | 'permanent') => {
       const s = findSummon(state, target);
       if (s) s.strengthMods.push({ amount, duration, source: sourceId });
@@ -998,8 +1003,8 @@ export function effectDamageOf(state: GameState, player: PlayerIdx): number {
   const from = (def: CardDef | undefined) =>
     (def?.effectDamage ?? 0) + (def?.triggers?.effectDamageBonus?.(args) ?? 0);
   let total = 0;
-  for (const s of p.slots) if (s) total += from(card(s.cardId));
-  if (p.leader) total += from(card(p.leader.cardId));
+  for (const s of p.slots) if (s) total += from(card(s.cardId)) + s.effectDamageMod;
+  if (p.leader) total += from(card(p.leader.cardId)) + p.leader.effectDamageMod;
   if (p.stage) total += tryCard(p.stage)?.effectDamage ?? 0;
   return total + spellBonus;
 }

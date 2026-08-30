@@ -24,7 +24,7 @@ import {
 import { frameFor, frameKeyOf, gemFor } from '../src/ui/frames';
 
 /** The frames the art pack actually ships. */
-const FRAME_KEYS = ['P', 'O', 'R', 'F', 'S', 'N'];
+const FRAME_KEYS = ['P', 'O', 'R', 'F', 'S', 'N', 'X'];
 import { COLORS, COPY_LIMIT } from '../src/engine/types';
 import { counts, deckMarkdown, newBuilder, parseDeckList } from '../src/ui/builder';
 
@@ -64,6 +64,7 @@ const NOT_A_CARD = new Set([
   'Cardgame/Extras/FishPip.png',
   'Cardgame/Extras/SunPip.png',
   'Cardgame/Extras/NeutralPip.png',
+  'Cardgame/Extras/ErnumPip.png',
   // The face-down card, worn by every card the board draws back up.
   'Cardgame/Extras/Cardback.png',
   // Rarity gems.
@@ -71,7 +72,9 @@ const NOT_A_CARD = new Set([
   'Cardgame/Extras/Rare.png',
   'Cardgame/Extras/Epic.png',
   'Cardgame/Extras/Legendary.png',
+  'Cardgame/Extras/Prismatic.png',
   'Cardgame/redc.png',
+  'Cardgame/ernumc.png',
   'Cardgame/bluec.png',
   'Cardgame/greenc.png',
   'Cardgame/purplec.png',

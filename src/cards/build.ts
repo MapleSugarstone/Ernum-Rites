@@ -49,6 +49,8 @@ export interface Extra {
   flipUseful?: CardDef['flipUseful'];
   color2?: Color;
   color3?: Color;
+  /** Spelled out when a card carries more colours than color2 and color3 hold. */
+  identity?: Color[];
   /** The art pack has no file for this card yet, so it renders frame-only. */
   noArt?: boolean;
   targets?: TargetSpec[];
@@ -148,6 +150,7 @@ function base(
   if (factions.length) def.factions = factions;
   if (extra.color2) def.color2 = extra.color2;
   if (extra.color3) def.color3 = extra.color3;
+  if (extra.identity) def.identity = extra.identity;
   if (extra.text) def.text = extra.text;
   if (extra.powers) def.powers = extra.powers;
   if (extra.triggers) def.triggers = extra.triggers;

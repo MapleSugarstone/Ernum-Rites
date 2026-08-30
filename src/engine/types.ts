@@ -44,7 +44,8 @@ export type Faction =
   | 'Scholar'
   | 'Star'
   | 'Hedron'
-  | 'Grinkle';
+  | 'Grinkle'
+  | 'Ernum';
 
 export const FACTIONS: Faction[] = [
   'Fish',
@@ -57,15 +58,17 @@ export const FACTIONS: Faction[] = [
   'Star',
   'Hedron',
   'Grinkle',
+  'Ernum',
 ];
 
-export type Rarity = 'C' | 'R' | 'E' | 'L';
+export type Rarity = 'C' | 'R' | 'E' | 'L' | 'P';
 
 export const RARITY_NAME: Record<Rarity, string> = {
   C: 'Common',
   R: 'Rare',
   E: 'Epic',
   L: 'Legendary',
+  P: 'Prismatic',
 };
 
 /** Characters of rules text at which a card moves up a rarity. */
@@ -87,6 +90,8 @@ export const RARITY_LEVEL_ADJUST: Record<number, number> = { 1: -15, 2: -8, 3: 1
  * sensible starting point.
  */
 export const RARITY_FIXED: Record<string, Rarity> = {
+  // Prismatic is this card's alone: nothing else carries every colour.
+  'm-ernum': 'P',
   'f1-basicfish': 'C',
   'f1-lilfish': 'R',
   'f1-longfish': 'R',
@@ -802,6 +807,8 @@ export interface EffectCtx {
   mill(player: PlayerIdx, count: number): void;
   /** Add `count` face-down HP cards off the top of the owner's deck. */
   reinforce(target: TargetRef, count: number): void;
+  /** Effect Damage added to this body for as long as it stays in play. */
+  grantEffectDamage(target: TargetRef, amount: number): void;
   buffStrength(target: TargetRef, amount: number, duration: 'turn' | 'permanent'): void;
   sap(target: TargetRef): void;
   unsap(target: TargetRef): void;
@@ -912,6 +919,8 @@ export interface FlipCtx {
   draw(player: PlayerIdx, count: number): void;
   mill(player: PlayerIdx, count: number): void;
   reinforce(target: TargetRef, count: number): void;
+  /** Effect Damage added to this body for as long as it stays in play. */
+  grantEffectDamage(target: TargetRef, amount: number): void;
   shield(target: TargetRef, count: number): void;
   catch(target: TargetRef, count: number): number;
   curse(player: PlayerIdx, cardId: string, count: number): number;

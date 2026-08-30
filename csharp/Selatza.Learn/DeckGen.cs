@@ -60,7 +60,10 @@ public static class DeckGen
             {
                 LeaderPool.Starter => d.Starter,
                 LeaderPool.Sturdy => d.Starter || d.Level >= 2,
-                LeaderPool.Dual => d.Color2 is not null,
+                // Multi-colour bodies, however they say so. Most spell it with
+                // Color2, but a card carrying more colours than those two slots
+                // hold writes them out in Identity instead.
+                LeaderPool.Dual => d.Color2 is not null || (d.Identity?.Length ?? 0) > 1,
                 LeaderPool.NonFlip => d.Type == CardType.Summon && d.Flip is null,
                 _ => true,
             };

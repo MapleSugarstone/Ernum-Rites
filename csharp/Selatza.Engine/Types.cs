@@ -9,9 +9,9 @@ public enum Color { P, O, R, F, S, N }
 
 public enum CardType { Summon, Spell, Trap, Stage }
 
-public enum Faction { Fish, Machine, Spirit, Beast, Living, Mortal, Scholar, Star, Hedron, Grinkle }
+public enum Faction { Fish, Machine, Spirit, Beast, Living, Mortal, Scholar, Star, Hedron, Grinkle, Ernum }
 
-public enum Rarity { C, R, E, L }
+public enum Rarity { C, R, E, L, P }
 
 public enum Phase { Awake, Draw, Main, End }
 
@@ -78,6 +78,8 @@ public static class Rarities
     /// </summary>
     public static readonly Dictionary<string, Rarity> Fixed = new()
     {
+        // Prismatic is this card's alone: nothing else carries every colour.
+        ["m-ernum"] = Rarity.P,
         ["f1-basicfish"] = Rarity.C,
         ["f1-lilfish"] = Rarity.R,
         ["f1-longfish"] = Rarity.R,

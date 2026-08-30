@@ -53,7 +53,7 @@ export type BrowseTab = Color | 'M' | 'N';
 export const BROWSE_TABS: BrowseTab[] = [...COLORS, 'M', 'N'];
 
 /** Rarity filter chips, in the order they print on a card. */
-export const RARITY_FILTERS: Rarity[] = ['C', 'R', 'E', 'L'];
+export const RARITY_FILTERS: Rarity[] = ['C', 'R', 'E', 'L', 'P'];
 
 export interface BuilderState {
   name: string;
@@ -204,7 +204,11 @@ export function browseSections(tab: BrowseTab): Section[] {
     // with, so they have to be pulled off that colour's tab explicitly.
     if (tab === 'N') return !!d.neutral;
     if (d.neutral) return false;
-    return tab === 'M' ? !!d.color2 : d.color === tab && !d.color2;
+    // Mixed is anything carrying more than one colour, however it says so: most
+    // spell it with color2, but a card with more colours than that slot holds
+    // writes them out in identity instead.
+    const mixed = !!d.color2 || (d.identity?.length ?? 0) > 1;
+    return tab === 'M' ? mixed : d.color === tab && !mixed;
   });
   const by = (fn: (d: CardDef) => boolean) =>
     pool.filter(fn).sort((a, b) => a.name.localeCompare(b.name));

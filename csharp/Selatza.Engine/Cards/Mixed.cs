@@ -18,6 +18,51 @@ public static class Mixed
 
     public static CardDef[] Build() => new[]
     {
+        // The five-colour leader. Its art sits outside the Mixed tree and it
+        // carries more colours than Color2 and Color3 hold, so it is spelled out
+        // here rather than run through a pair kit. A leader whose identity is
+        // every colour makes every card legal in its deck, which is the point:
+        // the ritual has to be paid in all five.
+        new CardDef
+        {
+            Id = "m-ernum",
+            Name = "Ernum",
+            Color = Color.P,
+            Identity = new[] { Color.P, Color.O, Color.R, Color.F, Color.S },
+            Type = CardType.Summon,
+            Level = 3,
+            Strength = 1,
+            Hp = 2,
+            Factions = F(Faction.Ernum),
+            Art = "Cardgame/Ernum/Ernum.png",
+            Artist = "klabss",
+            Num = "000",
+            Text = "At the start of your turn, loses 1 HP.",
+            Triggers = new Triggers
+            {
+                // Raw, so its own Effect Damage does not amplify the burn it pays.
+                OnAwake = c =>
+                {
+                    if (c.Self is { } me) c.RawDamage(me, 1);
+                },
+            },
+            Powers = Powers(new Power
+            {
+                Name = "Novelty Ritual",
+                Cost = new Cost { P = 1, O = 1, R = 1, F = 1, S = 1, C = 1 },
+                Text = "Gains 6 HP, +6 attack and Effect Damage +3, then heal 6 debt.",
+                SapSelf = true,
+                Effect = c =>
+                {
+                    if (c.Self is not { } me) return;
+                    c.Reinforce(me, 6);
+                    c.BuffStrength(me, 6, ModDuration.Permanent);
+                    c.GrantEffectDamage(me, 3);
+                    c.ClearDebt(c.Me, 6);
+                },
+            }),
+        },
+
         // --- Fish and Machine ------------------------------------------------
         Bg.Summon(2, "robotfish", "Robotfish", F(Faction.Fish, Faction.Machine), str: 2, hp: 3,
             text: "",

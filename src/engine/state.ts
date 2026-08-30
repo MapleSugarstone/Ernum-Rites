@@ -59,6 +59,12 @@ export interface SummonInstance {
    */
   shields: number;
   strengthMods: StrengthMod[];
+  /**
+   * Effect Damage granted to this body after it entered play, on top of what
+   * its card prints. Held per body rather than per card because a power can
+   * hand it out, and it dies with the body that earned it.
+   */
+  effectDamageMod: number;
   /** Power name -> times used this turn, for oncePerTurn. */
   powerUses: Record<string, number>;
   /** Set when a card is put into play as something else (Virus's theft). */

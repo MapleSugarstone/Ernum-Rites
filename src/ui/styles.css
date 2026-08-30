@@ -105,6 +105,8 @@
   --c-F: #1155b8;
   --c-S: #d8a800;
   --c-N: #99715b;
+  /* Sampled from ernumc.png, the frame drawn for the every-colour card. */
+  --c-X: #220f9b;
 
   /* Every card size derives from one width; the frame is 240x336. The board
      sizes track viewport height so the two sides and their HP fans always fit. */

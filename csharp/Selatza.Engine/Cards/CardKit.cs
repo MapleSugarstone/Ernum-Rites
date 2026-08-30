@@ -181,12 +181,13 @@ public static class Kit
             bool cursePotency = false, bool muffleFlips = false,
             bool stationary = false, bool redirect = false, bool spellImmune = false,
             bool reborn = false, bool frenzy = false, bool voidsDiscard = false,
-            bool neutral = false)
+            bool neutral = false, Color[]? identity = null)
         {
             var b = LevelBase[level];
             return new CardDef
             {
                 Id = $"{_prefix}{level}-{file}",
+                Identity = identity,
                 Name = name,
                 Color = _color,
                 Type = CardType.Summon,

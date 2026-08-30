@@ -13,7 +13,7 @@ namespace Selatza;
 /// </summary>
 public static class Digest
 {
-    public const string Format = "v1";
+    public const string Format = "v2";
 
     public static string Of(GameState s)
     {
@@ -224,6 +224,7 @@ public static class Digest
         sb.Append('~').Append(s.EnteredTurn);
         sb.Append('~').Append(s.IsLeader ? '1' : '0');
         sb.Append('~').Append(s.Owner);
+        sb.Append('~').Append(s.EffectDamageMod);
         return sb.ToString();
     }
 }

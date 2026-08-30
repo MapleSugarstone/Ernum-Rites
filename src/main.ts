@@ -470,17 +470,31 @@ function artFit(def: CardDef | null | undefined): string {
   return css ? `<i class="sprfit" style="${css}"></i>` : '';
 }
 
+/**
+ * Ernum has a pip drawn for it but no cost is written in one, so it is a pip
+ * kind here and nowhere in the rules: ManaKind stays what a cost can ask for.
+ */
+type PipKind = ManaKind | 'E';
+
 /** Art for a mana pip. Every kind is drawn, so a new colour has to bring one. */
-const PIP_ART: Record<ManaKind, string> = {
+const PIP_ART: Record<PipKind, string> = {
   P: 'Cardgame/Extras/PepperPip.png',
   O: 'Cardgame/Extras/OilPip.png',
   R: 'Cardgame/Extras/RobotPip.png',
   F: 'Cardgame/Extras/FishPip.png',
   S: 'Cardgame/Extras/SunPip.png',
   C: 'Cardgame/Extras/NeutralPip.png',
+  E: 'Cardgame/Extras/ErnumPip.png',
 };
 
-function pipRun(kind: ManaKind, n: number): string {
+/**
+ * The order pips print in, which is the set's reading order rather than the
+ * order the rules happen to list the colours in. Kept apart from MANA_KINDS on
+ * purpose: that one's order is baked into the cross-engine digest.
+ */
+const PIP_ORDER: PipKind[] = ['P', 'S', 'R', 'F', 'O', 'C', 'E'];
+
+function pipRun(kind: PipKind, n: number): string {
   // One image per pip rather than one repeated: a cost of three reads as three
   // things, and the row wraps the same way the bullets did.
   return `<span class="pipart pip-${kind}">${
@@ -490,10 +504,10 @@ function pipRun(kind: ManaKind, n: number): string {
 
 function pipHtml(cost: CardDef['cost']): string {
   if (!cost) return '';
-  const colored = COLORS.filter((c) => cost[c])
-    .map((c) => pipRun(c, cost[c]!))
-    .join('');
-  return colored + (cost.C ? pipRun('C', cost.C) : '');
+  return PIP_ORDER.map((k) => {
+    const n = k === 'E' ? 0 : (cost[k] ?? 0);
+    return n > 0 ? pipRun(k, n) : '';
+  }).join('');
 }
 
 /** A power's cost line: mana pips, then the sap symbol when sapping is part of the price. */

@@ -10,7 +10,7 @@ import { MANA_KINDS, type PlayerIdx, type TargetRef } from './types';
  * excluded on purpose: wording is cosmetic, and uid allocation order is not
  * observable in play.
  */
-export const DIGEST_FORMAT = 'v1';
+export const DIGEST_FORMAT = 'v2';
 
 const PHASE_NAME = { awake: 'awake', draw: 'draw', main: 'main', end: 'end' } as const;
 
@@ -61,6 +61,7 @@ function summonString(s: SummonInstance | null | undefined): string {
     s.enteredTurn,
     s.isLeader ? 1 : 0,
     s.owner,
+    s.effectDamageMod,
   ].join('~');
 }
 
