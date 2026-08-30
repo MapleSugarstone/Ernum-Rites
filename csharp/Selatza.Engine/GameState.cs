@@ -258,7 +258,7 @@ public static class Rules
     public const int OpeningHandBonus = 0;
 
     /// <summary>A hand holds no more than this. Cards past it go to the discard pile.</summary>
-    public const int HandLimit = 12;
+    public const int HandLimit = 10;
 }
 
 public sealed class GameState

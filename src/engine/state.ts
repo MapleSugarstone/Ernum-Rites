@@ -21,7 +21,7 @@ export const OPENING_HAND = 5;
 /** The player going second draws this many extra cards to open. */
 export const OPENING_HAND_BONUS = 0;
 /** A hand holds no more than this. Cards arriving past it go to the discard pile. */
-export const HAND_LIMIT = 12;
+export const HAND_LIMIT = 10;
 
 /** A card placed face down under a summon as one point of HP. */
 export interface HpCard {

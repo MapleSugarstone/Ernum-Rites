@@ -2423,6 +2423,12 @@ function renderBoard(): void {
   // While a lunge is playing, flips and damage overlays hold until the impact;
   // a trap reveal pushes everything back further still.
   el.classList.toggle('smacking', !!smackFx);
+  // Dimmed while the other side is the one being waited on, whether that is
+  // their turn or them answering something on yours. A board you may not touch
+  // should look it, rather than reading as one that has stopped responding.
+  // On the app rather than the board: the hand is a sibling of the board, not
+  // a descendant, and it dims with it.
+  root.classList.toggle('waiting', actor() !== me && !isOver(state));
   // Wounds land when the blow does, and the damage they make waits until they
   // have finished resolving, so the flip is the answer to the tokens rather
   // than something happening over the top of them.
@@ -4300,6 +4306,10 @@ function netClient(): NetClient {
       // card it entered as rather than flashing straight to its answer.
       beginLeaderReform(ui.state);
       render();
+      if (opening) {
+        playOpeningDraw(seat);
+        return;
+      }
       if (!animated) return;
       playSounds();
       playTrapReveal();
@@ -4402,7 +4412,10 @@ function leaveOnline(): void {
 // --- dispatch ---------------------------------------------------------------
 
 function dispatch(action: Action): void {
-  if (!ui.state || !canAct()) return;
+  // Conceding is not a play and is not gated on the turn: the engine settles it
+  // before it asks whose turn it is, and a player who wants out should not have
+  // to wait for their opponent to finish.
+  if (!ui.state || (!canAct() && action.type !== 'CONCEDE')) return;
   // Online, the room decides. This side sends and waits for the push rather
   // than moving its own copy on ahead of the authority.
   if (ui.online.phase === 'playing' && net) {
@@ -4427,14 +4440,17 @@ function dispatch(action: Action): void {
   // Only the real move is recorded. The bot has already finished searching by
   // now, so nothing it simulated lands in the same buffer.
   captureWounds();
-  const res = applyAction(ui.state, actor(), action);
+  // Whoever is giving up, not whoever is on the clock: crediting the concession
+  // to the active player would hand the match to the wrong side.
+  const by = action.type === 'CONCEDE' ? viewSeat() : actor();
+  const res = applyAction(ui.state, by, action);
   if (!res.ok) {
     // Nothing happened, so stop recording rather than leave the buffer open for
     // the bot to search into.
     takeWounds();
     ui.error = res.error;
   } else {
-    applyActionFx(ui.state, res.state, action, actor());
+    applyActionFx(ui.state, res.state, action, by);
     ui.state = res.state;
     ui.error = null;
     ui.selection = null;
@@ -4878,6 +4894,22 @@ function matchArtPaths(decks: DeckList[]): string[] {
   return paths;
 }
 
+/**
+ * The opening hand is dealt rather than drawn: no action produced it, so the
+ * diff that normally notices a draw never runs over it and it has to announce
+ * itself. One sound per card rather than the usual cap, because a deal is meant
+ * to sound like a deal.
+ */
+function playOpeningDraw(seat: PlayerIdx): void {
+  const count = ui.state?.players[seat].hand.length ?? 0;
+  if (count === 0) return;
+  drawFx = [{ player: seat, count }];
+  for (let i = 0; i < count; i++) cue('draw', i * DRAW_STEP, 0.9);
+  playSounds();
+  playDraws();
+  playHandPlays();
+}
+
 function startMatch(decks: [DeckList, DeckList]): void {
   ui.state = createGame(decks, Math.floor(Math.random() * 0x7fffffff), 0);
   ui.screen = 'game';
@@ -4903,10 +4935,7 @@ function startMatch(decks: [DeckList, DeckList]): void {
   // spacing, the hand's overlap, the lane axis. On the very first paint there is
   // nothing there yet, so they take their fallbacks. One more pass settles them.
   requestAnimationFrame(() => render());
-  // The opening hand is dealt off the deck the same way every later draw arrives.
-  drawFx = [{ player: viewSeat(), count: ui.state.players[viewSeat()].hand.length }];
-  playDraws();
-  playHandPlays();
+  playOpeningDraw(viewSeat());
   const seat = viewSeat();
   popNotice(
     `You are Player ${seat + 1}`,

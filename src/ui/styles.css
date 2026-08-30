@@ -940,6 +940,24 @@ button.on {
   }
 }
 
+/* Your own half, dimmed while the other player is the one being waited on. The
+   fade is what makes it read as a state rather than a rendering fault, and it
+   sits on the two regions that hold cards so the piles and the debt figure stay
+   legible while you are waiting on somebody else. */
+.side.mine .lane,
+.side.mine .supportrow,
+.handrail {
+  transition: filter 260ms ease;
+}
+/* On the containers, not the cards: a card carries its own drop shadow in a
+   filter of its own, and setting one here would replace it rather than add to
+   it. Dimming the group composites it once and leaves each card intact. */
+#app.waiting .side.mine .lane,
+#app.waiting .side.mine .supportrow,
+#app.waiting .handrail {
+  filter: brightness(0.84) saturate(0.94);
+}
+
 .lane {
   display: grid;
   grid-auto-flow: column;
@@ -1895,9 +1913,10 @@ body.dragging .bookgrid .card {
     opacity: 1;
   }
 }
+/* Greyed rather than faded: a card you cannot play is still a card you are
+   reading, and going see-through lets the table print through the art. */
 .card.dimmed {
   filter: grayscale(0.75) brightness(0.88) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
-  opacity: 0.7;
 }
 
 /* --- keyword and status overlays on the card itself ------------------------ */
@@ -4667,6 +4686,14 @@ body.mobile .stage {
      counts toward scrollable overflow, so without this the page scrolls by the
      height of a panel nobody can see. */
   overflow: hidden;
+}
+
+/* That clip takes the top off anything reaching above the stage, and the prompt
+   reaches above it by the height of the other player's fan. On a phone it sits
+   inside the stage instead: covering the top of their row is worse than covering
+   their card backs, but being cut in half is worse than either. */
+body.mobile .promptlayer {
+  top: 8px;
 }
 
 /* The inspector slides up over the board rather than taking a column from it.
