@@ -3517,6 +3517,13 @@ function mountGame(): void {
   lastHistoryHtml = '';
 }
 
+/**
+ * The open dropdown's list. Hovering a card repaints the screen, and a repaint
+ * rebuilds the list, so a mouse resting over one while the wheel turns would
+ * otherwise send it back to the top on every notch.
+ */
+const OPEN_DDLIST = '.dropdown.open .ddlist';
+
 /** Rebuilding a screen's HTML resets its scroll, so carry the positions over. */
 function keepScroll(selectors: string[], rebuild: () => void): void {
   const kept = selectors.map((sel) => ({
@@ -3546,17 +3553,21 @@ function render(): void {
     return;
   }
   if (ui.screen === 'online') {
-    root.innerHTML = renderOnline();
-    syncDropdowns();
+    keepScroll([OPEN_DDLIST], () => {
+      root.innerHTML = renderOnline();
+      syncDropdowns();
+    });
     return;
   }
   const onSetup = ui.screen === 'setup' || !ui.state;
   showGuy(onSetup && ui.screen !== 'build');
   if (ui.screen === 'build') {
-    keepScroll(['.bookscroll', '.deckscroll'], () => {
+    // syncDropdowns runs inside the rebuild, not after it: it is what puts the
+    // open class back, and without it the list cannot be found to restore.
+    keepScroll(['.bookscroll', '.deckscroll', OPEN_DDLIST], () => {
       root.innerHTML = renderBuilder();
+      syncDropdowns();
     });
-    syncDropdowns();
     return;
   }
   if (onSetup) {
