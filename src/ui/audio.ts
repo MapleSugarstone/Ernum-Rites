@@ -31,6 +31,12 @@ let ctx: AudioContext | null = null;
 let musicBus: GainNode | null = null;
 let sfxBus: GainNode | null = null;
 const stems = new Map<Mood, GainNode>();
+/**
+ * The elements behind the stems. A phone can refuse to start a media element on
+ * the tap that built it, and a refusal leaves it paused for good, so they are
+ * kept to be started again on the next tap.
+ */
+const stemEls: HTMLAudioElement[] = [];
 let mood: Mood = 'normal';
 
 function load(): Levels {
@@ -88,6 +94,10 @@ export function setLevel(bus: keyof Levels, value: number): void {
 export function startAudio(base: string): void {
   if (ctx) {
     void ctx.resume();
+    // Resuming the context is enough for the effects, which are pure Web Audio,
+    // but a stem the phone refused earlier is still sitting paused and only a
+    // tap can start it. Every tap gets to try again.
+    playStems();
     return;
   }
   const Ctor = window.AudioContext ?? (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -110,11 +120,20 @@ export function startAudio(base: string): void {
     gain.gain.value = name === mood ? 1 : 0;
     ctx.createMediaElementSource(el).connect(gain).connect(musicBus);
     stems.set(name, gain);
-    void el.play().catch(() => {
-      /* a refused play leaves the stem silent rather than breaking the game */
-    });
+    stemEls.push(el);
   }
   void ctx.resume();
+  playStems();
+}
+
+/** Start any stem that is not running. Safe to call on every tap. */
+function playStems(): void {
+  for (const el of stemEls) {
+    if (!el.paused) continue;
+    void el.play().catch(() => {
+      /* still refused, so it stays silent and the next tap tries again */
+    });
+  }
 }
 
 /** Crossfade to a mood. A mood that is already playing is left alone. */
