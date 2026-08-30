@@ -4334,10 +4334,6 @@ function netClient(): NetClient {
       render();
     },
     onOpponentLeft() {
-      // A finished match has nothing left to walk out of. The result is already
-      // on screen and it is the winner's to read for as long as they like, so
-      // the loser closing their tab must not clear it away.
-      if (ui.state && isOver(ui.state)) return;
       failOnline('Your opponent left the match.');
     },
     onError(reason) {
@@ -4355,6 +4351,15 @@ function failOnline(reason: string): void {
   stopRopeWatch();
   net?.close();
   pendingRoom = null;
+  // A finished match cannot fail. The result is already on screen and the socket
+  // has nothing left to carry, so the loser closing their tab, a dropped
+  // connection and a desync all just disconnect and leave the result standing.
+  // The seat stays set on purpose: the board is drawn from it, and clearing it
+  // would flip the table under whoever is still reading the result.
+  if (ui.state && isOver(ui.state) && ui.online.phase === 'playing') {
+    render();
+    return;
+  }
   ui.online.phase = 'idle';
   ui.online.roomCode = null;
   ui.online.seat = null;
