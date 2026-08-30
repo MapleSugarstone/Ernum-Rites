@@ -28,6 +28,14 @@ export class MatchRoom extends DurableObject {
   private seats: (Seat | null)[] = [null, null];
   private state: GameState | null = null;
   private clock: Clock | null = null;
+  /**
+   * What the active player's main phase still has left. Banked whenever a
+   * response window takes the clock over, so answering something costs the
+   * window's time rather than the turn's, and the turn picks up where it was.
+   */
+  private turnLeftMs = 0;
+  /** Which turn the bank belongs to. A different one refills it. */
+  private turnKey = '';
   private kind: RoomKind = 'public';
   private code: string | undefined;
 
@@ -139,18 +147,32 @@ export class MatchRoom extends DurableObject {
       await this.ctx.storage.deleteAlarm();
       return;
     }
+    const now = Date.now();
     const kind = clockKindFor(this.state);
     const player = currentActor(this.state);
-    // Acting is what the window is for, so acting does not buy more of it. The
-    // same player still inside the same kind of window keeps the deadline they
-    // started on; refreshing it per action would let a player hold a turn open
-    // for as long as they had something left to do.
-    if (this.clock && this.clock.kind === kind && this.clock.player === player) {
-      await this.ctx.storage.setAlarm(this.clock.endsAt);
-      return;
+    // A turn is one budget, and it is the turn number and whose it is that name
+    // it. Anything queued in front of the main phase is a different clock that
+    // interrupts this one rather than replacing it.
+    const key = `${this.state.turn}/${this.state.active}`;
+
+    if (key !== this.turnKey) {
+      this.turnKey = key;
+      this.turnLeftMs = enforcedMs('turn');
+    } else if (this.clock?.kind === 'turn') {
+      // Still the same turn and still in the main phase, so what it has left is
+      // whatever its own clock says. Reading it back here is what stops an
+      // action from restarting the turn.
+      this.turnLeftMs = Math.max(0, this.clock.endsAt - now);
     }
-    const total = enforcedMs(kind);
-    this.clock = { kind, player, endsAt: Date.now() + total, totalMs: total };
+
+    if (kind === 'turn') {
+      this.clock = { kind, player, endsAt: now + this.turnLeftMs, totalMs: enforcedMs('turn') };
+    } else if (this.clock && this.clock.kind === kind && this.clock.player === player) {
+      // The same window still open: acting inside one does not buy more of it.
+    } else {
+      const total = enforcedMs(kind);
+      this.clock = { kind, player, endsAt: now + total, totalMs: total };
+    }
     await this.ctx.storage.setAlarm(this.clock.endsAt);
   }
 
