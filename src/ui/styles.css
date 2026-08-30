@@ -2366,6 +2366,24 @@ body.dragging .bookgrid .card {
 .actionbar .status.error {
   color: var(--danger);
   font-weight: 600;
+  /* Holds, then fades over the last stretch. The script clears the message on
+     the same three seconds, so the line is gone as the fade finishes rather
+     than blinking out of a still-solid state. */
+  animation: errorfade 3000ms ease forwards;
+}
+@keyframes errorfade {
+  0%,
+  76% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .actionbar .status.error {
+    animation: none;
+  }
 }
 
 /* --- attack arrow ---------------------------------------------------------- */

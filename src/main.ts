@@ -1515,6 +1515,36 @@ function boardElFor(ref: TargetRef, cardOnly = false): HTMLElement | null {
 /** How long a notice sits over the table before it takes itself away. */
 const NOTICE_MS = 2600;
 
+/** How long a refused action's reason stays up before it clears itself. */
+const ERROR_MS = 3000;
+let errorTimer: number | null = null;
+/** The message the running timer belongs to, so a new one restarts the clock. */
+let errorShown = '';
+
+/**
+ * Give the reason an action was refused a lifetime.
+ *
+ * Sapping something already sapped, and everything else the rules turn down,
+ * leaves a line on the table that used to sit there until some later action
+ * happened to clear it. It says its piece and goes.
+ */
+function watchError(): void {
+  const now = ui.error ?? '';
+  if (now === errorShown) return;
+  errorShown = now;
+  if (errorTimer !== null) window.clearTimeout(errorTimer);
+  errorTimer = null;
+  if (!now) return;
+  errorTimer = window.setTimeout(() => {
+    errorTimer = null;
+    // Only if it is still the same message: a newer one owns the screen now.
+    if ((ui.error ?? '') !== errorShown) return;
+    ui.error = null;
+    errorShown = '';
+    render();
+  }, ERROR_MS);
+}
+
 /**
  * A short notice over the middle of the table.
  *
@@ -3541,6 +3571,7 @@ function render(): void {
   // The drag can end down any number of paths, and all of them repaint. One
   // check here beats a stopHold() beside every one of them.
   if (!ui.drag) stopHold();
+  watchError();
   // Every screen, not just the table: the setup list has to fit too.
   syncLayout();
   // The board is rebuilt from scratch on every action, and a fresh element

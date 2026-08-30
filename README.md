@@ -5,8 +5,8 @@ static site built for GitHub Pages; the rules engine is a pure TypeScript module
 that also runs inside a Cloudflare Durable Object as the authority for online
 play.
 
-Hotseat and single-player against a bot both work today. Online play is
-scaffolded but not wired up.
+Hotseat, single-player against a bot, and online play against another person
+all work today.
 
 ## Running it
 
@@ -33,7 +33,7 @@ turn. Every card you cannot draw because your deck is empty costs you a debt, so
 an exhausted deck bleeds 2 a turn.
 
 **Main.** Face one card from your hand as a supporter; sapping a supporter pays
-one mana of that card's colour. Place summons into your three slots, where each
+one mana of that card's color. Place summons into your three slots, where each
 draws its HP off the top of your deck as face-down cards. Cast spells, set a
 field, and use the powers of any summon that is not sapped. Powers do not sap
 the summon by default, though the strongest ones now print "then this one saps"
@@ -54,7 +54,7 @@ pay. A flip costs nothing on the stat line, so the printed cost of the bigger
 ones is the only price. About a quarter of the set carries one, concentrated on
 level 1 summons and on spells expensive enough that you would rather draw them
 as HP than cast them. Every flip that heals carries a cost of one mana in its
-colour, so free chip damage never undoes itself.
+color, so free chip damage never undoes itself.
 
 **Your leader may attack too.** It swings like a summon and takes the counter-hit
 like a summon, but a leader that is *defending* deals nothing back. So attacking
@@ -73,7 +73,7 @@ level (1 to 3) to your debt, and every undrawable card adds one.
 fires while the debt is still unpaid, so a card can discount its own death.
 
 **Strike.** Something a summon does as it declares an attack, before the clash,
-prints as `Strike:`. All three trigger words print in their own colours, and
+prints as `Strike:`. All three trigger words print in their own colors, and
 mechanic keywords print bold, so neither reads as a power.
 
 **Scry N** means look at the top N cards of your deck, click a matching card to
@@ -107,24 +107,24 @@ read. One legend converts wounds 1 for 1 instead.
 **Destroy** is the one word for sending a body to the debt zone, whoever owns it
 and whatever caused it.
 
-## Colours, factions and rarity
+## Colors, factions and rarity
 
-| Letter | Colour | Feel |
+| Letter | Color | Feel |
 | --- | --- | --- |
 | P | Pepper (red) | Burn, board damage, spell recursion, bodies that cash themselves in |
 | O | Oil (purple) | Wounds and their payoffs, curses, debt manipulation, reanimation |
-| R | Robot (green) | Power Shields, armour plating, reach, taking what you want |
+| R | Robot (green) | Power Shields, armor plating, reach, taking what you want |
 | F | Fish (blue) | Bounce, enemy mill, catching spent HP, fishing the dead out of debt |
 | S | Solar (yellow) | Extra supporters, permanent buffs, real healing |
 
-Each of those lists is deliberately exclusive: an effect belongs to one colour,
+Each of those lists is deliberately exclusive: an effect belongs to one color,
 dual cards may borrow from both of their halves, and neutral trades effects for
 stats. The reasoning and the full ownership table are in
 [claude-notes/set-redesign.md](claude-notes/set-redesign.md).
 
-Nine factions run across the colours. Fish, Machine, Spirit and Living are each
-one colour's identity; Mortal, Scholar and Star are deliberately spread so two
-colours can share a payoff without sharing a cost; Beast and Hedron are small
+Nine factions run across the colors. Fish, Machine, Spirit and Living are each
+one color's identity; Mortal, Scholar and Star are deliberately spread so two
+colors can share a payoff without sharing a cost; Beast and Hedron are small
 and sit wherever the art does. Only a handful of cards read factions at all.
 
 A deck may run up to 2 of any card. Rarity no longer caps copies: the level a
@@ -142,18 +142,18 @@ Five things then move a card off that baseline. A summon's level is worth
 characters of its own, minus 15 at level 1, minus 8 at level 2 and plus 15 at
 level 3, which pulls the two ends apart. A dual card is never Common and is
 never pushed below what its own text earned, because asking a deck for two
-colours is itself a cost. A triple card at level 3 is Legendary outright,
+colors is itself a cost. A triple card at level 3 is Legendary outright,
 because it can only be played at all by a leader that brings all three of its
-colours, which is the largest commitment the set can ask for. A starter is
+colors, which is the largest commitment the set can ask for. A starter is
 Legendary. And a list of cards the rule reads wrong is fixed by hand.
 
 Otherwise Legendary is a tier an adjustment cannot hand out: below 100
 characters of printed text a card tops out at Epic, whatever its level and
-colours, unless it is a starter, a triple or a named exception.
+colors, unless it is a starter, a triple or a named exception.
 
 Character count measures how much a card prints, which is only a proxy for how
-much it asks you to understand, and colours do not write at the same length. The
-hand-fixed list is mostly there to correct that, so that no colour is harder to
+much it asks you to understand, and colors do not write at the same length. The
+hand-fixed list is mostly there to correct that, so that no color is harder to
 collect than another: it moves simple Fish and Robot cards down to Common and
 Pepper cards carrying two abilities or a keyword up to Rare.
 
@@ -172,25 +172,25 @@ registered, so editing a card's text or level moves its rarity with it and the
 two engines cannot disagree. Why these cuts and what the distribution looks like
 is in [claude-notes/rarity.md](claude-notes/rarity.md).
 
-**Colour identity.** A deck may only run cards whose colours its leader already
+**Color identity.** A deck may only run cards whose colors its leader already
 brings, and identity is a subset rather than an overlap. A leader brings its own
-colours plus every colour its costs are written in, so a leader can never demand
+colors plus every color its costs are written in, so a leader can never demand
 mana its deck is forbidden to supply. A mono-Fish leader cannot
-play a Fish-and-Robot dual card, because that card would drag a colour the leader
-does not have; a Fish-and-Robot leader unlocks both colours and everything inside
+play a Fish-and-Robot dual card, because that card would drag a color the leader
+does not have; a Fish-and-Robot leader unlocks both colors and everything inside
 them. Leading a deck is a seat, not a card type: any summon with a body can take
-it, so picking a dual-colour summon as your leader is how you build two-colour
-decks. The ten triple-colour legends take that to its end: nothing in the set
-brings three colours except one of them, so each is the key to its own identity
+it, so picking a dual-color summon as your leader is how you build two-color
+decks. The ten triple-color legends take that to its end: nothing in the set
+brings three colors except one of them, so each is the key to its own identity
 and you either lead with it or never cast it. Five cards carry a `starter` flag, which marks them as the ones to hand a
 player who has not built a deck yet. It is a curation hint and nothing more.
 
 ## The card set
 
 296 cards, one for every piece of art in `assets/Cardgame`: ten level-1, ten
-level-2 and ten level-3 summons per colour, one of which is that colour's
-starter, ten spells, traps and fields per colour, 51 dual-colour cards across
-ten colour pairs, and one level 3 legend for each of the ten three-colour
+level-2 and ten level-3 summons per color, one of which is that color's
+starter, ten spells, traps and fields per color, 51 dual-color cards across
+ten color pairs, and one level 3 legend for each of the ten three-color
 combinations. A test asserts that every art file is used by exactly one card and
 that no card points at art the pack does not ship.
 
@@ -200,9 +200,9 @@ rules and the artist footer on top at the exact pixel offsets the frames use.
 
 ## Card frames
 
-The art pack ships one drawing per card shape, in blue. Every other colour is
+The art pack ships one drawing per card shape, in blue. Every other color is
 generated at load time by `src/ui/frames.ts` rather than redrawn: the blue frame
-is a single hue at varying brightness, so recolouring is "read how bright this
+is a single hue at varying brightness, so recoloring is "read how bright this
 pixel is, apply that brightness to the target hue", which keeps antialiased
 edges smooth. Changing the frame art means changing one file.
 
@@ -215,9 +215,9 @@ steps based on how much of it there is, so a wordy card never spills over the ar
 
 ```
 src/engine/    Pure rules engine. No DOM, no network, no imports from src/ui.
-src/cards/     Card definitions, one file per colour plus the duals and decks.
+src/cards/     Card definitions, one file per color plus the duals and decks.
 src/ai/        The bot: one-ply search over every legal action.
-src/ui/        Stylesheet and the frame recolouring for the client.
+src/ui/        Stylesheet and the frame recoloring for the client.
 src/main.ts    The client: rendering, selection, targeting, drag arrow, bot driver.
 worker/        Cloudflare Worker and the MatchRoom Durable Object.
 csharp/        The same rules in C#, plus a fast test runner and simulator.
@@ -244,10 +244,10 @@ choices before dispatching and keeps effect resolution free of continuations.
 ## The deckbuilder
 
 The setup screen has a Deckbuilder button. Pick a leader, and the browser shows
-only what that leader's colours allow, in tabs by colour with the duals last, split
+only what that leader's colors allow, in tabs by color with the duals last, split
 into level 1, 2 and 3, then spells, traps and fields. Clicking a card adds it and
 clicking it in the list on the right takes it back out. The count, the two-copy
-limit and the colour rule are checked as you go, and Save is refused until the
+limit and the color rule are checked as you go, and Save is refused until the
 deck is legal.
 
 The search box under the book matches a card's name, its rules text, or the name
@@ -266,12 +266,12 @@ text above the notes, which is a document someone can act on directly.
 
 ## Evolved decks
 
-The setup screen offers three groups: the six hand-built starters, fifteen decks
+The setup screen offers three groups: the five hand-built starters, fifteen decks
 the tournament built, and the lab decks. The evolved ones come out of a run where
 every body that can stand as a leader, all 208 of them with the neutral and
-dual-colour summons included, is handed to an agent and the population rebuilds
-its decks over seven hundred rounds. The best deck for each colour and each of
-the ten colour pairs is kept.
+dual-color summons included, is handed to an agent and the population rebuilds
+its decks over seven hundred rounds. The best deck for each color and each of
+the ten color pairs is kept.
 
 `node scripts/export-evolved.mjs --run runs/<name>` picks them out of the run's
 `ladder.json` and writes code fragments for both engines, so a fresh run can
@@ -332,7 +332,7 @@ npm run train -- --rounds 120
 ```
 
 A population of agents plays a rated tournament against each other. Each one is
-handed a leader it has to keep, of any level, which fixes the colours its deck may
+handed a leader it has to keep, of any level, which fixes the colors its deck may
 run; each starts on a random legal deck; and whoever comes out of a round behind
 swaps cards out. Two copies of the shipped one-ply bot sit in the field on
 hand-built decks at a fixed rating of 1500, so the ladder has an absolute zero.
@@ -340,7 +340,7 @@ hand-built decks at a fixed rating of 1500, so the ladder has an absolute zero.
 The search is the same one-ply search the shipped bot uses. What changes is the
 scoring: the old evaluator ranks every legal action, and a small convolutional
 network then adjusts that ranking by predicting how wrong the evaluator was. Its
-main input is one column per card in the set, ordered so that neighbouring
+main input is one column per card in the set, ordered so that neighboring
 columns are cards competing for the same deck slot, with the card's printed stats
 and its rules text boiled down to tags underneath.
 
@@ -353,7 +353,7 @@ network predicts zero and changes nothing.
 **What the bot is allowed to know.** The observation is built from one side of
 the table and contains nothing that player is not entitled to. On top of that it
 counts how many copies of each card the opponent has played, which against the
-rarity caps and the colours their leader allows bounds what can still be coming;
+rarity caps and the colors their leader allows bounds what can still be coming;
 and each time the opponent plays a card it rolls three times at 15% to name a
 card sitting in their deck, and once at 5% to name a card in their hand. Every
 one of those numbers is a flag:
@@ -449,6 +449,13 @@ opens a public room, `/api/queue/host` opens a private one and returns a code,
 `/api/queue/join?code=` looks a private room up, and `/api/queue/cancel` takes a
 waiting room back out of the queue. `src/net/client.ts` is the browser side of
 all of them.
+
+Both players have to be running the same build. `src/version.ts` derives a
+version from the digest format and every printed number, cost and rules line in
+the set, the client sends it with `join`, and a room refuses a seat to anything
+that disagrees. It is derived rather than written down so it cannot be forgotten,
+and it means a card change wants the worker deployed alongside the push: until
+both are out the two halves disagree and nobody is seated.
 
 What is still missing is reconnection. Closing a socket frees the seat in
 `worker/room.ts`, so a player who drops cannot resume the match they were in.
