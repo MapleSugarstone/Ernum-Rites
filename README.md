@@ -33,7 +33,7 @@ turn. Every card you cannot draw because your deck is empty costs you a debt, so
 an exhausted deck bleeds 2 a turn.
 
 **Main.** Face one card from your hand as a supporter; sapping a supporter pays
-one mana of that card's color. Place summons into your three slots, where each
+one mana of that card's color. Place summons into your three slots. Each
 draws its HP off the top of your deck as face-down cards. Cast spells, set a
 field, and use the powers of any summon that is not sapped. Powers do not sap
 the summon by default, though the strongest ones now print "then this one saps"
@@ -59,7 +59,7 @@ color, so free chip damage never undoes itself.
 **Your leader may attack too.** It swings like a summon and takes the counter-hit
 like a summon, but a leader that is *defending* deals nothing back. So attacking
 with your leader spends HP you can rarely get back, and it saps the leader for the
-rest of the turn. It is the button you press to close out a game, not a habit.
+rest of the turn. It is the button you press to close out a game rather than a habit.
 
 **Defending.** When an attack is declared and you hold a trap, the board hands
 you a prompt in the middle of the screen: spring one trap or let it through.
@@ -83,7 +83,7 @@ match still shows you what was there before the cards go under.
 **Attack** is the number a body fights with, and buffs to it are permanent
 unless the card says "until end of turn" or grants it as a standing bonus
 ("Ally summons have +1 attack"). "Ally" on a summon's own text means your other
-summons, never itself.
+summons and never itself.
 
 **Stationary.** A Stationary body never declares an attack. It still deals its
 attack back when attacked, so a high-attack wall punishes anyone who swings
@@ -127,50 +127,40 @@ one color's identity; Mortal, Scholar and Star are deliberately spread so two
 colors can share a payoff without sharing a cost; Beast and Hedron are small
 and sit wherever the art does. Only a handful of cards read factions at all.
 
-A deck may run up to 2 of any card. Rarity no longer caps copies: the level a
-summon prints, 1 to 3, is what carries the trade-off. A 48-card deck is
-therefore at least 24 different cards.
+A deck may run up to 2 of any card. Rarity does not cap copies. The level a
+summon prints from 1 to 3 is what carries the trade-off, so a 48-card deck is at
+least 24 different cards.
 
-Rarity instead tracks what a card asks of you, in reading and in commitment. It
-is derived, never assigned. The baseline is the character count of a card's
-rules text, meaning its passive line, the text of each of its Powers and its
-flip line, joined by single spaces. Name, factions, cost and the stat line are
-not rules text and are not counted. Under 40 characters is Common, 40 to 69
-Rare, 70 to 99 Epic, and 100 or more Legendary.
+Rarity is assigned per card and frozen. `RARITY_FIXED` in
+[src/engine/types.ts](src/engine/types.ts) holds a tier for every card in the set
+and is the only thing read at runtime, so editing a card's text never reprints it
+at a different tier. `Rarities.ForCard` mirrors the table on the C# side.
 
-Five things then move a card off that baseline. A summon's level is worth
-characters of its own, minus 15 at level 1, minus 8 at level 2 and plus 15 at
-level 3, which pulls the two ends apart. A dual card is never Common and is
-never pushed below what its own text earned, because asking a deck for two
-colors is itself a cost. A triple card at level 3 is Legendary outright,
-because it can only be played at all by a leader that brings all three of its
-colors, which is the largest commitment the set can ask for. A starter is
-Legendary. And a list of cards the rule reads wrong is fixed by hand.
+The tiers come out of the training runs. Cards are ranked by how they actually
+performed across a run and the top of that ranking prints at the higher tiers, so
+a card's rarity reflects what it did in play rather than how long its rules text
+happens to be.
 
-Otherwise Legendary is a tier an adjustment cannot hand out: below 100
-characters of printed text a card tops out at Epic, whatever its level and
-colors, unless it is a starter, a triple or a named exception.
+`rarityForCard` still prices a card from the length of its rules text and its
+level and color count. It runs only for an id the table has never seen. That
+gives a newly written card a starting point and nothing more. Every card in the
+set today is already in the table.
 
-Character count measures how much a card prints, which is only a proxy for how
-much it asks you to understand, and colors do not write at the same length. The
-hand-fixed list is mostly there to correct that, so that no color is harder to
-collect than another: it moves simple Fish and Robot cards down to Common and
-Pepper cards carrying two abilities or a keyword up to Rare.
+| Rarity | Cards |
+| --- | --- |
+| Common | 99 |
+| Rare | 93 |
+| Epic | 61 |
+| Legendary | 51 |
+| Prismatic | 1 |
 
-| Rarity | Cards | Pepper | Oil | Robot | Fish | Solar | Mixed | Triple | Neutral |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Common | 110 | 17 | 17 | 17 | 18 | 16 | 0 | 0 | 25 |
-| Rare | 88 | 17 | 13 | 14 | 9 | 7 | 23 | 0 | 5 |
-| Epic | 58 | 4 | 6 | 7 | 9 | 11 | 17 | 0 | 4 |
-| Legendary | 40 | 2 | 4 | 2 | 5 | 6 | 10 | 10 | 1 |
+Prismatic belongs to one card. Ernum carries every color and prints on a frame of
+its own.
 
-By level, 72% of level 1 summons are Common, 37% of level 2 and 18% of level 3.
+By level 66% of level 1 summons are Common, 39% of level 2 and 20% of level 3.
 
-The rule is `rarityForCard` in [src/engine/types.ts](src/engine/types.ts) and
-`Rarities.ForCard` on the C# side, and the tier is computed when a card is
-registered, so editing a card's text or level moves its rarity with it and the
-two engines cannot disagree. Why these cuts and what the distribution looks like
-is in [claude-notes/rarity.md](claude-notes/rarity.md).
+Why the tiers land where they do is in
+[claude-notes/rarity.md](claude-notes/rarity.md).
 
 **Color identity.** A deck may only run cards whose colors its leader already
 brings, and identity is a subset rather than an overlap. A leader brings its own
@@ -178,11 +168,11 @@ colors plus every color its costs are written in, so a leader can never demand
 mana its deck is forbidden to supply. A mono-Fish leader cannot
 play a Fish-and-Robot dual card, because that card would drag a color the leader
 does not have; a Fish-and-Robot leader unlocks both colors and everything inside
-them. Leading a deck is a seat, not a card type: any summon with a body can take
+them. Leading a deck is a seat rather than a card type: any summon with a body can take
 it, so picking a dual-color summon as your leader is how you build two-color
 decks. The ten triple-color legends take that to its end: nothing in the set
 brings three colors except one of them, so each is the key to its own identity
-and you either lead with it or never cast it. Five cards carry a `starter` flag, which marks them as the ones to hand a
+and you either lead with it or never cast it. Five cards carry a `starter` flag. It marks them as the ones to hand a
 player who has not built a deck yet. It is a curation hint and nothing more.
 
 ## The card set
@@ -203,7 +193,7 @@ rules and the artist footer on top at the exact pixel offsets the frames use.
 The art pack ships one drawing per card shape, in blue. Every other color is
 generated at load time by `src/ui/frames.ts` rather than redrawn: the blue frame
 is a single hue at varying brightness, so recoloring is "read how bright this
-pixel is, apply that brightness to the target hue", which keeps antialiased
+pixel is, apply that brightness to the target hue". That keeps antialiased
 edges smooth. Changing the frame art means changing one file.
 
 The frame PNGs are transparent over the art window, so the client lays the art
@@ -229,8 +219,8 @@ tests/         Rules, card, deck, bot and cross-engine tests.
 claude-notes/  Where every judgment call about the rules is written down.
 ```
 
-The engine exposes one entry point, `applyAction(state, actor, action)`, which
-clones the state, validates the action and returns either the next state or a
+The engine exposes one entry point called `applyAction(state, actor, action)`.
+It clones the state, validates the action and returns either the next state or a
 reason it was refused. Nothing else mutates a game. That is what lets the same
 code run in the browser for hotseat and in a Durable Object for online play.
 
@@ -238,7 +228,7 @@ Card effects are TypeScript functions rather than data, so a card can do
 anything the engine can: move HP cards between summons, turn flipped cards back
 down, transform a summon into something else, seize an enemy body, put a spell
 into play as a summon, or push your debt onto the other player. Any target a
-card needs is declared up front in `targets`, which lets the client collect the
+card needs is declared up front in `targets`. That lets the client collect the
 choices before dispatching and keeps effect resolution free of continuations.
 
 ## The deckbuilder
@@ -255,23 +245,26 @@ of its rarity, so typing "legendary" finds every Legendary on the tab. Beside it
 are four rarity chips. Light any of them to narrow the book to those tiers,
 click one again to drop it, and lighting all four is the same as lighting none.
 
-"Start from" copies any built-in or saved deck into the builder, which is the
+"Start from" copies any built-in or saved deck into the builder and is the
 quickest way to begin. Saved decks live in the browser's local storage and appear
-under "Your decks" on the setup screen, playable like any other.
+under "Your decks" on the setup screen. They are playable like any other.
 
 **Dev mode** is a checkbox on that screen. It puts a note button on every card;
 write what should change and it is held locally. Export markdown writes them all
 out as one file, grouped by card, each with the card's current stats and rules
-text above the notes, which is a document someone can act on directly.
+text above the notes. The result is a document someone can act on directly.
 
 ## Evolved decks
 
-The setup screen offers three groups: the five hand-built starters, fifteen decks
-the tournament built, and the lab decks. The evolved ones come out of a run where
-every body that can stand as a leader, all 208 of them with the neutral and
-dual-color summons included, is handed to an agent and the population rebuilds
-its decks over seven hundred rounds. The best deck for each color and each of
-the ten color pairs is kept.
+Fifteen decks in the set were built by the training tournament rather than by
+hand. They come out of a run where every body that can stand as a leader is
+handed to an agent and the population rebuilds its decks over seven hundred
+rounds. The best deck for each color and each of the ten color pairs is kept.
+
+They are no longer offered on the setup screen. That screen lists your saved
+decks above the five hand-built starters. The evolved decks stay in
+`evolvedDecks` and are still reachable by key, so an imported deck naming one
+resolves.
 
 `node scripts/export-evolved.mjs --run runs/<name>` picks them out of the run's
 `ladder.json` and writes code fragments for both engines, so a fresh run can
@@ -279,12 +272,12 @@ replace them wholesale. The run also writes `timing.txt` (lift by when a card
 was played), `swing.txt` (spread of each card's per-game lift), `volatility.txt`
 (how far each deck's games land from what the ratings predicted) and
 `archetypes.txt` (the population's decks clustered by what they actually run).
-The sweeps and the replay corpus deliberately stay on the curated decks, which
+The sweeps and the replay corpus deliberately stay on the curated decks. That
 is what keeps `check.cmd` quick. The legality tests cover everything.
 
 ## Playing the bot
 
-Pick "Play the bot" on the setup screen. It searches one ply: it plays every
+Set Opponent to Bot on the setup screen. It searches one ply: it plays every
 legal action out on a copy of the state, scores the resulting board, and keeps
 the best improvement, so a new card needs no bot support at all.
 
@@ -299,8 +292,7 @@ npm run train -- --no-net --rounds 400 --agents 24 --games 8 --out runs/v1
 ```
 
 That is about 41,000 games in thirty seconds. It writes `cards.txt` (a readable
-report), `cards.csv` (diffable), `meta.csv` (deck slots per card per round, which
-is where a buff shows up), `decks.txt` (every evolved deck) and `report.txt` (the
+report), `cards.csv` (diffable), `meta.csv` (deck slots per card per round, so a buff shows up here), `decks.txt` (every evolved deck) and `report.txt` (the
 ladder). Two copies of the shipped bot on hand-built starter decks sit in the
 field at a fixed 1500, so the ratings mean something.
 
@@ -332,7 +324,7 @@ npm run train -- --rounds 120
 ```
 
 A population of agents plays a rated tournament against each other. Each one is
-handed a leader it has to keep, of any level, which fixes the colors its deck may
+handed a leader of any level that it has to keep, fixing the colors its deck may
 run; each starts on a random legal deck; and whoever comes out of a round behind
 swaps cards out. Two copies of the shipped one-ply bot sit in the field on
 hand-built decks at a fixed rating of 1500, so the ladder has an absolute zero.
@@ -344,7 +336,7 @@ main input is one column per card in the set, ordered so that neighboring
 columns are cards competing for the same deck slot, with the card's printed stats
 and its rules text boiled down to tags underneath.
 
-The network corrects rather than replaces for a specific reason, which is written
+The network corrects rather than replaces for a specific reason written
 up in the notes: a network asked to rank the shortlist from scratch has to beat
 the evaluator at exactly the comparisons the evaluator finds hardest, and one
 that is merely as good picks worse. Predicting the correction means an untrained
@@ -352,8 +344,8 @@ network predicts zero and changes nothing.
 
 **What the bot is allowed to know.** The observation is built from one side of
 the table and contains nothing that player is not entitled to. On top of that it
-counts how many copies of each card the opponent has played, which against the
-rarity caps and the colors their leader allows bounds what can still be coming;
+counts how many copies of each card the opponent has played, and against the
+rarity caps and the colors their leader allows that bounds what can still be coming;
 and each time the opponent plays a card it rolls three times at 15% to name a
 card sitting in their deck, and once at 5% to name a card in their hand. Every
 one of those numbers is a flag:
@@ -380,13 +372,13 @@ measure of what the network is worth.
 npm run train:gauntlet -- --net runs/latest/net0.snn --games 60
 ```
 
-The design, and the reasoning behind each part of it, is in
+The design and the reasoning behind each part of it are in
 [claude-notes/learning.md](claude-notes/learning.md).
 
 ## The C# engine
 
-The same rules exist a second time in `csharp/`, where they run about nine times
-faster. It is the harness you want for balance work, and the foundation if the
+The same rules exist a second time in `csharp/` and run about nine times
+faster there. It is the harness you want for balance work, and the foundation if the
 game ever needs a native client.
 
 ```bash
@@ -412,7 +404,7 @@ npm run conform
 ```
 
 After a rules change the replay corpus will fail, and it should: read which games
-changed, then re-record with `npm run replays:record`. After a card change,
+changed, then re-record with `npm run replays:record`. After a card change
 re-dump the manifest with `npm run cs:sim -- cards`.
 
 `play.cmd` starts the game, `check.cmd` runs everything, and `cs.cmd` runs the
@@ -427,7 +419,7 @@ with source "GitHub Actions" in the repository settings first.
 The card art lives in `assets/` and is Vite's `publicDir`, so it ships verbatim
 to `dist/Cardgame/...` and is served under the same base path as the app.
 
-For a custom domain proxied through Cloudflare, build with `BASE_PATH=/`. On
+Build with `BASE_PATH=/` for a custom domain proxied through Cloudflare. On
 Windows run that from PowerShell rather than Git Bash: MSYS rewrites a
 leading-slash environment variable into a Windows path.
 
@@ -475,7 +467,7 @@ to open a socket, matched against the browser's `Origin` header, so the entries
 are bare origins with no repo path. Anything not on the list gets no CORS
 headers back.
 
-The client learns that URL from `VITE_SERVER_URL`, which
-`.github/workflows/deploy.yml` fills from a repository variable named
+The client learns that URL from `VITE_SERVER_URL`.
+`.github/workflows/deploy.yml` fills it from a repository variable named
 `SERVER_URL`. Left unset, the build ships with online play disabled rather than
 pointing at a host that does not answer.
