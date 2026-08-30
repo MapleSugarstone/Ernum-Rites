@@ -433,15 +433,42 @@ leading-slash environment variable into a Windows path.
 
 ## The Cloudflare side
 
-`worker/` holds a Durable Object, one per match, that owns the game state.
-Clients connect over a WebSocket to `/api/room/<roomId>`, send intents, and get
-back a view of the state with the opponent's hand, both decks and all face-down
-HP replaced by a placeholder card (`src/engine/redact.ts`).
+`worker/` runs the online half of the game. Two Durable Object classes back it:
+`Lobby`, a single instance named `front-desk` that pairs players up, and
+`MatchRoom`, one instance per match that owns the game state.
+
+A room runs the same TypeScript rules engine the browser does. Clients open a
+WebSocket to `/api/room/<roomId>`, send intents, and get back a view of the
+state with the opponent's hand, both decks and all face-down HP replaced by a
+placeholder card (`src/engine/redact.ts`), so the authority never hands a client
+anything it should not see. A turn clock runs on Durable Object alarms and times
+out a player who stops acting.
+
+Matchmaking is four POST routes onto the lobby. `/api/queue/public` joins or
+opens a public room, `/api/queue/host` opens a private one and returns a code,
+`/api/queue/join?code=` looks a private room up, and `/api/queue/cancel` takes a
+waiting room back out of the queue. `src/net/client.ts` is the browser side of
+all of them.
+
+What is still missing is reconnection. Closing a socket frees the seat in
+`worker/room.ts`, so a player who drops cannot resume the match they were in.
 
 ```bash
 npx wrangler dev
 ```
 
-What is still missing for online play: a lobby to create and share a room code,
-the client-side socket that swaps `applyAction` for a send-and-await-state loop,
-and reconnection.
+Vite proxies `/api` to `http://127.0.0.1:8787`, socket upgrade included, so
+`npm run dev` and `wrangler dev` running side by side behave like the deployed
+pair.
+
+The deployed worker is `ernum-rites-server` at
+`https://ernum-rites-server.maplesugarstone.workers.dev`, published with `npx
+wrangler deploy`. `ALLOWED_ORIGINS` in `wrangler.toml` lists the origins allowed
+to open a socket, matched against the browser's `Origin` header, so the entries
+are bare origins with no repo path. Anything not on the list gets no CORS
+headers back.
+
+The client learns that URL from `VITE_SERVER_URL`, which
+`.github/workflows/deploy.yml` fills from a repository variable named
+`SERVER_URL`. Left unset, the build ships with online play disabled rather than
+pointing at a host that does not answer.
