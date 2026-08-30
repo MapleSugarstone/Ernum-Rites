@@ -3450,6 +3450,11 @@ function renderTopbar(): void {
   // was tuned at, over the 66 pixel card they were tuned against.
   const step = CARD_W * (n > 9 ? 0.303 : n > 6 ? 0.394 : 0.545);
   const fanW = n === 0 ? 0 : CARD_W + (n - 1) * step;
+  // What the fan measures at its widest. The name is placed off this rather than
+  // off the fan it happens to be beside, so it stays put as cards come and go
+  // instead of sliding along with every draw and play.
+  const widestStep = CARD_W * 0.303;
+  const fanWMax = CARD_W + (HAND_LIMIT - 1) * widestStep;
 
   const backs = other.hand
     .map((id, i) => {
@@ -3474,9 +3479,9 @@ function renderTopbar(): void {
     .join('');
 
   el.innerHTML = `
-    <div class="enemyhand">
+    <div class="enemyhand" style="--fanw:${fanW}px;--fanw-max:${fanWMax}px">
       <span class="ehwho"><span class="ehname">${esc(other.name)}</span><span class="ehcount">${n}</span></span>
-      <span class="ehfan" style="--fanw:${fanW}px">${backs || '<span class="ehempty">no cards</span>'}</span>
+      <span class="ehfan">${backs || '<span class="ehempty">no cards</span>'}</span>
     </div>
     <span class="topright">
       ${mixerHtml()}

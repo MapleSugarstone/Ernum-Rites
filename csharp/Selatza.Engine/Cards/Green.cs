@@ -63,8 +63,16 @@ public static class Green
             // Pool first: sapping alone is dodged by tapping out early in the turn.
             flip: c =>
             {
+                // The mana always goes; the sap is only put to the player when
+                // there is something left standing to spend it on.
                 c.ClearMana(c.Opp);
-                c.Choose("sap-supporter", c.SupportersOf(c.Opp), "Sap which enemy supporter?");
+                var standing = c.SupportersOf(c.Opp)
+                    .Where(r => !c.State.Players[c.Opp].Supporters[r.Index].Sapped)
+                    .ToArray();
+                if (standing.Length > 0)
+                {
+                    c.Choose("sap-supporter", standing, "Sap which enemy supporter?");
+                }
             }),
 
         K.Summon(1, "cogbeast", "Cogbeast", F(Faction.Machine, Faction.Beast), str: 2, hp: 3,

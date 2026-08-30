@@ -14,6 +14,18 @@ import './cards';
  * to raise is a version that will be forgotten: it covers the digest format and
  * every printed number, cost and rules line in the set.
  */
+/**
+ * Bumped by hand when the rules change but the printed cards do not.
+ *
+ * The hash below reads what a card says, which catches a retuned cost or a
+ * reworded effect. It cannot see a change in what an effect does: Chipcrunch's
+ * flip stopped asking about supporters that were already sapped without a
+ * character of its text moving. Two builds disagreeing that way would pass the
+ * check and then fall out of step mid-match, which is the thing the check exists
+ * to prevent, so behaviour changes are counted here instead.
+ */
+const RULES_REVISION = 2;
+
 function computeVersion(): string {
   const parts = allCards()
     .map((c) => {
@@ -34,7 +46,7 @@ function computeVersion(): string {
       ].join('~');
     })
     .sort();
-  return `${DIGEST_FORMAT}.${digestHash(parts.join('\n'))}`;
+  return `${DIGEST_FORMAT}r${RULES_REVISION}.${digestHash(parts.join('\n'))}`;
 }
 
 /** Computed once: the set does not change while a page is open. */

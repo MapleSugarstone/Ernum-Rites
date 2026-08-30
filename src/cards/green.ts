@@ -61,10 +61,23 @@ export const greenCards: CardDef[] = [
     str: 1,
     hp: 2,
     flipText: 'Destroy any enemy active mana pips and sap one of their supporters.',
+    // Nothing to empty and nothing left to sap means nothing to ask about, and
+    // a costed flip that does nothing still stops the game to offer itself.
+    flipUseful: (c) => {
+      const them = c.state.players[c.opp];
+      return (
+        Object.values(them.mana).some((n) => n > 0) || them.supporters.some((s) => !s.sapped)
+      );
+    },
     flip: (c) => {
       // Pool first: sapping alone is dodged by tapping out early in the turn.
+      // The mana always goes; the sap is only put to the player when there is
+      // something left standing to spend it on.
       c.clearMana(c.opp);
-      c.choose('sap-supporter', c.supportersOf(c.opp), 'Sap which enemy supporter?');
+      const standing = c
+        .supportersOf(c.opp)
+        .filter((r) => !c.state.players[c.opp].supporters[(r as { index: number }).index]?.sapped);
+      if (standing.length > 0) c.choose('sap-supporter', standing, 'Sap which enemy supporter?');
     },
   }),
   k.summon(1, 'cogbeast', 'Cogbeast', ['Machine', 'Beast'], { str: 2, hp: 3,

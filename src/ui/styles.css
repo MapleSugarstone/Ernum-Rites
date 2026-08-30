@@ -4604,9 +4604,16 @@ body.mobile .modes .mixer {
    it, which is dark but not evenly so. */
 .ehwho {
   position: absolute;
-  left: 0;
+  /* Beside the fan rather than out at the bar's edge: the fan is centred, so
+     this is half the bar minus half the widest the fan can get, minus a gap.
+     Measured against the widest rather than the current fan so the name holds
+     still while cards are drawn and played. Anchoring the right edge means it
+     ends next to the cards however long the name is, and the fan keeps the
+     centring it shares with the lane below. */
+  right: calc(50% + var(--fanw-max, 0px) / 2 + 14px);
   top: 50%;
   transform: translateY(-50%);
+  justify-content: flex-end;
   font-size: 14px;
   font-weight: 600;
   color: var(--text);
