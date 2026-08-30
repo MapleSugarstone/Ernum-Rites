@@ -4035,7 +4035,7 @@ function renderBuilder(): string {
         <h3>${b.editingKey ? 'Save changes' : 'Save this deck'}</h3>
         <label class="savefield"><span>Name</span>
           <input id="savename" data-act="dname" value="${esc(b.name)}"
-            maxlength="${DECK_NAME_MAX}" placeholder="What to call it"
+            maxlength="${DECK_NAME_MAX}"
             autocomplete="off" spellcheck="false"></label>
         <label class="savefield"><span>About</span>
           <span class="blurbwrap">
