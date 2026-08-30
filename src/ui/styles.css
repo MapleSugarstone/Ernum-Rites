@@ -4598,14 +4598,30 @@ body.mobile .modes .mixer {
   overflow: hidden;
 }
 
+/* Who you are playing. It sat in the muted grey at 12px, which made the one
+   piece of text identifying your opponent the faintest thing on the table and
+   dimmer than the count of cards beside it. The shadow is for the board behind
+   it, which is dark but not evenly so. */
 .ehwho {
   position: absolute;
   left: 0;
   top: 50%;
   transform: translateY(-50%);
-  font-size: 12px;
-  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  text-shadow: 0 1px 3px rgba(4, 9, 31, 0.75);
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Only the name is cut. The count sits outside the truncation, so a long name
+   can never be what hides how many cards they are holding. */
+.ehname {
+  max-width: 28ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .ehcount {
   display: inline-block;
@@ -4968,7 +4984,12 @@ body.mobile .topbar button {
   font-size: 13px;
 }
 body.mobile .ehwho {
-  font-size: 11px;
+  /* Smaller than the desktop 14 but still ahead of the 11 it was. */
+  font-size: 12px;
+}
+/* Cut shorter so a long name cannot run under the fan on a narrow screen. */
+body.mobile .ehname {
+  max-width: 11ch;
 }
 body.mobile .topbar label {
   display: none;

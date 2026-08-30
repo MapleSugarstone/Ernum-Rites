@@ -3475,7 +3475,7 @@ function renderTopbar(): void {
 
   el.innerHTML = `
     <div class="enemyhand">
-      <span class="ehwho">${esc(other.name)} <span class="ehcount">${n}</span></span>
+      <span class="ehwho"><span class="ehname">${esc(other.name)}</span><span class="ehcount">${n}</span></span>
       <span class="ehfan" style="--fanw:${fanW}px">${backs || '<span class="ehempty">no cards</span>'}</span>
     </div>
     <span class="topright">
@@ -4400,6 +4400,31 @@ function resyncFuse(): void {
   syncFuse(divider);
 }
 
+/**
+ * The old state with the card they just played put back into their hand.
+ *
+ * Their hand arrives as a row of placeholders, and the placeholder is a spell
+ * that costs nothing and asks for no targets, so replaying their move against it
+ * does not fail: it quietly does something else. Anything the real card would
+ * have built is then never built, and a card this side has never heard of turns
+ * up in a later state with nothing to look it up by.
+ *
+ * The played card is public the moment it lands, so it is read back out of the
+ * new state and slotted in where it came from. The copy is local and thrown away
+ * with the replay.
+ */
+function replaySource(prev: GameState, next: GameState, move: { action: Action; actor: PlayerIdx }): GameState {
+  const index = handIndexOf(move.action);
+  if (index === null) return prev;
+  const hand = prev.players[move.actor].hand;
+  if (hand[index] !== HIDDEN_ID) return prev;
+  const real = playedCardId(prev, next, move.action, move.actor, index);
+  if (!real || real === HIDDEN_ID) return prev;
+  const copy: GameState = structuredClone(prev);
+  copy.players[move.actor].hand[index] = real;
+  return copy;
+}
+
 /** Put the burn where the clock has actually reached, before the first paint. */
 function syncFuse(el: HTMLElement): void {
   const fuse = el.querySelector<HTMLElement>('.fuse');
@@ -4449,7 +4474,7 @@ function netClient(): NetClient {
       // in detail, which costs a wound count rather than a wrong board.
       if (!opening && prev && move) {
         captureWounds();
-        const replay = applyAction(prev, move.actor, move.action);
+        const replay = applyAction(replaySource(prev, state, move), move.actor, move.action);
         if (replay.ok) {
           // Against the replay rather than the room's copy, because the two
           // sides of every comparison then come from the same redaction: a card
