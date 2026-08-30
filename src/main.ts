@@ -4924,7 +4924,10 @@ function playOpeningDraw(seat: PlayerIdx): void {
 }
 
 function startMatch(decks: [DeckList, DeckList]): void {
-  ui.state = createGame(decks, Math.floor(Math.random() * 0x7fffffff), 0);
+  const seed = Math.floor(Math.random() * 0x7fffffff);
+  // Who opens is a coin toss, taken off the seed rather than a second roll so
+  // the seed on its own still reproduces the whole match.
+  ui.state = createGame(decks, seed, (seed & 1) as PlayerIdx);
   ui.screen = 'game';
   ui.botSeat = ui.setupMode === 'ai' ? 1 : null;
   ui.botBusy = false;

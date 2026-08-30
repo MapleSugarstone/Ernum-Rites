@@ -132,7 +132,9 @@ export class MatchRoom extends DurableObject {
     });
     // Seeded from the room so a replay of the same actions reproduces the match.
     const seed = Math.floor(Math.random() * 0x7fffffff);
-    this.state = createGame([decks[0], decks[1]], seed, 0);
+    // Who opens is a coin toss, taken off the seed rather than a second roll so
+    // the seed on its own still reproduces the whole match.
+    this.state = createGame([decks[0], decks[1]], seed, (seed & 1) as PlayerIdx);
     await this.restartClock();
     this.pushState();
   }
