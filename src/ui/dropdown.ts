@@ -103,7 +103,10 @@ function layout(): void {
   const btn = wrap?.querySelector<HTMLElement>('.ddbtn');
   if (!wrap || !list || !btn) return;
   const r = btn.getBoundingClientRect();
-  // Measured with the cap lifted, so a short list is not told it is tall.
+  // Measured with the cap lifted, so a short list is not told it is tall. Taking
+  // the cap off leaves nothing to overflow for that moment, which drops
+  // scrollTop to zero, so where the reader had got to is put back afterwards.
+  const wasAt = list.scrollTop;
   list.style.maxHeight = '';
   const wanted = list.offsetHeight;
   const below = window.innerHeight - r.bottom - MARGIN * 2;
@@ -115,6 +118,7 @@ function layout(): void {
   list.style.minWidth = `${r.width}px`;
   const w = list.offsetWidth;
   list.style.left = `${Math.max(MARGIN, Math.min(r.left, window.innerWidth - w - MARGIN))}px`;
+  if (wasAt) list.scrollTop = wasAt;
 }
 
 function setActive(wrap: HTMLElement, next: number, scroll = true): void {
@@ -303,6 +307,16 @@ export function mountDropdowns(w: Wiring): void {
     true,
   );
   // A scroll under a fixed list would leave it hanging where the button was.
-  window.addEventListener('scroll', () => layout(), true);
+  // Captured, so this sees the list scrolling too, which is not the page moving
+  // and needs no placing: it only has to be told where the button went.
+  window.addEventListener(
+    'scroll',
+    (ev) => {
+      const t = ev.target;
+      if (t instanceof HTMLElement && t.classList.contains('ddlist')) return;
+      layout();
+    },
+    true,
+  );
   window.addEventListener('resize', () => layout());
 }
