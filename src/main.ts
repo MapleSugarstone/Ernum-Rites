@@ -4082,7 +4082,6 @@ function renderBuilder(): string {
       <button data-act="btn" data-cmd="to-setup">Main Menu</button>
       <span class="wordmark">Deckbuilder</span>
       <nav class="tabs">${tabs}</nav>
-      <label class="devtoggle"><input type="checkbox" data-act="devmode" ${b.dev ? 'checked' : ''}> dev mode</label>
     </header>
     ${devPanel}
     <div class="bmain">
