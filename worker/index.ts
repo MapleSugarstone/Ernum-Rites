@@ -63,7 +63,7 @@ export default {
         return reply({ ok: false, reason: 'A party game seats 3 or 4 players.' }, 400);
       }
       const party = partyRaw === null ? undefined : ((Number(partyRaw) as 3 | 4));
-      // Opt in, so a client that says nothing gets the clocks it always had.
+      // Opt in, so a client that sends nothing gets the default timers.
       const noTimers = url.searchParams.get('timers') === 'off';
       const hosted = await lobby(env).hostPrivate(party, noTimers);
       if (!hosted) return reply({ ok: false, reason: 'Too many lobbies open right now. Try again in a minute.' }, 503);

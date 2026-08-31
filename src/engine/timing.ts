@@ -1,12 +1,11 @@
 /**
- * Clocks for online play, shared by the room and both clients so nobody has to
- * guess what the other is counting.
+ * Timers for online play, shared by the room and every client so that both sides
+ * count the same thing.
  *
- * Modelled on Legends of Runeterra: a long window for the turn you are actually
- * playing, a much shorter one for answering something the other player did, and
- * a rope that starts burning near the end rather than a number ticking the whole
- * time. The numbers are ours, chosen to feel like that game rather than copied
- * from it, and every one of them is meant to be tuned.
+ * There are two lengths: a long one for your own turn, and a much shorter one
+ * for answering something the opponent did. The bar turns red near the end
+ * instead of showing a number the whole time. Every value here is meant to be
+ * tuned.
  */
 
 /** Windows a player can be waiting in, longest first. */
@@ -68,20 +67,19 @@ export function displayedMs(kind: ClockKind): number {
 }
 
 /**
- * Seconds handed back for the first card a player plays on their own turn.
- *
- * A turn spent playing is not a turn spent stalling, so the clock gives a little
- * of itself back for each card that goes down. The refund shrinks with every
- * play so a hand of cheap cards cannot be walked into an unlimited turn.
+ * Seconds added to the turn timer for the first card a player plays on their
+ * own turn. Playing cards costs time that stalling does not, so the timer pays
+ * some of it back. The amount decreases with each play, which stops a player
+ * from extending one turn indefinitely with cheap cards.
  */
 export const PLAY_BONUS_SECONDS = 1.5;
 
-/** Plays in one turn by which the refund has faded to nothing. */
+/** The number of plays in one turn after which the bonus reaches 0. */
 export const PLAY_BONUS_CARDS = 10;
 
 /**
- * Milliseconds returned for the nth card played this turn, counting from 1. The
- * count is per turn: the next turn starts back at a full refund.
+ * Returns the milliseconds added for the nth card played this turn, counting
+ * from 1. The count resets each turn, so the next turn starts at the full bonus.
  */
 export function playBonusMs(nth: number): number {
   if (nth < 1 || nth > PLAY_BONUS_CARDS) return 0;
@@ -89,9 +87,9 @@ export function playBonusMs(nth: number): number {
 }
 
 /**
- * Whether an action is a card leaving a hand, which is what earns the refund.
- * A trap is on the list but only ever springs on somebody else's turn, and the
- * room hands the refund out to the active player alone.
+ * Reports whether an action plays a card from a hand, which is what earns the
+ * bonus. CAST_TRAP is included for completeness, but a trap only resolves during
+ * an opponent's turn and the room gives the bonus to the active player only.
  */
 export function isCardPlay(type: import('./actions').ActionType): boolean {
   return (
@@ -124,8 +122,9 @@ export function asDisplayed(clock: Clock): Clock {
   return {
     ...clock,
     endsAt: clock.endsAt - NETWORK_GRACE_SECONDS * 1000,
-    // Taken off what the room actually granted rather than recomputed from the
-    // kind, so a turn extended by the play refund draws its real length.
+    // Subtract the grace from the length the room granted instead of
+    // recomputing it from the kind, so a turn extended by play bonuses
+    // displays its real length.
     totalMs: Math.max(0, clock.totalMs - NETWORK_GRACE_SECONDS * 1000),
   };
 }

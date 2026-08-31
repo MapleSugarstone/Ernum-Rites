@@ -1,7 +1,7 @@
 # Ernum Rites
 
 A card game of summons, traps, spells and debt for two to four players. The
-client is a static site built for GitHub Pages; the rules engine is a pure
+client is a static site built for GitHub Pages. The rules engine is a pure
 TypeScript module that also runs inside a Cloudflare Durable Object as the
 authority for online play.
 
@@ -32,16 +32,15 @@ Everything you control unsaps, and field and summon triggers fire.
 turn. Every card you cannot draw because your deck is empty costs you a debt, so
 an exhausted deck bleeds 2 a turn.
 
-**Main.** Face one card from your hand as a supporter; sapping a supporter pays
+**Main.** Face one card from your hand as a supporter. Sapping a supporter pays
 one mana of that card's color. Place summons into your three slots. Each
 draws its HP off the top of your deck as face-down cards. Cast spells, set a
 field, and use the powers of any summon that is not sapped. Powers do not sap
 the summon by default, though the strongest ones now print "then this one saps"
 and cost the body its attack.
 
-**Attacking.** Drag a summon onto an enemy and release, the way you would in
-Hearthstone; a curved arrow follows the cursor and turns red over a legal
-target. Both sides deal their attack to each other and the attacker saps. HP
+**Attacking.** Drag a summon onto an enemy and release. A curved arrow follows
+the cursor and turns red over a legal target. Both sides deal their attack to each other and the attacker saps. HP
 cards flip one at a time, attacker's side first, and each flipped card's effect
 resolves before the next flip. You cannot attack on your first turn, and the
 enemy leader is only reachable once their slots are empty.
@@ -64,7 +63,7 @@ rest of the turn. It is the button you press to close out a game rather than a h
 **Defending.** When an attack is declared and you hold a trap, the board hands
 you a prompt in the middle of the screen: spring one trap or let it through.
 
-**Losing.** Your leader dies, or your debt reaches 20. A summon that dies adds its
+**Losing.** Your leader dies, or your debt reaches 25. A summon that dies adds its
 level (1 to 3) to your debt, and every undrawable card adds one.
 
 **Battlecry.** Something a summon does as it enters play prints as `Battlecry:`.
@@ -90,7 +89,7 @@ attack back when attacked, so a high-attack wall punishes anyone who swings
 into it.
 
 **Character** is the word for summons and leaders together. "Deal 1 to every
-character" hits everything on the table; "your characters" is your summons and
+character" hits everything on the table. "Your characters" is your summons and
 your leader.
 
 **Spell Trap.** A trap whose response window is the enemy casting a spell
@@ -119,12 +118,11 @@ and whatever caused it.
 
 Each of those lists is deliberately exclusive: an effect belongs to one color,
 dual cards may borrow from both of their halves, and neutral trades effects for
-stats. The reasoning and the full ownership table are in
-[claude-notes/set-redesign.md](claude-notes/set-redesign.md).
+stats.
 
 Nine factions run across the colors. Fish, Machine, Spirit and Living are each
-one color's identity; Mortal, Scholar and Star are deliberately spread so two
-colors can share a payoff without sharing a cost; Beast and Hedron are small
+one color's identity. Mortal, Scholar and Star are deliberately spread so two
+colors can share a payoff without sharing a cost, and Beast and Hedron are small
 and sit wherever the art does. Only a handful of cards read factions at all.
 
 A deck may run up to 2 of any card. Rarity does not cap copies. The level a
@@ -159,15 +157,12 @@ its own.
 
 By level 66% of level 1 summons are Common, 39% of level 2 and 20% of level 3.
 
-Why the tiers land where they do is in
-[claude-notes/rarity.md](claude-notes/rarity.md).
-
 **Color identity.** A deck may only run cards whose colors its leader already
 brings, and identity is a subset rather than an overlap. A leader brings its own
 colors plus every color its costs are written in, so a leader can never demand
 mana its deck is forbidden to supply. A mono-Fish leader cannot
 play a Fish-and-Robot dual card, because that card would drag a color the leader
-does not have; a Fish-and-Robot leader unlocks both colors and everything inside
+does not have. A Fish-and-Robot leader unlocks both colors and everything inside
 them. Leading a deck is a seat rather than a card type: any summon with a body can take
 it, so picking a dual-color summon as your leader is how you build two-color
 decks. The ten triple-color legends take that to its end: nothing in the set
@@ -216,7 +211,6 @@ csharp/Selatza.Train/  The command line around it.
 replays/       Recorded games both engines re-run, to catch any divergence.
 conformance/   The card manifest the two engines are compared against.
 tests/         Rules, card, deck, bot and cross-engine tests.
-claude-notes/  Where every judgment call about the rules is written down.
 ```
 
 The engine exposes one entry point called `applyAction(state, actor, action)`.
@@ -234,7 +228,7 @@ choices before dispatching and keeps effect resolution free of continuations.
 ## Party mode
 
 Three or four players can share one online match. Host a private game with the
-Players toggle set to 3 Player or 4 Player and share the code; a party code
+Players toggle set to 3 Player or 4 Player and share the code. A party code
 seats every guest rather than only the first, and the match starts the moment
 the room fills. Party games are hosted only, so the random queue stays
 head-to-head.
@@ -278,9 +272,7 @@ On screen the opponents' boards sit next to each other at 70% size in a
 horizontal carousel: a slider under the row pans between them, the row glides
 to whoever's turn begins, and one hand fan per opponent shares the top bar. A
 clash between two opponents plays out sideways across their boards, riding a
-stand-in pinned to the viewport so the scroller cannot clip the lunge. The
-design story, the trap-window queue and the elimination bookkeeping are written
-up in [claude-notes/party-mode.md](claude-notes/party-mode.md).
+stand-in pinned to the viewport so the scroller cannot clip the lunge.
 
 ## The deckbuilder
 
@@ -300,7 +292,7 @@ click one again to drop it, and lighting all four is the same as lighting none.
 quickest way to begin. Saved decks live in the browser's local storage and appear
 under "Your decks" on the setup screen. They are playable like any other.
 
-**Dev mode** is a checkbox on that screen. It puts a note button on every card;
+**Dev mode** is a checkbox on that screen. It puts a note button on every card,
 write what should change and it is held locally. Export markdown writes them all
 out as one file, grouped by card, each with the card's current stats and rules
 text above the notes. The result is a document someone can act on directly.
@@ -362,10 +354,6 @@ edit the card, run the tournament again into `runs/v2`, and:
 npm run train -- diff --before runs/v1/cards.csv --after runs/v2/cards.csv
 ```
 
-What the numbers mean, how big a move has to be before it is real, and what the
-first full run said about the set are in
-[claude-notes/balance-workflow.md](claude-notes/balance-workflow.md).
-
 ## Bots that learn the game
 
 Double-click `train.cmd`, or:
@@ -376,7 +364,7 @@ npm run train -- --rounds 120
 
 A population of agents plays a rated tournament against each other. Each one is
 handed a leader of any level that it has to keep, fixing the colors its deck may
-run; each starts on a random legal deck; and whoever comes out of a round behind
+run, each starts on a random legal deck, and whoever comes out of a round behind
 swaps cards out. Two copies of the shipped one-ply bot sit in the field on
 hand-built decks at a fixed rating of 1500, so the ladder has an absolute zero.
 
@@ -396,7 +384,7 @@ network predicts zero and changes nothing.
 **What the bot is allowed to know.** The observation is built from one side of
 the table and contains nothing that player is not entitled to. On top of that it
 counts how many copies of each card the opponent has played, and against the
-rarity caps and the colors their leader allows that bounds what can still be coming;
+rarity caps and the colors their leader allows that bounds what can still be coming.
 and each time the opponent plays a card it rolls three times at 15% to name a
 card sitting in their deck, and once at 5% to name a card in their hand. Every
 one of those numbers is a flag:
@@ -423,9 +411,6 @@ measure of what the network is worth.
 npm run train:gauntlet -- --net runs/latest/net0.snn --games 60
 ```
 
-The design and the reasoning behind each part of it are in
-[claude-notes/learning.md](claude-notes/learning.md).
-
 ## The C# engine
 
 The same rules exist a second time in `csharp/` and run about nine times
@@ -446,9 +431,7 @@ TypeScript simulator, and the C# suite finishes in under a second.
 Two implementations of one rulebook drift by default, so three things keep them
 honest: a canonical position digest both engines build character for character, a
 corpus of recorded replays in `replays/` that both re-run step by step, and a
-card manifest in `conformance/` compared field by field. The whole arrangement,
-including the engine bug the port flushed out, is written up in
-[claude-notes/two-engines.md](claude-notes/two-engines.md).
+card manifest in `conformance/` compared field by field.
 
 Party mode is the one deliberate gap between the two: three and four player
 games exist only in TypeScript, and every two-player position still digests
@@ -492,12 +475,12 @@ placeholder card (`src/engine/redact.ts`), so the authority never hands a client
 anything it should not see. A turn clock runs on Durable Object alarms and times
 out a player who stops acting.
 
-The clock lives entirely in the room. A card played on your own turn buys a
-little of it back, 1.5 seconds for the first and less for each one after until
-the refund reaches nothing around the tenth, and the count starts over on your
-next turn (`playBonusMs` in `src/engine/timing.ts`). Clients never compute a
-refund: they draw whatever `clock` the push carries, and the clock is no part of
-the digest either, so nothing about it can put two sides out of step.
+The room owns every timer. A card played on your own turn adds time back to it,
+1.5 seconds for the first card and less for each one after, reaching 0 at the
+tenth. The count resets on your next turn. See `playBonusMs` in
+`src/engine/timing.ts`. Clients never compute the bonus themselves. They display
+whatever `clock` the push carries, and the clock is not part of the digest, so it
+cannot cause a desync.
 
 Matchmaking is four POST routes onto the lobby. `/api/queue/public` joins or
 opens a public room, `/api/queue/host` opens a private one and returns a code,
@@ -509,9 +492,10 @@ Hosting with `?party=3` or `?party=4` opens a party room, and `?timers=off`
 opens one that runs no clocks at all. Both ride in the room's name (`prv3-`,
 `prv4-`, and an `nt-` segment for a room without clocks), so the `MatchRoom`
 sizes itself and decides whether to arm an alarm before the first join, and a
-tampered client can only mislead a room nobody else is routed to. A head-to-head code is consumed by its first guest; a party code
-lives out its clock so it can seat every guest, and the room's own "room is
-full" answer turns away anyone extra. While a party room fills, everyone seated
+tampered client can only mislead a room nobody else is routed to. A head-to-head
+code is consumed by its first guest. A party code stays valid for its full hour
+so it can seat every guest, and the room's own "room is full" answer turns away
+anyone extra. While a party room fills, everyone seated
 gets a roster with each `waiting` push.
 
 Both players have to be running the same build. `src/version.ts` derives a

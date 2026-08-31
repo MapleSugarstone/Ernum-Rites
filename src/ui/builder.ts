@@ -31,7 +31,7 @@ export const DECK_BLURB_MAX = 110;
 /** Why this deck name cannot be saved, or null when it is fine. */
 export function deckNameProblem(raw: string): string | null {
   const name = raw.trim();
-  if (name.length === 0) return 'Give the deck a name.';
+  if (name.length === 0) return 'Enter a name for the deck.';
   if (name.length > DECK_NAME_MAX) return `A name is at most ${DECK_NAME_MAX} characters.`;
   return null;
 }

@@ -212,6 +212,8 @@ interface Ui {
   preloading: boolean;
   /** A card held down long enough to ask for a closer look. Mobile only. */
   zoom: string | null;
+  /** Whose discard pile is open for reading, or null when none is. */
+  discardView: PlayerIdx | null;
 }
 
 const ui: Ui = {
@@ -247,6 +249,7 @@ const ui: Ui = {
   drag: null,
   preloading: false,
   zoom: null,
+  discardView: null,
 };
 
 /**
@@ -2497,7 +2500,9 @@ function pilesHtml(state: GameState, player: PlayerIdx): string {
       ${deck}${warn}
       <span class="pilecount">${p.deck.length}</span><span class="zlabel">deck</span>
     </div>
-    <div class="pile" title="Discard: ${p.discard.length} cards">
+    <div class="pile discardpile${p.discard.length > 0 ? ' readable' : ''}"
+      title="Discard: ${p.discard.length} cards${p.discard.length > 0 ? '. Press and hold to read it.' : ''}"
+      data-discard="${player}">
       ${discard}
       <span class="pilecount">${p.discard.length}</span><span class="zlabel">discard</span>
     </div>
@@ -2558,7 +2563,7 @@ function cardInText(text: string): string | null {
   return best;
 }
 
-/** Hearthstone-style play-by-play: one art tile per interaction, hover to read. */
+/** The play-by-play strip: one art tile per interaction, hover to read it. */
 function historyHtml(state: GameState): string {
   const me = viewSeat();
   // The group map can fall out of step across a hot reload; degrade to one
@@ -2637,7 +2642,7 @@ function anyActionsLeft(state: GameState, me: PlayerIdx): boolean {
   return false;
 }
 
-/** The big turn button on the right edge, the way Hearthstone places it. */
+/** The turn button, on the right edge where a thumb or cursor rests. */
 function endTurnHtml(state: GameState): string {
   const busy =
     !!state.pending || state.flipQueue.length > 0 || state.replaceQueue.length > 0 || !!ui.targeting;
@@ -2847,7 +2852,7 @@ function promptHtml(state: GameState): string {
   if (p.eliminated && !ui.online.spectating) {
     return `<div class="banner">
       <h2>You are eliminated</h2>
-      <p>The game goes on without you. Stay to watch it end, or head back to the menu.</p>
+      <p>The game continues without you. Stay to watch it end, or return to the menu.</p>
       <div class="row">${btn('spectate', 'Keep watching', 'primary')}${btn('leave-match', 'Leave')}</div>
     </div>`;
   }
@@ -2888,7 +2893,7 @@ function promptHtml(state: GameState): string {
             : 'deck';
       const note = none
         ? '<p>No viable scry targets</p>'
-        : `<p>Pick a card${restGo ? `, the rest go back under your ${restGo}` : ''}.</p>`;
+        : `<p>Pick a card.${restGo ? ` The rest go back under your ${restGo}.` : ''}</p>`;
       const toggle = peeking
         ? btn('choice-show', 'Show', 'primary')
         : btn('choice-hide', 'Hide');
@@ -3033,7 +3038,7 @@ function promptHtml(state: GameState): string {
     return `<div class="prompt urgent flipprompt">
       <h2>${esc(def.name)} flipped</h2>
       ${renderCard(def, { classes: ['flipfocus'] })}
-      <p>Cost: ${priceParts.join(', ')}${needsDiscard && picked < 0 ? ' &mdash; click one in your hand' : ''}</p>
+      <p>Cost: ${priceParts.join(', ')}${needsDiscard && picked < 0 ? '. Click one in your hand.' : ''}</p>
       <div class="row">
         ${affordable ? btn('pay-flip', 'Pay and trigger', 'primary') : ''}
         ${btn('decline-flip', 'Decline', affordable ? '' : 'primary')}
@@ -3084,7 +3089,7 @@ function promptHtml(state: GameState): string {
       );
     }
     if (def.type === 'trap') {
-      buttons.push(dead('Traps only fire on defense'));
+      buttons.push(dead('Traps play only in a response window'));
     }
     return `<div class="prompt">
       <h2>${esc(def.name)}</h2>
@@ -3549,6 +3554,23 @@ function cancelHold(): void {
 }
 
 function armHold(ev: PointerEvent): void {
+  // The discard pile opens on desktop and mobile alike. Its contents are public
+  // but only the top card is drawn, so a press is the only way to see the rest,
+  // and nothing else responds to a press there.
+  const pile = (ev.target as HTMLElement).closest<HTMLElement>('[data-discard]');
+  if (pile) {
+    const player = Number(pile.dataset.discard) as PlayerIdx;
+    if (!ui.state?.players[player]?.discard.length) return;
+    holdFrom = { x: ev.clientX, y: ev.clientY };
+    holdTimer = window.setTimeout(() => {
+      holdTimer = null;
+      ui.discardView = player;
+      suppressClick = true;
+      cancelHold();
+      render();
+    }, HOLD_MS);
+    return;
+  }
   if (!document.body.classList.contains('mobile')) return;
   const el = (ev.target as HTMLElement).closest<HTMLElement>('[data-cardid]');
   const id = el?.dataset.cardid;
@@ -3580,6 +3602,48 @@ function zoomHtml(): string {
       <div class="row"><button data-act="btn" data-cmd="zoom:">Close</button></div>
     </div>
   </div>`;
+}
+
+/**
+ * Lists every card in one discard pile, in the order it was discarded. Both
+ * discard piles are public, so either player's pile can be opened.
+ */
+function discardHtml(): string {
+  const state = ui.state;
+  const player = ui.discardView;
+  if (!state || player === null) return '';
+  const pile = state.players[player].discard;
+  const name = state.players[player].name;
+  return `<div class="promptlayer discardlayer" data-act="btn" data-cmd="discard:">
+    <div class="prompt choice discardview">
+      <h2>${esc(name)}'s discard</h2>
+      <p>${pile.length} card${pile.length === 1 ? '' : 's'}, oldest first.</p>
+      <div class="revealgrid">${pile.map((id) => renderCard(card(id))).join('')}</div>
+      <div class="row"><button data-act="btn" data-cmd="discard:">Close</button></div>
+    </div>
+  </div>`;
+}
+
+function renderDiscard(): void {
+  let host = document.getElementById('discardview');
+  if (ui.discardView === null) {
+    host?.remove();
+    return;
+  }
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'discardview';
+    // On the body for the same reason the zoom overlay is. A transformed
+    // ancestor turns position:fixed into position:absolute.
+    document.body.appendChild(host);
+    host.addEventListener('click', (ev) => {
+      const hit = (ev.target as HTMLElement).closest<HTMLElement>('[data-cmd]');
+      if (!hit || !hit.dataset.cmd?.startsWith('discard:')) return;
+      ui.discardView = null;
+      render();
+    });
+  }
+  host.innerHTML = discardHtml();
 }
 
 /**
@@ -3905,24 +3969,106 @@ function arrowSvg(
     <circle cx="${from.x}" cy="${from.y}" r="9" fill="${color}" stroke="#04091f" stroke-width="3"/>`;
 }
 
+/**
+ * The spell that a response window is waiting on, displayed over the table until
+ * the window closes. The prompt names the spell in text, which is not enough to
+ * decide against, so the card itself stays on screen.
+ */
+let lastDeclareHtml = '';
+
+function renderDeclaration(): void {
+  const el = document.getElementById('declare');
+  if (!el) return;
+  const spell = ui.state?.pending?.spell;
+  const html = spell ? renderCard(card(spell.cardId), { classes: ['declcard'] }) : '';
+  // Rewriting it on every render would restart the fade-in animation.
+  if (html === lastDeclareHtml) return;
+  lastDeclareHtml = html;
+  // The opponent's card is still animating toward this position, so delay the
+  // fade-in to avoid revealing the spell before the animation arrives.
+  el.style.setProperty('--declwait', handPlayFx ? `${DRAW_FLIGHT}ms` : '0ms');
+  el.innerHTML = html;
+}
+
+/** Returns the element an arrow should point at, or null for an off-board ref. */
+function declEl(ref: TargetRef): HTMLElement | null {
+  if (ref.kind === 'supporter') {
+    return document.querySelector<HTMLElement>(
+      `.board [data-act="support"][data-player="${ref.player}"][data-index="${ref.index}"]`,
+    );
+  }
+  return boardElFor(ref, true);
+}
+
+/**
+ * Tilts the attacker toward its target and holds that position until the
+ * response window closes. The offset stops well short of the target, because
+ * the attack has not resolved yet and an overlap would suggest that it had.
+ */
+function syncLunge(): void {
+  for (const el of document.querySelectorAll<HTMLElement>('.board .card.lunging')) {
+    el.classList.remove('lunging');
+    el.style.transform = '';
+  }
+  const battle = ui.state?.pending?.battle;
+  if (!battle) return;
+  const atk = boardElFor(battle.attacker, true);
+  const def = boardElFor(battle.defender, true);
+  if (!atk || !def) return;
+  const a = atk.getBoundingClientRect();
+  const d = def.getBoundingClientRect();
+  const dx = d.left + d.width / 2 - (a.left + a.width / 2);
+  const dy = d.top + d.height / 2 - (a.top + a.height / 2);
+  // The same angle playSmack uses, at 22% of its distance. Sapped summons carry
+  // a 7 degree tilt from CSS that this inline transform would otherwise drop.
+  const lean = Math.max(-10, Math.min(10, dx * 0.04)) + (atk.classList.contains('sapped') ? 7 : 0);
+  atk.style.transform = `translate(${dx * 0.22}px, ${dy * 0.22}px) rotate(${lean}deg) scale(1.05)`;
+  atk.classList.add('lunging');
+}
+
+/**
+ * Draws an arrow from an attacker to its target, or from a displayed spell to
+ * each of its targets. These stay up for the whole response window so a player
+ * choosing a trap can see what they would be answering.
+ */
+function declarationArrows(): string {
+  const pending = ui.state?.pending;
+  if (!pending) return '';
+  const at = (ref: TargetRef) => {
+    const el = declEl(ref);
+    return el ? centerOf(el) : null;
+  };
+  if (pending.battle) {
+    const from = at(pending.battle.attacker);
+    const to = at(pending.battle.defender);
+    return from && to ? arrowSvg(from, to, '#f84c48') : '';
+  }
+  if (!pending.spell) return '';
+  const held = document.querySelector('#declare .declcard');
+  const from = held ? centerOf(held) : null;
+  if (!from) return '';
+  return pending.spell.targets
+    .map(at)
+    .filter((to): to is { x: number; y: number } => to !== null)
+    .map((to) => arrowSvg(from, to, '#d8a800'))
+    .join('');
+}
+
 function renderArrow(): void {
   const svg = document.getElementById('arrows');
   if (!svg) return;
+  // Drawn first so a drag or aim arrow adds to it instead of replacing it.
+  let html = declarationArrows();
   const d = ui.drag;
   if (d && d.mode === 'attack') {
     // The arrow runs hot red once it is over a legal target.
-    svg.innerHTML = arrowSvg(d.from, d.to, d.over ? '#f84c48' : '#00d3e3');
-    return;
-  }
-  // Play drags carry the card itself under the cursor; no arrow for those.
-  if (!d && pointerAt) {
+    html += arrowSvg(d.from, d.to, d.over ? '#f84c48' : '#00d3e3');
+  } else if (!d && pointerAt) {
+    // Play drags carry the card itself under the cursor; no arrow for those.
     const from = aimActive() ? aimArrowFrom() : boardChoiceActive() ? choiceArrowFrom() : null;
-    if (from) {
-      svg.innerHTML = arrowSvg(from, pointerAt, '#d8a800');
-      return;
-    }
+    if (from) html += arrowSvg(from, pointerAt, '#d8a800');
   }
-  if (svg.innerHTML) svg.innerHTML = '';
+  if (html || svg.innerHTML) svg.innerHTML = html;
 }
 
 // --- render -----------------------------------------------------------------
@@ -3936,11 +4082,14 @@ function mountGame(): void {
            hover card that is centred on a tile near either end reaches past it. -->
       <div class="history" id="history"></div>
       <aside class="rail" id="rail"></aside>
+      <!-- Under the arrows: a spell held here is what they are drawn from. -->
+      <div class="declare" id="declare"></div>
       <svg class="arrows" id="arrows"></svg>
       <div class="promptlayer" id="prompt"></div>
     </main>
     <footer class="hand" id="hand"></footer>`;
   lastBoardHtml = '';
+  lastDeclareHtml = '';
   lastHistoryHtml = '';
   lastActiveSlid = null;
 }
@@ -4042,9 +4191,15 @@ function render(): void {
   renderRail();
   renderPrompt();
   syncFlight();
-  renderArrow();
   renderZoom();
+  renderDiscard();
   fitFans();
+  // These three measure board elements, so they run after fitFans. The hand
+  // fans set their own size there, the rows above them take the remaining
+  // height, and measuring earlier returns positions that are about to change.
+  renderDeclaration();
+  syncLunge();
+  renderArrow();
   maybeAutoChoice();
   maybeAutoPass();
   maybeAutoDecline();
@@ -4345,7 +4500,7 @@ function renderOnline(): string {
       <hr class="lobbyrule">
 
       <button class="lobbybtn" data-act="btn" data-cmd="o-back">${
-        busy ? 'Cancel and go back' : 'Main Menu'
+        busy ? 'Cancel' : 'Main Menu'
       }</button>
     </div>
   </div></div>`;
@@ -4446,10 +4601,9 @@ function browseCardHtml(def: CardDef, have: number): string {
 }
 
 /**
- * One copy of one card as it stands in the deck view. No drag handle: the book
- * is showing the deck here, so dragging a card towards the deck would be asking
- * for a copy of something already in it. Clicking takes the copy back out,
- * which is what clicking the same card in the list beside it does.
+ * Renders one copy of one card in the deck view. These cells carry no drag
+ * handle, because dragging toward the deck adds a copy and every card here is
+ * already in it. Clicking removes the copy, matching the deck list beside it.
  */
 function deckViewCardHtml(def: CardDef): string {
   const b = ui.builder;
@@ -4477,8 +4631,8 @@ function renderBuilder(): string {
 
   const leader = tryCard(b.leaderId);
 
-  // The colour tabs slice the collection, so the whole row goes while the book
-  // is showing the deck.
+  // The color tabs filter the full card list, so the row is hidden while the
+  // deck view is showing.
   const tabs = b.viewingDeck
     ? ''
     : `<nav class="tabs">${BROWSE_TABS.map((t) => {
@@ -4499,8 +4653,8 @@ function renderBuilder(): string {
   }).join('');
 
   const hit = (d: CardDef) => matchesSearch(d, b.search, b.rarities);
-  // Viewing the deck drops the headings entirely: one flat grid holding every
-  // copy, which is the whole point of the toggle.
+  // The deck view drops the category headings and shows one flat grid holding
+  // every copy, which is what the toggle is for.
   const browser = b.viewingDeck
     ? (() => {
         const shown = deckCards(b.cards).filter(hit);
@@ -4672,7 +4826,7 @@ function renderBuilder(): string {
             ${leader.text ? `<span class="hpower">${esc(leader.text)}</span>` : ''}
             <span class="hint">Drag the card out to swap leaders.</span>
           </div>`
-              : '<div class="leaderslot">no leader — drag any summon here</div>'
+              : '<div class="leaderslot">No leader. Drag any summon here.</div>'
           }
         </div>
         <div class="leaderrow ddfield"><span>Leader</span>${dropdownHtml({
@@ -5505,9 +5659,9 @@ function handleBuilderCommand(cmd: string): boolean {
       break;
     case 'bcopy':
       if (!isLegal(b)) break;
-      // Cutting the workspace loose from the deck it was opened from is what
-      // makes this a copy: everything from here on saves as a new deck, so the
-      // original keeps its cards even if the dialog is cancelled.
+      // Clearing editingKey is what makes this a copy. Every later save creates
+      // a new deck, so the original keeps its cards even if the player cancels
+      // the dialog.
       b.saving = 'copy';
       b.name = copyName(b.name);
       b.editingKey = null;
@@ -5711,6 +5865,11 @@ function startMatch(decks: [DeckList, DeckList]): void {
 }
 
 function handleCommand(cmd: string): void {
+  if (cmd.startsWith('discard:')) {
+    const arg = cmd.slice(8);
+    ui.discardView = arg === '' ? null : (Number(arg) as PlayerIdx);
+    return render();
+  }
   if (cmd.startsWith('zoom:')) {
     ui.zoom = cmd.slice(5) || null;
     return render();
@@ -5961,10 +6120,9 @@ let pendingDrag: { x: number; y: number; el: HTMLElement; drag: DragState } | nu
 let suppressClick = false;
 
 /**
- * The card riding the cursor mid-drag. It trails the pointer with a little
- * easing, leans into the motion, and when a legal drop is under the cursor it
- * snaps onto that spot and shrinks toward board size, the way Hearthstone
- * seats a card.
+ * The card that follows the cursor during a drag. It trails the pointer with
+ * some easing, tilts with the motion, and snaps onto a legal drop target under
+ * the cursor, shrinking toward board size as it lands.
  */
 let ghost: {
   el: HTMLElement;
@@ -6678,6 +6836,10 @@ document.addEventListener('keydown', (ev) => {
     // The magnified card is the top thing on screen, so it goes first.
     if (ui.zoom) {
       ui.zoom = null;
+      return render();
+    }
+    if (ui.discardView !== null) {
+      ui.discardView = null;
       return render();
     }
     ui.drag = null;

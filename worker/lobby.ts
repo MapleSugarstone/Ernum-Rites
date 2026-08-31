@@ -104,10 +104,10 @@ export class Lobby extends DurableObject {
   }
 
   /**
-   * A room only somebody holding the code can find, or null when too many are
-   * live. A party size and whether the room runs clocks both ride in its name:
-   * the MatchRoom reads them off its own id, so a tampering client can only
-   * mislead a room nobody else is routed to.
+   * Creates a room that only a player with the code can find, or returns null
+   * when too many rooms are live. The party size and the timer setting are both
+   * encoded in the room's name, because MatchRoom reads them from its own id.
+   * A modified client can therefore only affect a room nobody else can reach.
    */
   async hostPrivate(
     size?: 3 | 4,

@@ -34,9 +34,9 @@ function seatCountFor(name: string | undefined): number {
 }
 
 /**
- * Whether this room runs without clocks, read off its own name the same way the
- * seat count is. A host who turned timers off gets an `nt-` segment, and only a
- * room the lobby actually routes guests to can carry one.
+ * Reports whether this room runs without timers, reading the room's own name the
+ * same way seatCountFor does. The lobby adds an `nt-` segment when the host
+ * turns timers off, and only the lobby routes guests to a room.
  */
 function timersOffFor(name: string | undefined): boolean {
   return /^prv[34]?-nt-/.test(name ?? '');
@@ -62,13 +62,13 @@ export class MatchRoom extends DurableObject {
    * window's time rather than the turn's, and the turn picks up where it was.
    */
   private turnLeftMs = 0;
-  /** The whole budget this turn was given, refunds included, for drawing the bar. */
+  /** The total time this turn was granted, play bonuses included, for the bar. */
   private turnTotalMs = 0;
   /** Which turn the bank belongs to. A different one refills it. */
   private turnKey = '';
-  /** Cards the active player has put down this turn, which the refund fades on. */
+  /** Cards the active player has played this turn, which the bonus decreases on. */
   private turnPlays = 0;
-  /** Set for a room the host asked to run without clocks. */
+  /** True when the host asked for a room without timers. */
   private readonly timersOff = timersOffFor(this.ctx.id.name);
   private kind: RoomKind = 'public';
   private code: string | undefined;
@@ -251,8 +251,8 @@ export class MatchRoom extends DurableObject {
         });
       }
       this.state = result.state;
-      // Only the player whose turn it is buys time back, so a trap sprung on
-      // somebody else's turn earns nothing.
+      // Only the active player earns time back, so a trap played during an
+      // opponent's turn earns nothing.
       await this.restartClock(isCardPlay(msg.action.type) && this.state.active === seat);
       this.pushState({ action: msg.action, actor: seat });
     }
@@ -305,9 +305,9 @@ export class MatchRoom extends DurableObject {
       this.turnLeftMs = Math.max(0, this.clock.endsAt - now);
     }
 
-    // A card going down buys a little of the turn back, and less each time. The
-    // refund goes into the bank rather than onto the live clock, so a play that
-    // opens a response window still has it waiting when the turn resumes.
+    // Each card played adds time to the turn, less with every play. The bonus
+    // goes into the bank rather than the running timer, so a play that opens a
+    // response window keeps the time until the turn resumes.
     if (played) {
       const bonus = playBonusMs(++this.turnPlays);
       this.turnLeftMs += bonus;

@@ -866,8 +866,8 @@ button.on {
 }
 
 /* --- play-by-play strip ----------------------------------------------------
-   Hearthstone's left-edge history: a tile of card art per log line, hover for
-   the full interaction. */
+   A left-edge history: one tile of card art per log line, hover for the full
+   interaction. */
 .history {
   position: absolute;
   left: 5px;
@@ -946,7 +946,7 @@ button.on {
   text-align: center;
 }
 
-/* --- the turn button, parked on the right edge the way Hearthstone does ---
+/* --- the turn button, on the right edge -----------------------------------
    Dim at rest, a small glow under the pointer, and green once the turn is
    spent. Its centering transform is pinned on hover/active so the generic
    button lift can never shove it down the screen. */
@@ -1979,6 +1979,13 @@ body.dragging .bookgrid .card {
   transform: rotate(7deg) scale(1.25);
   filter: grayscale(0.55) drop-shadow(0 10px 18px rgba(0, 0, 0, 0.45));
 }
+/* Held tilted toward its target while a response window is open. syncLunge sets
+   the transform inline from the two elements' positions. */
+.unit .card.lunging,
+.unit .card.lunging:hover {
+  z-index: 70;
+  filter: drop-shadow(0 14px 24px rgba(4, 9, 31, 0.62));
+}
 .card.selected {
   transform: translateY(-6px) scale(1.03);
   filter: drop-shadow(0 0 0 2px var(--accent)) drop-shadow(0 10px 16px rgba(0, 211, 227, 0.4));
@@ -2048,7 +2055,7 @@ body.dragging .bookgrid .card {
   position: absolute;
   pointer-events: none;
 }
-/* The Power Shield bubble wraps the whole body, Hearthstone-fashion. */
+/* The Power Shield bubble wraps the whole summon. */
 .card .shieldfx {
   inset: 1%;
   width: 98%;
@@ -2522,6 +2529,65 @@ body.dragging .bookgrid .card {
   overflow: visible;
 }
 
+/* The spell a response window is waiting on, displayed over the middle of the
+   table where it resolves. Sits under the arrows that point away from it. */
+.declare {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  z-index: 55;
+}
+.declare .declcard {
+  --cw: var(--cw-hand);
+  --cwn: var(--cwn-hand);
+  cursor: default;
+  filter: drop-shadow(0 16px 34px rgba(4, 9, 31, 0.62));
+  /* Centers on the lane rather than the stage. The rail on one side and the
+     debt gutter on the other make those two centers differ. */
+  transform: translateX(var(--hand-shift, 0px));
+  /* The delay covers the opponent's card animating into this position, so this
+     copy does not appear before that animation lands. */
+  animation: declhold 220ms ease-out var(--declwait, 0ms) both;
+}
+@keyframes declhold {
+  from {
+    transform: translateX(var(--hand-shift, 0px)) scale(0.86);
+    opacity: 0;
+  }
+}
+
+/* A discard pile that has something in it invites the press that opens it. */
+.pile.discardpile.readable { cursor: zoom-in; }
+
+/* Every card in one discard pile, over everything, closed by clicking away. */
+#discardview .discardlayer {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(4, 9, 31, 0.72);
+  z-index: 90;
+  pointer-events: auto;
+}
+#discardview .discardview {
+  max-width: min(92vw, 900px);
+  max-height: 86vh;
+  overflow-y: auto;
+}
+#discardview .discardview .revealgrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+#discardview .discardview .card {
+  --cw: var(--cw-hand);
+  --cwn: var(--cwn-hand);
+  cursor: default;
+}
+
 /* A short notice over the table: what just happened to you, rather than
    something you have to answer. Takes itself away, so it never covers a click. */
 .notice {
@@ -2884,8 +2950,8 @@ body.mobile .modes .mixer {
   background: var(--c-N);
 }
 
-/* Swaps the book between the collection and the deck itself. Lit while the deck
-   is showing, so the header says which of the two is on screen. */
+/* Switches the browser between the full card list and the deck. Highlighted
+   while the deck is showing, so the header states which view is active. */
 .viewtoggle {
   font-size: 13px;
   padding: 4px 14px;
@@ -2895,8 +2961,8 @@ body.mobile .modes .mixer {
   background: var(--select);
   color: #1b1405;
 }
-/* The deck view has no headings to break it up, so one flat grid holds every
-   copy. The cells are the browser's, minus the stack of spares behind them. */
+/* The deck view has no category headings, so one flat grid holds every copy.
+   The cells match the card browser's, without the stack of spare copies. */
 .deckgrid { padding-top: 10px; }
 .dcell .copystack::before,
 .dcell .copystack::after { content: none; }
@@ -3430,8 +3496,8 @@ body.mobile .modes .mixer {
   box-shadow: var(--sheen);
 }
 .deckfoot .primary { flex: 1; }
-/* Three save buttons will not sit on one 330px rail without every label
-   wrapping, so the copy takes its own line under the two that end the edit. */
+/* Three save buttons do not fit on one 330px rail without every label wrapping,
+   so this one takes its own line. */
 .deckfoot { flex-wrap: wrap; }
 .savecopy { flex: 1 0 100%; font-size: 12px; padding: 3px 12px; }
 .deckfoot2 {
@@ -3474,8 +3540,8 @@ body.mobile .modes .mixer {
     flex: 1 1 100%;
   }
   .bheader .tabs .tab { flex: none; }
-  /* Both labels sized alike and tightened, so the toggle stays beside the
-     wordmark on a phone instead of hopping to its own line when it is used. */
+  /* Both labels get the same width so the toggle stays next to the wordmark on
+     a phone instead of moving to its own line when the label changes. */
   .viewtoggle { padding: 4px 9px; min-width: 82px; }
 }
 
