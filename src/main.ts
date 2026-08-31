@@ -3080,7 +3080,11 @@ function promptHtml(state: GameState): string {
     }
     if (def.type === 'spell') {
       buttons.push(
-        canPay(p, costFor(p, def)) ? btn('cast', 'Cast', 'primary') : dead('Not enough mana'),
+        !canPay(p, costFor(p, def))
+          ? dead('Not enough mana')
+          : !hasTargets(state, me, def)
+            ? dead('No legal target')
+            : btn('cast', 'Cast', 'primary'),
       );
     }
     if (def.type === 'stage') {
@@ -5425,16 +5429,22 @@ function botStep(): void {
   scheduleBot(wait);
 }
 
+/**
+ * Start collecting targets for a card or a Power. The source card is required:
+ * targetCandidates narrows a spell or trap to what it may legally point at, and
+ * without it a Spell Immune character is offered as a target the engine refuses.
+ */
 function beginAction(
   label: string,
   specs: TargetSpec[] | undefined,
+  source: CardDef,
   build: (t: TargetRef[]) => Action,
 ): void {
   if (!specs || specs.length === 0) {
     dispatch(build([]));
     return;
   }
-  ui.targeting = { label, specs, collected: [], build };
+  ui.targeting = { label, specs, collected: [], source, build };
   ui.error = null;
   render();
 }
@@ -5453,7 +5463,7 @@ function beginSummonPlay(handIndex: number, slot: number | null): void {
       : { type: 'PLAY_SUMMON', handIndex, slot, targets };
   const live = specs.some((sp) => targetCandidates(state, viewSeat(), sp, def).length > 0);
   if (!live) return dispatch(build([]));
-  beginAction(def.name, specs, build);
+  beginAction(def.name, specs, def, build);
 }
 
 /** Route a board click into the front of the choice queue when it is waiting. */
@@ -5996,7 +6006,7 @@ function handleCommand(cmd: string): void {
     const power = powersOf(s, card(s.cardId))[index];
     if (!power) return;
     const source = sel.ref as SourceRef;
-    beginAction(power.name, power.targets, (targets) => ({
+    beginAction(power.name, power.targets, card(s.cardId), (targets) => ({
       type: 'ACTIVATE_POWER',
       source,
       powerIndex: index,
@@ -6019,14 +6029,14 @@ function handleCommand(cmd: string): void {
     return beginSummonPlay(handIndex, state.replaceQueue.length > 0 ? null : slot);
   }
   if (cmd === 'cast') {
-    return beginAction(def.name, def.targets, (targets) => ({
+    return beginAction(def.name, def.targets, def, (targets) => ({
       type: 'CAST_SPELL',
       handIndex,
       targets,
     }));
   }
   if (cmd === 'trap') {
-    return beginAction(def.name, def.targets, (targets) => ({
+    return beginAction(def.name, def.targets, def, (targets) => ({
       type: 'CAST_TRAP',
       handIndex,
       targets,
