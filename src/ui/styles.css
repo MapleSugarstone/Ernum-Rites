@@ -239,6 +239,11 @@
   --shadow-lift: 0 16px 34px rgba(17, 26, 46, 0.26);
   --ink-soft: rgba(4, 9, 31, 0.45);
 
+  /* Flipped with the palette. Left on dark, the browser paints form controls,
+     carets and scrollbars for a dark page, and an input with no color of its
+     own gets white text on the light fill behind it. */
+  color-scheme: light;
+
   /* Still one shallow fall with no specular break: the light ground is a
      change of brightness, not a return to gloss. */
   --glass: linear-gradient(
@@ -2561,26 +2566,14 @@ body.dragging .bookgrid .card {
 /* A discard pile that has something in it invites the press that opens it. */
 .pile.discardpile.readable { cursor: zoom-in; }
 
-/* Every card in one discard pile, over everything, closed by clicking away. */
+/* Every card in one discard pile, over everything, closed by clicking away.
+   The panel inside is a .prompt.choice, which already paints the full screen
+   scrim and its own white heading, so this layer only has to take the clicks. */
 #discardview .discardlayer {
   position: fixed;
   inset: 0;
-  display: grid;
-  place-items: center;
-  background: rgba(4, 9, 31, 0.72);
   z-index: 90;
   pointer-events: auto;
-}
-#discardview .discardview {
-  max-width: min(92vw, 900px);
-  max-height: 86vh;
-  overflow-y: auto;
-}
-#discardview .discardview .revealgrid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  justify-content: center;
 }
 #discardview .discardview .card {
   --cw: var(--cw-hand);
@@ -3138,6 +3131,7 @@ body.mobile .modes .mixer {
   border: var(--stroke) solid var(--ink);
   border-radius: 999px;
   background: var(--fill-3);
+  color: inherit;
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.12);
 }
 /* Rarity filter. Lighting none and lighting all four both mean everything, so
@@ -3362,12 +3356,13 @@ body.mobile .modes .mixer {
   font-family: var(--font-display);
   font-size: 17px;
   font-weight: 600;
-  color: #fff;
+  /* Follows the theme rather than the plate behind it: the field has its own
+     fill, which is near-white in the light theme. */
+  color: var(--text);
   background: var(--fill-3);
-  border: 1.5px solid rgba(255, 255, 255, 0.34);
+  border: var(--stroke) solid var(--ink);
   border-radius: var(--radius-sm);
   padding: 3px 9px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
   min-width: 0;
 }
 .leadername {
@@ -3432,7 +3427,10 @@ body.mobile .modes .mixer {
 .rowname {
   font-size: 12.5px;
   font-weight: 600;
-  color: var(--text);
+  /* The row paints card art under a dark gradient in both themes, so this does
+     not follow --text. */
+  color: var(--chrome-text);
+  text-shadow: 0 1px 2px rgba(4, 9, 31, 0.75);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

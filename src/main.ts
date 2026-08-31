@@ -4240,13 +4240,13 @@ function renderRules(): string {
     <button class="modetile back" data-act="btn" data-cmd="to-setup">Back to menu</button>
 
     <h2>Summary</h2>
-    <p class="lede">Place one card a turn face down as a supporter. Its color pays for card
-      powers, spells, and traps. Summons are free and have HP, attack, level, and powers. Their
-      HP is represented by cards drawn from your deck. When a summon dies, it goes to your debt
+    <p class="lede">Place one card a turn face down as a supporter. Its color pays for
+      Powers, spells, and traps. Summons are free and have HP, attack, level, and Powers.
+      Cards drawn from your deck stand as their HP. When a summon dies, it goes to your debt
       zone and adds its level to your debt. Reach ${DEBT_LIMIT} debt and you lose. Destroy the
       enemy leader to win. A leader can be chosen from any summon and a deck may only use its
-      leader's colors for its cards. Up to four can play: a game of three or four is a party
-      game, where a defeated player is eliminated and the last one standing wins.</p>
+      leader's colors for its cards. Two to four players can play. A game of three or four
+      is a party game. A defeated player is eliminated and the last player standing wins.</p>
 
     <h2>1. The Game</h2>
     ${sec('1-1.', `Ernum Rites is a game for two to four players. Each player brings one leader and one deck of ${DECK_SIZE} cards. A game of three or four players is a party game and follows section 2-3.`)}
@@ -4256,45 +4256,45 @@ function renderRules(): string {
     ${sec('1-2-1.', 'No player may attack during their own first turn.')}
     ${sec('1-2-2.', 'The player who takes the first turn does not draw on that turn.')}
     ${sec('1-3.', 'A character is a summon or a leader. Anything that affects a character affects both kinds unless it says otherwise.')}
-    ${sec('1-4.', 'A card beats this book. Where the text on a card and a rule here disagree, the card is right and the rule is what happens when no card has said otherwise.')}
-    ${sec('1-4-1.', 'Where one effect allows something and another forbids it, the one that forbids wins, whichever arrived first. &ldquo;The enemy cannot play supporters&rdquo; stops &ldquo;You may play another supporter this turn&rdquo; and the allowance is simply spent on nothing.')}
+    ${sec('1-4.', 'Card text overrides these rules. Where a card and a rule disagree, follow the card. A rule here applies only when no card says otherwise.')}
+    ${sec('1-4-1.', 'Where one effect allows something and another forbids it, the effect that forbids wins, whichever arrived first. &ldquo;The enemy cannot play supporters&rdquo; stops &ldquo;You may play another supporter this turn&rdquo;, and the permission does nothing.')}
 
     <h2>2. Winning and Losing</h2>
     ${sec('2-1.', 'The game ends when a player is defeated. The other player wins.')}
-    ${sec('2-1-1.', 'There are two conditions for defeat.')}
-    ${sec('2-1-1-1.', `When your debt reaches ${DEBT_LIMIT} or more (${PARTY_DEBT_LIMIT} in a party game).`)}
-    ${sec('2-1-1-2.', 'When your leader dies.')}
-    ${sec('2-2.', 'Both players can be defeated at once. If both leaders are still in play then the attacking player wins. Otherwise the game is a draw.')}
+    ${sec('2-1-1.', 'Two things defeat you.')}
+    ${sec('2-1-1-1.', `Your debt reaches ${DEBT_LIMIT} or more, or ${PARTY_DEBT_LIMIT} or more in a party game.`)}
+    ${sec('2-1-1-2.', 'Your leader dies.')}
+    ${sec('2-2.', 'Both players can be defeated at once. The attacking player wins if both leaders are still in play. The game is a draw otherwise.')}
     ${sec('2-3.', 'A party game seats three or four players. Every rule applies with the changes below.')}
     ${sec('2-3-1.', `Everyone opens with ${PARTY_HAND_BONUS} extra cards, and the debt limit is ${PARTY_DEBT_LIMIT}.`)}
     ${sec('2-3-2.', 'A defeated player is eliminated rather than ending the game. Their cards leave the board for their discard pile and their turns are skipped. The last player standing wins.')}
-    ${sec('2-3-3.', 'A card that names &ldquo;the enemy&rdquo; means one enemy of your choice, picked by clicking their leader. Anything that touches every enemy or every character still touches them all, and anything aimed at a target can aim at any enemy.')}
-    ${sec('2-3-4.', 'An attack offers its trap window to the player being attacked. A spell offers a window to each enemy holding a Spell Trap, one at a time in turn order. The first trap sprung answers it and nobody after is asked.')}
+    ${sec('2-3-3.', 'A card that names &ldquo;the enemy&rdquo; means one enemy of your choice, picked by clicking their leader. Anything that affects every enemy or every character still affects them all, and anything aimed at a target can aim at any enemy.')}
+    ${sec('2-3-4.', 'An attack offers its response window to the player being attacked. A spell offers a window to each enemy holding a Spell Trap, one at a time in turn order. The first trap sprung answers the spell, and nobody after that is asked.')}
     ${sec('2-3-5.', 'A player who leaves a running party game concedes. They are eliminated and the game goes on without them.')}
 
     <h2>3. Debt</h2>
-    ${sec('3-1.', 'Debt is the clock. It never goes down unless a card says it does.')}
+    ${sec('3-1.', 'Debt only rises. It never falls unless a card says it does.')}
     ${sec('3-1-1.', 'A summon of yours that dies goes to your debt zone. You take debt equal to its level.')}
-    ${sec('3-1-2.', 'A Deathrattle is text that fires as its summon dies. It resolves before the debt is paid, so it can still change what that death costs. A Deathrattle another card lent to the body fires after the body&rsquo;s own.')}
-    ${sec('3-1-3.', 'An annihilated summon reaches no zone at all. It charges no debt and its Deathrattle does not fire. Nothing can raise it or recycle it. Other cards still see that it died.')}
+    ${sec('3-1-2.', 'A Deathrattle is text that fires as its summon dies. It resolves before the debt is paid, so it can still change what that death costs. A summon fires its own Deathrattle before any Deathrattle another card gave it.')}
+    ${sec('3-1-3.', 'An annihilated summon reaches no zone. It charges no debt and its Deathrattle does not fire, and nothing can raise it or recycle it. Other cards still see that it died.')}
     ${sec('3-1-4.', 'An eaten summon goes under the eating summon as an HP card. It charges no debt.')}
     ${sec('3-2.', `Drawing from an empty deck costs you ${RESHUFFLE_DEBT} debt. Your discard pile is then shuffled to become your new deck.`)}
-    ${sec('3-2-1.', `Every later deck-out in the same game costs ${RESHUFFLE_DEBT_STEP} more than the one before it.`)}
+    ${sec('3-2-1.', `Each later time you do this in the same game costs ${RESHUFFLE_DEBT_STEP} more than the time before.`)}
     ${sec('3-2-2.', 'You pay that debt even with no discard pile to shuffle. In that case you draw nothing.')}
     ${sec('3-3.', `Milling from an empty deck costs ${MILL_DEBT} debt for each card you cannot mill.`)}
 
     <h2>4. The Leader</h2>
-    ${sec('4-1.', 'Your leader enters play on its own at the start of your first turn. You cannot play it from hand or replace it or return it to hand.')}
+    ${sec('4-1.', 'Your leader enters play on its own at the start of your first turn. You cannot play it from your hand, replace it, or return it to your hand.')}
     ${sec('4-1-1.', 'A leader enters with double its printed HP plus two.')}
     ${sec('4-1-2.', 'A leader fires its Battlecry when it enters.')}
     ${sec('4-2.', 'A leader attacks and uses Powers like any summon. It can be attacked too.')}
-    ${sec('4-2-1.', 'A leader can only be attacked while its own slots are empty. A card may override this.')}
+    ${sec('4-2-1.', 'You may attack a leader only while its own slots are empty. A card may override this.')}
     ${sec('4-2-2.', 'A defending leader deals no damage. An attacker takes nothing back from it.')}
     ${sec('4-3.', 'A leader never reaches the debt zone. Its controller loses instead.')}
 
     <h2>5. Zones</h2>
     ${sec('5-1.', `Each player has a hand, a deck, a discard pile, and a debt zone. On the board each player has ${SUMMON_SLOTS} summon slots, a supporter row, and a field.`)}
-    ${sec('5-2.', `Your hand holds ${HAND_LIMIT} cards. Anything past that goes straight to your discard pile. This includes cards you draw.`)}
+    ${sec('5-2.', `Your hand holds at most ${HAND_LIMIT} cards. Anything past that goes straight to your discard pile, including cards you draw.`)}
     ${sec('5-3.', 'You may control one field. A new field sends the old one to your discard pile.')}
 
     <h2>6. Sapping</h2>
@@ -4306,7 +4306,7 @@ function renderRules(): string {
 
     <h2>7. Turn Structure</h2>
     ${sec('7-1.', 'A turn has four steps in this order: awake, draw, main, end.')}
-    ${sec('7-1-1.', 'Awake step. Your leader enters if it has not yet. Start of turn effects fire. Everything you control unsaps.')}
+    ${sec('7-1-1.', 'Awake step. Your leader enters if it has not yet. Start-of-turn effects fire. Everything you control unsaps.')}
     ${sec('7-1-2.', `Draw step. Draw ${DRAW_PER_TURN} cards. The player who takes the first turn skips this step on that turn.`)}
     ${sec('7-1-3.', 'Main step. Play cards, use Powers, and declare attacks. You may do these in any order and as often as the rules allow.')}
     ${sec('7-1-4.', 'End step. Effects that last until end of turn expire.')}
@@ -4323,8 +4323,8 @@ function renderRules(): string {
     ${sec('8-3-2.', 'Using a Power saps its owner unless the Power says otherwise. A Power that does not sap can be used again the same turn while you can pay for it.')}
     ${sec('8-4.', 'Play a summon from your hand into one of your empty slots. Summons cost no mana.')}
     ${sec('8-4-1.', 'A summon takes face-down cards off your deck as HP. It takes one card for each point of its printed HP.')}
-    ${sec('8-4-2.', 'If your deck runs out mid-way the rest come from your discard pile at random.')}
-    ${sec('8-4-3.', 'If both are empty the summon arrives short. A summon that arrives with no HP dies at once.')}
+    ${sec('8-4-2.', 'A deck that runs out midway gives the rest at random from your discard pile.')}
+    ${sec('8-4-3.', 'A summon arrives with less HP than printed when your deck and discard pile are both empty. A summon that arrives with no HP dies at once.')}
     ${sec('8-5.', 'A spell resolves from your hand and then goes to your discard pile.')}
     ${sec('8-6.', 'A field is played from your hand and stays in play. See 5-3.')}
 
@@ -4332,55 +4332,54 @@ function renderRules(): string {
     ${sec('9-1.', 'During your main step any unsapped character you control may declare an attack.')}
     ${sec('9-1-1.', 'A Stationary character never attacks. It still deals damage while defending.')}
     ${sec('9-1-2.', 'Declaring an attack saps the attacker.')}
-    ${sec('9-2.', 'You must attack an enemy summon while the enemy has one in a slot. Their leader is open only once those slots are empty.')}
+    ${sec('9-2.', 'You must attack an enemy summon while the enemy has one in a slot. You may attack their leader only once those slots are empty.')}
     ${sec('9-2-1.', 'Redirection overrides this. An enemy character with Redirection is the only legal target of your Powers, attacks, spells, and traps.')}
     ${sec('9-2-2.', 'A leader with Redirection can be attacked even with its slots full.')}
     ${sec('9-3.', 'Attacker and defender deal their attack to each other at the same time.')}
     ${sec('9-3-1.', 'A defending leader is the exception and deals nothing back. See 4-2-2.')}
 
     <h2>10. Traps</h2>
-    ${sec('10-1.', 'You never play a trap during your main step. A trap is played from your hand in a response window. This happens on your opponent&rsquo;s turn as well as your own.')}
+    ${sec('10-1.', 'Play a trap from your hand during a response window, never during your main step. A response window can open on your own turn as well as your opponent&rsquo;s.')}
     ${sec('10-2.', 'A trap costs mana like any other card. It goes to your discard pile once it resolves.')}
-    ${sec('10-3.', 'A plain trap answers attacks. A Spell Trap answers spells.')}
-    ${sec('10-4.', 'Your opponent declaring an attack opens a response window if you hold a trap that answers attacks. Spring one trap or decline.')}
+    ${sec('10-3.', 'A trap without the Spell Trap keyword answers attacks. A Spell Trap answers spells.')}
+    ${sec('10-4.', 'You get a response window when your opponent declares an attack and you hold a trap that answers attacks. Spring one trap or decline.')}
     ${sec('10-4-1.', 'Only one trap may be sprung in a battle.')}
-    ${sec('10-4-2.', 'The attack resolves once the window closes. A trap that removed either body ends the battle with no damage.')}
-    ${sec('10-5.', 'A Spell Trap answers a spell. Your opponent casting one opens a response window if you hold a Spell Trap.')}
+    ${sec('10-4-2.', 'The attack resolves once the window closes. A trap that removed either character ends the battle with no damage.')}
+    ${sec('10-5.', 'You get a response window when your opponent casts a spell and you hold a Spell Trap.')}
 
     <h2>11. HP and Damage</h2>
     ${sec('11-1.', 'A character&rsquo;s life total is the face-down cards attached to it. Each attached card is one HP.')}
     ${sec('11-1-1.', 'Damage flips face-down HP cards face up. One card flips for each point of damage.')}
     ${sec('11-1-2.', 'A character dies the moment its last face-down card flips. It does not wait for more damage.')}
     ${sec('11-2.', 'A card flipped as HP resolves its flip text before the next card flips.')}
-    ${sec('11-2-1.', 'A free flip resolves at once and happens before the death check. A free flip that puts HP back can therefore save a character from a killing blow.')}
-    ${sec('11-2-2.', 'A flip with a cost is optional and waits. You are asked to pay after the damage finishes. It is too late by then to save a character the damage killed.')}
+    ${sec('11-2-1.', 'A free flip resolves at once and happens before the death check. A free flip that puts HP back can therefore save a character the damage would otherwise kill.')}
+    ${sec('11-2-2.', 'A flip with a cost is optional and waits. You are asked to pay after the damage finishes, which is too late to save a character that damage killed.')}
     ${sec('11-2-3.', 'A flip cost may ask for mana, for cards milled off your deck, or for cards discarded from your hand.')}
     ${sec('11-3.', 'A Power Shield stops one instance of damage whatever its size. It is spent doing so.')}
-    ${sec('11-3-1.', 'Shields are checked once as the damage starts. A shield granted part-way through by a flip does not stop the rest of that damage. It is banked for the next instance.')}
+    ${sec('11-3-1.', 'Shields are checked once as the damage starts. A shield granted part-way through by a flip does not stop the rest of that damage. It stops the next instance instead.')}
     ${sec('11-4.', 'HP cards go to their controller&rsquo;s discard pile when the character leaves play.')}
 
     <h2>12. Wounds</h2>
-    ${sec('12-1.', 'A Wound is not damage. Wounds sit on a character until they convert.')}
+    ${sec('12-1.', 'A Wound sits on a character until it converts. It is not damage until then.')}
     ${sec('12-2.', 'Every second Wound converts into 1 damage. Those two Wounds are then removed.')}
-    ${sec('12-2-1.', 'Wound Amplify on the far side changes this. Every Wound converts instead of every second one.')}
 
     <h2>13. Replacing a Dead Summon</h2>
-    ${sec('13-1.', 'A summon of yours may die during your opponent&rsquo;s turn. If you hold a summon you may place one into the empty slot at once.')}
+    ${sec('13-1.', 'A summon of yours may die during your opponent&rsquo;s turn. You may place a summon from your hand into the empty slot at once.')}
     ${sec('13-1-1.', 'This follows the normal rules for playing a summon. It costs no mana and takes HP off your deck as usual.')}
     ${sec('13-1-2.', 'You may decline and leave the slot empty.')}
     ${sec('13-1-3.', 'Neither player may act until you answer.')}
     ${sec('13-2.', 'Nothing is offered for a summon that dies on your own turn. Your main step already lets you fill the slot.')}
-    ${sec('13-3.', 'An effect may shut your slots for a number of turns. You cannot replace a dead summon while they are shut.')}
+    ${sec('13-3.', 'An effect may stop you replacing dead summons for a number of turns. Section 13-1 does not apply while it lasts.')}
 
     <h2>14. Keywords</h2>
     ${sec('14-1.', 'Battlecry fires once, as its summon enters play. A summon put into a slot any other way still counts as entering.')}
-    ${sec('14-2.', 'Strike fires when its summon declares an attack, before the clash resolves.')}
-    ${sec('14-3.', 'Reborn returns the body to its slot with 1 HP the first time it would die, once per body. That death reaches no zone and charges no debt, so nothing answering a Deathrattle answers it.')}
-    ${sec('14-4.', 'Frenzy fires the first time its body takes damage and survives, once per body. A body that dies to the hit never frenzies.')}
-    ${sec('14-5.', 'Stationary never declares an attack. It still deals its strength back when something attacks it.')}
-    ${sec('14-6.', 'Redirection forces the enemy to attack this body and to aim every spell and trap at it. A leader with Redirection can be attacked even with its slots full, being the only legal target.')}
-    ${sec('14-7.', 'Spell Immunity stops any spell or trap choosing this body as a target, from either side of the table. Combat and triggers still reach it.')}
-    ${sec('14-8.', 'Effect Damage raises the damage its controller deals with spells, Powers and flips by that much. Combat damage is untouched.')}
+    ${sec('14-2.', 'Strike fires when its summon declares an attack, before the battle resolves.')}
+    ${sec('14-3.', 'Reborn returns the summon to its slot with 1 HP the first time it would die, once per summon. That death reaches no zone and charges no debt, and no Deathrattle fires for it.')}
+    ${sec('14-4.', 'Frenzy fires the first time its summon takes damage and survives, once per summon. A summon that dies to the hit never frenzies.')}
+    ${sec('14-5.', 'A Stationary character never declares an attack. It still deals its attack back when something attacks it.')}
+    ${sec('14-6.', 'Redirection forces the enemy to attack this character and to aim every spell and trap at it. A leader with Redirection is the only legal target, so you may attack it even with its slots full.')}
+    ${sec('14-7.', 'Spell Immunity stops any spell or trap from targeting this character, from either side of the table. Combat and triggers still reach it.')}
+    ${sec('14-8.', 'Effect Damage raises the damage its controller deals with spells, Powers and flips by that much. It does not change combat damage.')}
     ${sec('14-9.', 'Scry N looks at the top N cards of your deck, takes the first match to your hand, and puts the rest on the bottom.')}
     ${sec('14-10.', 'Mill moves cards from the top of a deck into its discard pile.')}
     ${sec('14-11.', 'Healing a character turns its flipped HP cards back face down. Healing debt lowers the debt counter instead.')}
