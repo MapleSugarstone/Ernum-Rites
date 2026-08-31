@@ -139,9 +139,14 @@ export class NetClient {
     socket.addEventListener(
       'close',
       () => {
+        const wasLive = this.status.connected;
         this.status.connected = false;
         if (this.pingTimer !== null) window.clearInterval(this.pingTimer);
         this.pingTimer = null;
+        // A quiet close carries no error event: the network went away or the
+        // server hung up. Left unreported, the board keeps taking clicks that
+        // go nowhere; surfaced, the player learns the moment it happens.
+        if (wasLive) this.handlers.onError('the connection closed');
       },
       on,
     );
@@ -169,6 +174,11 @@ export class NetClient {
   play(action: Action): { ok: true } | { ok: false; reason: string } {
     if (!this.mirror || this.status.seat === null) {
       return { ok: false, reason: 'not in a match' };
+    }
+    // A dead socket would take the action without a sound: send() only writes
+    // to an open one. Refusing here surfaces the loss on the very first click.
+    if (this.socket?.readyState !== WebSocket.OPEN) {
+      return { ok: false, reason: 'The connection is down.' };
     }
     const trial = applyAction(this.mirror, this.status.seat, action);
     if (!trial.ok) return { ok: false, reason: trial.error };

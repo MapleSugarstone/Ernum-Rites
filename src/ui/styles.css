@@ -5146,12 +5146,15 @@ body.mobile .setup .mixer {
   border: 0;
   cursor: pointer;
 }
-/* The groove is as thick as the knob riding in it, one full bar end to end. */
+/* The groove is as thick as the knob riding in it, one full bar end to end.
+   The knob wears the same glass the chrome does: a white sheen falling off over
+   the selection orange, so it reads as the theme's glass rather than a flat pill. */
 .oppslider::-webkit-slider-runnable-track {
   height: 18px;
   border-radius: 999px;
   background: var(--surface-2);
   border: 1px solid var(--line);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.28);
 }
 .oppslider::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -5159,21 +5162,38 @@ body.mobile .setup .mixer {
   height: 18px;
   margin-top: -1px;
   border-radius: 999px;
-  background: var(--select);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.34) 0%,
+      rgba(255, 255, 255, 0.06) 48%,
+      rgba(0, 0, 0, 0.14) 100%
+    ),
+    var(--select);
   border: 1px solid var(--ink);
+  box-shadow: var(--sheen), 0 2px 5px rgba(0, 0, 0, 0.3);
 }
 .oppslider::-moz-range-track {
   height: 18px;
   border-radius: 999px;
   background: var(--surface-2);
   border: 1px solid var(--line);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.28);
 }
 .oppslider::-moz-range-thumb {
   width: 52px;
   height: 18px;
   border-radius: 999px;
-  background: var(--select);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.34) 0%,
+      rgba(255, 255, 255, 0.06) 48%,
+      rgba(0, 0, 0, 0.14) 100%
+    ),
+    var(--select);
   border: 1px solid var(--ink);
+  box-shadow: var(--sheen), 0 2px 5px rgba(0, 0, 0, 0.3);
 }
 body.mobile .oppslider {
   width: 60%;

@@ -2613,12 +2613,12 @@ function syncOppSlider(): void {
 }
 
 let slideAnim: number | null = null;
-/** Where the glide is headed: a seat to chase, or a plain offset from the slider. */
-let slideGoal: { seat: number } | { x: number } | null = null;
+/** Where the glide is headed: a seat to chase, or a plain offset. */
+let slideGoal: { seat: number } | { x: number; fromKnob?: boolean } | null = null;
 
 /** Whether the glide is chasing the slider's knob, so nothing rewrites the knob. */
 function sliderDriving(): boolean {
-  return slideGoal !== null && 'x' in slideGoal;
+  return slideGoal !== null && 'x' in slideGoal && !!slideGoal.fromKnob;
 }
 
 /**
@@ -2665,7 +2665,7 @@ function stepOppSlide(): void {
   slideAnim = requestAnimationFrame(stepOppSlide);
 }
 
-function glideOppRow(goal: { seat: number } | { x: number }): void {
+function glideOppRow(goal: { seat: number } | { x: number; fromKnob?: boolean }): void {
   slideGoal = goal;
   if (slideAnim === null) slideAnim = requestAnimationFrame(stepOppSlide);
 }
@@ -4726,6 +4726,7 @@ function netClient(): NetClient {
     onSeated(seat, _kind, code) {
       ui.online.seat = seat;
       ui.online.roomCode = code ?? ui.online.roomCode;
+      desyncStrikes = 0;
       render();
     },
     onWaiting(players, code, needed, names) {
@@ -4818,11 +4819,23 @@ function netClient(): NetClient {
       failOnline(reason);
     },
     onDesync() {
-      failOnline('This client fell out of step with the room.');
+      // The push that exposed the drift also carried the room's copy, and the
+      // mirror already took it, so staying seated costs nothing. Leaving would
+      // cost plenty: in a party room a closed socket is a concession. Only a
+      // client that keeps on drifting is truly broken and goes back out.
+      desyncStrikes++;
+      if (desyncStrikes >= 3) {
+        failOnline('This client fell out of step with the room.');
+      } else {
+        popNotice('Out of step', 'Resynced with the room', 'bad');
+      }
     },
   });
   return net;
 }
+
+/** Digest disagreements this match. One is survivable; a streak is a bug. */
+let desyncStrikes = 0;
 
 /** Drop back to the lobby with something to read. */
 function failOnline(reason: string): void {
@@ -4908,10 +4921,18 @@ function leaveOnline(): void {
 // --- dispatch ---------------------------------------------------------------
 
 function dispatch(action: Action): void {
+  if (!ui.state) return;
   // Conceding is not a play and is not gated on the turn: the engine settles it
   // before it asks whose turn it is, and a player who wants out should not have
   // to wait for their opponent to finish.
-  if (!ui.state || (!canAct() && action.type !== 'CONCEDE')) return;
+  if (!canAct() && action.type !== 'CONCEDE') {
+    // A picker can outlive the turn it was built in: a push can hand the wait
+    // to another player between opening it and clicking the target. Swallowing
+    // the click here reads as a dead button, so say what is being waited on.
+    ui.error = 'Waiting on another player.';
+    render();
+    return;
+  }
   // Online, the room decides. This side sends and waits for the push rather
   // than moving its own copy on ahead of the authority.
   if (ui.online.phase === 'playing' && net) {
@@ -6202,7 +6223,7 @@ root.addEventListener('input', (ev) => {
     const row = document.querySelector<HTMLElement>('.opprow');
     if (row) {
       const room = row.scrollWidth - row.clientWidth;
-      glideOppRow({ x: (Number((el as HTMLInputElement).value) / 1000) * room });
+      glideOppRow({ x: (Number((el as HTMLInputElement).value) / 1000) * room, fromKnob: true });
     }
     return;
   }
@@ -6298,6 +6319,27 @@ window.addEventListener(
     }
   },
   true,
+);
+
+// The table has no up-and-down scrolling, so over the board the wheel looks
+// along it instead, riding the same glide as everything else. Sideways
+// trackpad panning keeps its native handling on the row itself.
+root.addEventListener(
+  'wheel',
+  (ev) => {
+    if (!ui.state || !isParty(ui.state)) return;
+    if (!(ev.target instanceof HTMLElement) || !ev.target.closest('#board')) return;
+    if (Math.abs(ev.deltaX) > Math.abs(ev.deltaY)) return;
+    const row = document.querySelector<HTMLElement>('.opprow');
+    if (!row || row.scrollWidth <= row.clientWidth) return;
+    ev.preventDefault();
+    // Line-mode deltas (Firefox wheels) arrive in rows rather than pixels.
+    const step = (ev.deltaMode === 1 ? ev.deltaY * 33 : ev.deltaY) * 1.2;
+    const base = slideGoal && 'x' in slideGoal ? slideGoal.x : row.scrollLeft;
+    const room = row.scrollWidth - row.clientWidth;
+    glideOppRow({ x: Math.max(0, Math.min(room, base + step)) });
+  },
+  { passive: false },
 );
 
 root.addEventListener('click', (ev) => {
