@@ -1740,7 +1740,7 @@ function playSmack(): void {
     shell.className = 'smackfly';
     shell.style.cssText =
       `left:${a.left}px;top:${a.top}px;width:${a.width}px;height:${a.height}px;` +
-      `--cw:${a.width}px;--cw-board:${a.width}px`;
+      `--cw:${a.width}px;--cw-board:${a.width}px;--cwn-board:${a.width}`;
     shell.appendChild(atk.cloneNode(true));
     document.body.appendChild(shell);
     atk.style.visibility = 'hidden';
@@ -3250,6 +3250,7 @@ function renderHand(): void {
   // and grows with the turn. The table's own scale is out of it for the same
   // reason, so nothing here needs dividing back.
   el.style.removeProperty('--cw-hand');
+  el.style.removeProperty('--cwn-hand');
   const natural =
     document.querySelector<HTMLElement>('#hand .handrail .card')?.offsetWidth || 112;
   // The fan is centred on the lane, not on the window, so the room it has is
@@ -3272,6 +3273,7 @@ function renderHand(): void {
     const afford = (room - FAN_AIR * (n - 1)) / (1 + ((1 + HOVER_GROW) / 4) * (n - 1));
     cardW = Math.max(MIN_HAND_CW, Math.min(natural, afford));
     el.style.setProperty('--cw-hand', `${Math.round(cardW)}px`);
+    el.style.setProperty('--cwn-hand', String(Math.round(cardW)));
   }
   // Width of the fan is cardW + (n - 1) * (cardW + overlap). The loosest spacing
   // that fits wins, never looser than seven tenths of a card and never tighter
@@ -3468,6 +3470,7 @@ function syncWell(): void {
   // Measured against a lane drawn at the size it wants, not at a cap left over
   // from the last window size.
   root.style.removeProperty('--board-cap');
+  root.style.removeProperty('--board-cap-n');
   const first = wellRoom();
   if (!first) return;
   let { room } = first;
@@ -3485,11 +3488,13 @@ function syncWell(): void {
     const fits = tall - (WELL_MIN - room);
     if (tall > 0 && fits > 0) {
       root.style.setProperty('--board-cap', `${Math.floor((wide * fits) / tall)}px`);
+      root.style.setProperty('--board-cap-n', String(Math.floor((wide * fits) / tall)));
       room = wellRoom()?.room ?? room;
     }
   }
   // The well is the card it holds plus its own padding.
   root.style.setProperty('--well-room', `${Math.max(0, Math.round(room - WELL_PAD))}px`);
+  root.style.setProperty('--well-room-n', String(Math.max(0, Math.round(room - WELL_PAD))));
 }
 
 /** What the lane leaves the well on the tighter of the two sides. */
@@ -5888,6 +5893,7 @@ function spawnGhost(src: HTMLElement, x: number, y: number): void {
   // transition must go, or the ghost animates in from the viewport corner.
   el.style.cssText += `;position:fixed;left:0;top:0;width:${r.width}px;height:${r.height}px;margin:0;pointer-events:none;z-index:999;transition:none;`;
   el.style.setProperty('--cw', `${r.width}px`);
+  el.style.setProperty('--cwn', String(r.width));
   document.body.appendChild(el);
   // Hover effects on the cards left behind would fight the drag for attention.
   document.body.classList.add('dragging');
@@ -6167,7 +6173,20 @@ root.addEventListener('pointerdown', (ev) => {
   if (handEl) startPlayDrag(ev, handEl);
 });
 
+/**
+ * The stylesheet needs the viewport as plain numbers: the unitless card-width
+ * twins that drive --cardscale are number arithmetic, and CSS cannot turn vh
+ * or vw into a number on every browser this game meets.
+ */
+function syncViewport(): void {
+  const root = document.documentElement.style;
+  root.setProperty('--vwn', String(window.innerWidth));
+  root.setProperty('--vhn', String(window.innerHeight));
+}
+
 window.addEventListener('resize', () => {
+  // First: everything measured below sits downstream of the card sizes.
+  syncViewport();
   const wasMobile = document.body.classList.contains('mobile');
   syncLayout();
   // Crossing into the phone layout changes the size a held card is drawn at, and
@@ -6771,6 +6790,7 @@ document.addEventListener('visibilitychange', () => {
   void warmArt(packArt);
 });
 
+syncViewport();
 render();
 void prepareFrames(BASE).then(render);
 onTintReady(render);

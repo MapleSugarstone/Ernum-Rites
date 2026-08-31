@@ -161,6 +161,17 @@
   --cw-board: clamp(50px, min(calc(23vh - 95px), var(--board-cap, 104px)), 104px);
   --cw-hand: clamp(100px, 15.5vh, 132px);
   --cw-big: 232px;
+  /* Unitless twins of the card widths, for --cardscale. Safari miscomputes the
+     tan(atan2()) trick that once turned the length into the number a scale
+     needs, flipping and shrinking every card interior, so each width that
+     scales an interior is written twice: the length above, the number below,
+     same formula. The vh and vw terms read --vwn/--vhn, the viewport in pixels
+     that syncViewport keeps on the root. */
+  --vwn: 1280;
+  --vhn: 800;
+  --cwn-board: clamp(50, min(calc(23 * var(--vhn) / 100 - 95), var(--board-cap-n, 104)), 104);
+  --cwn-hand: clamp(100, calc(15.5 * var(--vhn) / 100), 132);
+  --cwn-big: 232;
   /* The size every card is laid out at before it is scaled to where it sits.
      Text on a card runs to a couple of pixels at the sizes these are drawn, and
      a browser with a minimum font size set rewrites anything under it, which
@@ -899,6 +910,7 @@ button.on {
 }
 .histpop .card {
   --cw: 132px;
+  --cwn: 132;
   cursor: default;
 }
 .histpop p {
@@ -1302,6 +1314,7 @@ button.on {
      the board crops what does not fit. --well-room is what the lane actually
      left, measured after layout, and the well takes whichever is smaller. */
   --sw: clamp(38px, min(calc(38px + (100vh - 720px) * 0.136), var(--well-room, 80px)), 80px);
+  --swn: clamp(38, min(calc(38 + (var(--vhn) - 720) * 0.136), var(--well-room-n, 80)), 80);
   width: 74%;
   margin: 0 auto;
   height: calc(var(--sw) + 6px);
@@ -1374,6 +1387,7 @@ button.on {
 }
 .support .card {
   --cw: var(--sw);
+  --cwn: var(--swn);
   position: absolute;
   left: 50%;
   top: 50%;
@@ -1472,10 +1486,13 @@ button.on {
 
 .card {
   --cw: var(--cw-board);
+  --cwn: var(--cwn-board);
   /* How far the fixed-size interior has to shrink to reach this card's width.
-     tan(atan2()) is how a length is turned into the plain number a scale needs,
-     since calc cannot divide one length by another. */
-  --cardscale: calc(tan(atan2(var(--cw), 1px)) / var(--card-design-w));
+     Computed from the width's unitless twin, since calc cannot divide one
+     length by another and the tan(atan2()) trick that can comes out flipped
+     and tiny on Safari. Every rule and every script that overrides --cw must
+     override --cwn with the same value. */
+  --cardscale: calc(var(--cwn) / var(--card-design-w));
   position: relative;
   width: var(--cw);
   height: calc(var(--cw) * var(--card-ratio));
@@ -1817,6 +1834,7 @@ body.dragging .bookgrid .card {
 }
 .debtpick .card {
   --cw: 110px;
+  --cwn: 110;
 }
 
 /* Sapping as part of a power's cost, printed beside the mana pips. */
@@ -2112,6 +2130,7 @@ body.dragging .bookgrid .card {
 /* The card inside the flip prompt, its flip line lit while the offer stands. */
 .flipprompt .card {
   --cw: 132px;
+  --cwn: 132;
   cursor: default;
 }
 .flipfocus .fliptext {
@@ -2169,6 +2188,7 @@ body.dragging .bookgrid .card {
 /* Overlap keeps the row the same width no matter how many cards are held. */
 .handrail .card {
   --cw: var(--cw-hand);
+  --cwn: var(--cwn-hand);
   margin-right: var(--overlap, -46px);
   transform-origin: 50% 120%;
   /* --fx is where this card sat before the hand changed size, handed back by
@@ -2255,6 +2275,7 @@ body.dragging .bookgrid .card {
 }
 .inspector .card {
   --cw: var(--cw-big);
+  --cwn: var(--cwn-big);
   cursor: default;
 }
 /* What is working on the previewed body: one portrait per card, with what it is
@@ -2415,6 +2436,7 @@ body.dragging .bookgrid .card {
 }
 .prompt.binspect .card {
   --cw: min(48vh, 74vw);
+  --cwn: min(calc(48 * var(--vhn) / 100), calc(74 * var(--vwn) / 100));
   cursor: default;
 }
 
@@ -2907,6 +2929,7 @@ body.mobile .modes .mixer {
 }
 .bcell .card {
   --cw: var(--cw-hand);
+  --cwn: var(--cwn-hand);
 }
 /* The collection owns two of everything; the copies still unspent draw as a
    stack of card backs behind the face. */
@@ -3174,6 +3197,7 @@ body.mobile .modes .mixer {
 }
 .leaderbox .card {
   --cw: 118px;
+  --cwn: 118;
   cursor: grab;
   flex: none;
 }
@@ -3415,7 +3439,7 @@ body.mobile .modes .mixer {
   .buildwrap { max-width: 100vw; min-width: 0; }
   /* A narrower rail, so the book keeps a usable number of columns. */
   .bmain { grid-template-columns: minmax(0, 1fr) 268px; gap: 10px; padding: 10px; }
-  .leaderbox .card { --cw: 92px; }
+  .leaderbox .card { --cw: 92px; --cwn: 92; }
   /* The 150px floor is wider than the cards themselves here, which cost a whole
      column to padding. Tightened to just over a card. */
   .bookgrid { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 14px 6px; }
@@ -4248,6 +4272,7 @@ body.mobile .modes .mixer {
 }
 .trapreveal .card {
   --cw: var(--cw-big);
+  --cwn: var(--cwn-big);
   cursor: default;
   animation: trappop 320ms cubic-bezier(0.2, 1.4, 0.4, 1) both;
   filter: drop-shadow(0 18px 40px rgba(13, 26, 31, 0.55));
@@ -4433,6 +4458,7 @@ body.mobile .modes .mixer {
    clicking it takes it, with no confirm step. */
 .prompt.choice .revealgrid .card {
   --cw: var(--cw-hand);
+  --cwn: var(--cwn-hand);
 }
 .revealgrid .card.targetable {
   cursor: pointer;
@@ -4835,6 +4861,7 @@ body.mobile .topbar .themeset {
    of a board card. */
 .cardzoom .card {
   --cw: min(86vw, calc((100vh - 150px) / var(--card-ratio)));
+  --cwn: min(calc(86 * var(--vwn) / 100), calc((var(--vhn) - 150) / var(--card-ratio)));
   cursor: default;
 }
 .cardzoom button {
@@ -4864,6 +4891,7 @@ body.mobile {
   --enemyhand-h: 74px;
   --ehcard-w: 46px;
   --cw-hand: clamp(84px, 13vh, 112px);
+  --cwn-hand: clamp(84, calc(13 * var(--vhn) / 100), 112);
   --rail-w: 0px;
   /* Card size is normally set by viewport height, which is right on a desktop
      where height is what runs out first. On a phone width runs out first, so the
@@ -4873,6 +4901,7 @@ body.mobile {
      unit carries beyond its card. Floored so it stops shrinking before it stops
      being a card. */
   --cw-board: min(clamp(44px, 9.5vh, 74px), max(40px, calc((100vw - 150px) / 6.05)));
+  --cwn-board: min(clamp(44, calc(9.5 * var(--vhn) / 100), 74), max(40, calc((var(--vwn) - 150) / 6.05)));
 }
 
 /* Everything the width budget above accounts for, tightened to earn the room. */
