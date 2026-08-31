@@ -58,7 +58,7 @@ import {
   targetCandidates,
   type DeckList,
 } from './engine/engine';
-import { canBeLeader, colorsOf, deckIdentity, isLegalUnder } from './engine/identity';
+import { canBeLeader, colorsOf, deckIdentity } from './engine/identity';
 import { allCards, card, tryCard } from './engine/registry';
 import {
   allSummons,
@@ -118,6 +118,7 @@ import {
   syncDropdowns,
 } from './ui/dropdown';
 import { currentTheme, initTheme, setTheme, type Theme } from './ui/theme';
+import { loadPrefs, savePrefs } from './ui/prefs';
 
 // --- ui state ---------------------------------------------------------------
 
@@ -239,6 +240,25 @@ const ui: Ui = {
   preloading: false,
   zoom: null,
 };
+
+/**
+ * The name and deck picks kept from the last visit. A deck that has been
+ * deleted since, or a name the room would now turn away, is left behind rather
+ * than restored into a menu the player cannot start a match from.
+ */
+function restorePrefs(): void {
+  const saved = loadPrefs();
+  if (saved.name !== null && nameProblem(saved.name) === null) ui.online.name = saved.name;
+  const known = (key: string | null): key is string =>
+    key !== null && [...everyDeck, ...savedDeckList()].some((d) => d.key === key);
+  if (known(saved.picks[0])) ui.picks[0] = saved.picks[0];
+  if (known(saved.picks[1])) ui.picks[1] = saved.picks[1];
+}
+
+/** Called wherever the name or a pick changes, which is the only way either moves. */
+function rememberPrefs(): void {
+  savePrefs({ name: ui.online.name, picks: [ui.picks[0], ui.picks[1]] });
+}
 
 const root = document.getElementById('app')!;
 const BASE = import.meta.env.BASE_URL;
@@ -980,6 +1000,19 @@ function corpseKey(ref: TargetRef): string {
   return ref.kind;
 }
 
+/** Ids `player`'s discard pile gained this action, in pile order. */
+function discardGains(prev: GameState, next: GameState, player: PlayerIdx): string[] {
+  const counts = new Map<string, number>();
+  for (const id of prev.players[player].discard) counts.set(id, (counts.get(id) ?? 0) + 1);
+  const out: string[] = [];
+  for (const id of next.players[player].discard) {
+    const left = counts.get(id) ?? 0;
+    if (left > 0) counts.set(id, left - 1);
+    else out.push(id);
+  }
+  return out;
+}
+
 function computeFlipFx(prev: GameState, next: GameState): void {
   flipFx = new Map();
   effectCallouts = [];
@@ -1039,6 +1072,10 @@ function computeDeckGifts(prev: GameState, next: GameState): void {
     const now = new Map<string, number>();
     for (const id of next.players[player].deck) now.set(id, (now.get(id) ?? 0) + 1);
     for (const [cardId, count] of now) {
+      // A redacted deck is all placeholders, and anything shuffled back into it
+      // (a scry's leftovers, a recycled discard) reads as the placeholder count
+      // growing. That is churn rather than a gift, and nothing worth flying in.
+      if (cardId === HIDDEN_ID) continue;
       const gained = count - (was.get(cardId) ?? 0);
       if (gained > 0) deckGiftFx.push({ player, cardId, count: gained });
     }
@@ -1062,39 +1099,51 @@ function computeCorpses(prev: GameState, next: GameState): void {
     const prevOwner = prev.players[summon.owner];
     // Back to its owner's hand rather than dead: it departs instead of crumbling.
     const bounced = count(owner.hand, summon.cardId) > count(prevOwner.hand, summon.cardId);
-    // The killing damage flipped whatever was still face down, unless the cards
-    // themselves were moved to another summon: only ones that reached the
-    // discard pile really turned over here.
-    const newlyDiscarded = new Map<string, number>();
-    for (const id of owner.discard) newlyDiscarded.set(id, (newlyDiscarded.get(id) ?? 0) + 1);
-    for (const id of prevOwner.discard) {
-      const n = newlyDiscarded.get(id) ?? 0;
-      if (n > 1) newlyDiscarded.set(id, n - 1);
-      else newlyDiscarded.delete(id);
+    // What the death sent to this owner's discard, in pile order. Online the
+    // face-down cards were redacted, so their real identities are read back out
+    // of where they landed: the already-flipped cards match themselves out of
+    // the pool first, and the hidden ones take what remains in order, which is
+    // the order the fan was discarded in.
+    const gained = discardGains(prev, next, summon.owner);
+    for (const h of summon.hp) {
+      if (!h.flipped || h.cardId === HIDDEN_ID) continue;
+      const at = gained.indexOf(h.cardId);
+      if (at >= 0) gained.splice(at, 1);
     }
+    const faceOf = (hdef: CardDef) =>
+      `<span class="hart" style="${artCss(hdef)}"></span><img decoding="sync" class="hframe" src="${frameUrl(hdef)}" alt="" draggable="false">`;
     const minis = summon.hp
       .map((h) => {
-        const hdef = tryCard(h.cardId);
-        const face = hdef
-          ? `<span class="hart" style="${artCss(hdef)}"></span><img decoding="sync" class="hframe" src="${frameUrl(hdef)}" alt="" draggable="false">`
-          : '';
+        // The killing damage flipped whatever was still face down, unless the
+        // cards themselves were moved to another summon: only ones that reached
+        // the discard pile really turned over here.
         if (!h.flipped && !bounced) {
-          const left = newlyDiscarded.get(h.cardId) ?? 0;
-          if (left > 0) {
-            newlyDiscarded.set(h.cardId, left - 1);
-            if (hdef?.flip && !hdef.flipCost) {
+          let realId: string | null = null;
+          if (h.cardId === HIDDEN_ID) {
+            realId = gained.shift() ?? null;
+          } else {
+            const at = gained.indexOf(h.cardId);
+            if (at >= 0) {
+              gained.splice(at, 1);
+              realId = h.cardId;
+            }
+          }
+          const hdef = realId ? tryCard(realId) : null;
+          if (realId && hdef) {
+            if (hdef.flip && !hdef.flipCost) {
               effectCallouts.push({
                 ref,
-                cardId: h.cardId,
+                cardId: realId,
                 says: hdef.flipText ?? '',
                 order: effectCallouts.length,
               });
             }
-            return `<span class="hpmini flipnow"><span class="flin"><span class="fback"></span><span class="fface">${face}</span></span></span>`;
+            return `<span class="hpmini flipnow"><span class="flin"><span class="fback"></span><span class="fface">${faceOf(hdef)}</span></span></span>`;
           }
         }
         if (!h.flipped) return `<span class="hpmini back"></span>`;
-        return `<span class="hpmini face">${face}</span>`;
+        const hdef = tryCard(h.cardId);
+        return `<span class="hpmini face">${hdef ? faceOf(hdef) : ''}</span>`;
       })
       .join('');
     const n = summon.hp.length;
@@ -1294,10 +1343,15 @@ function applyActionFx(
       effectCallouts = effectCallouts.filter((c) => refKey(c.ref) !== dkey);
     }
   }
-  trapFx =
-    action.type === 'CAST_TRAP' && prev.pending
-      ? (prev.players[prev.pending.player].hand[action.handIndex] ?? null)
-      : null;
+  // An enemy's hand is redacted, but a sprung trap is public the moment it
+  // goes off, so it is read back out of wherever it landed rather than shown
+  // as a face-down card popping up.
+  if (action.type === 'CAST_TRAP' && prev.pending) {
+    const sprung = playedCardId(prev, next, action, prev.pending.player, action.handIndex);
+    trapFx = sprung && sprung !== HIDDEN_ID ? sprung : null;
+  } else {
+    trapFx = null;
+  }
   freshLogFrom = prev.log.length;
   recordLogGroups(next, action);
   // Last, so it can read everything the passes above worked out.
@@ -1854,10 +1908,15 @@ function playedCardId(
       return p.supporters.at(-1)?.cardId ?? null;
     case 'PLAY_STAGE':
       return p.stage;
-    // A spell or a trap is spent, and spent cards land in the discard.
+    // A spell or a trap is spent, and spent cards land in the discard. Not
+    // necessarily last: a battle trap resolves the clash after it is spent,
+    // and the clash can discard more, so the gain of the right type is the one.
     case 'CAST_SPELL':
-    case 'CAST_TRAP':
-      return p.discard.at(-1) ?? null;
+    case 'CAST_TRAP': {
+      const want = action.type === 'CAST_TRAP' ? 'trap' : 'spell';
+      const gained = discardGains(prev, next, actor);
+      return gained.find((id) => tryCard(id)?.type === want) ?? p.discard.at(-1) ?? null;
+    }
     default:
       return null;
   }
@@ -3907,6 +3966,18 @@ function render(): void {
     // collapses into a caret blinking in whatever gets built in its place.
     window.getSelection()?.removeAllRanges();
   }
+  // The stray blinking caret: a click on static text leaves a collapsed
+  // selection behind, and every innerHTML rebuild re-lands it somewhere new,
+  // where it is painted as a caret blinking in the middle of nothing. Collapsed
+  // means nothing is highlighted, so there is nothing to preserve and it is
+  // swept every paint. A real highlight is left alone, and so is a field being
+  // typed in, whose caret lives inside the input rather than in this selection.
+  const active = document.activeElement;
+  const typing = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement;
+  const stray = window.getSelection();
+  if (!typing && stray && stray.isCollapsed && stray.rangeCount > 0) {
+    stray.removeAllRanges();
+  }
   // Every screen, not just the table: the setup list has to fit too.
   syncLayout();
   document.body.classList.toggle('party', !!ui.state && isParty(ui.state));
@@ -4587,7 +4658,7 @@ function onlineAvailable(): boolean {
  */
 let net: NetClient | null = null;
 /** Kept so a cancel can take the room out of the queue rather than orphan it. */
-let pendingRoom: { roomId: string; code?: string } | null = null;
+let pendingRoom: { roomId: string; code?: string; hosted?: boolean } | null = null;
 
 /** The clock the room last sent, watched so the last ten seconds can be heard. */
 let onlineClock: Clock | null = null;
@@ -4781,10 +4852,8 @@ function netClient(): NetClient {
       // card it entered as rather than flashing straight to its answer.
       beginLeaderReform(ui.state);
       render();
-      // Warmed on every push rather than once: a warm is a no-op while every
-      // image is held, and it is the retry for anything a failed fetch dropped.
-      if (opening) matchWarm = onlineArtPaths(state);
-      void warmArt(matchWarm);
+      // A no-op while every image is held; the retry for any failed fetch.
+      void warmArt(packArt);
       if (opening) {
         playOpeningDraw(seat);
         return;
@@ -4917,7 +4986,7 @@ async function startOnline(how: 'public' | 'host' | 'join'): Promise<void> {
     failOnline(reply.reason);
     return;
   }
-  pendingRoom = { roomId: reply.roomId, code: reply.code };
+  pendingRoom = { roomId: reply.roomId, code: reply.code, hosted: how === 'host' };
   o.roomCode = reply.code ?? null;
   o.phase = 'connecting';
   render();
@@ -4925,16 +4994,18 @@ async function startOnline(how: 'public' | 'host' | 'join'): Promise<void> {
   const saved = savedDecks().find((d) => d.key === o.deckKey);
   const deck = saved ? { leaderId: saved.leaderId, cards: saved.cards } : undefined;
   client.connect(reply.roomId, reply.kind, o.deckKey, o.name.trim(), reply.code, deck);
-  // The wait for an opponent is dead air, so this side's own art downloads now
-  // rather than racing the opening push.
-  const mine = [...everyDeck, ...savedDeckList()].find((d) => d.key === o.deckKey);
-  if (mine) void warmArt(matchArtPaths([mine]));
+  // The wait for an opponent is dead air, so anything the boot warm missed
+  // downloads now rather than racing the opening push.
+  void warmArt(packArt);
 }
 
 /** Leave cleanly, so a half-made room does not sit in the queue. */
 function leaveOnline(): void {
   if (pendingRoom && ui.online.phase !== 'playing') {
-    void net?.cancelQueue(pendingRoom.roomId, pendingRoom.code);
+    // Only the host's cancel retires the code. A guest backing out of a party
+    // lobby holds the same code as everyone else, and sending it here would
+    // kill the lobby for every player still on their way.
+    void net?.cancelQueue(pendingRoom.roomId, pendingRoom.hosted ? pendingRoom.code : undefined);
   }
   net?.close();
   pendingRoom = null;
@@ -5360,6 +5431,7 @@ function handleBuilderCommand(cmd: string): boolean {
       b.saving = null;
       if (playing) {
         ui.picks = [key, ui.picks[1]];
+        rememberPrefs();
         ui.screen = 'setup';
       }
       break;
@@ -5376,6 +5448,7 @@ function handleBuilderCommand(cmd: string): boolean {
       // A pick pointing at a deleted deck would make Start match throw.
       if (ui.picks[0] === arg) ui.picks[0] = 'deepcurrent';
       if (ui.picks[1] === arg) ui.picks[1] = 'emberchoir';
+      rememberPrefs();
       break;
     case 'bexport-deck':
       download(`${b.name.replace(/[^\w-]+/g, '-').toLowerCase() || 'deck'}.txt`, deckMarkdown(b), 'text/plain');
@@ -5411,13 +5484,14 @@ function handleBuilderCommand(cmd: string): boolean {
   return true;
 }
 
-/** Art already sitting in the browser's cache, by path. */
 /**
  * Every warmed image, held for the life of the page. Holding the paths alone is
  * not enough: once the loader's own Image goes out of scope the browser is free
- * to drop the decoded bitmap, and every render rebuilds the board from HTML, so
- * the fresh <img> has to decode again and the card blinks. The whole pack is
- * about a megabyte and a half, so keeping all of it costs less than the flicker.
+ * to drop what it fetched, and every render rebuilds the board from HTML, so a
+ * dropped sheet leaves cards flipping over transparent while it refetches. What
+ * a held image pins is the encoded bytes, under a megabyte for the whole pack;
+ * the decoded bitmaps stay the browser's to manage, and a sheet it re-decodes
+ * comes off the pinned bytes without touching the network.
  */
 const warmedArt = new Map<string, HTMLImageElement>();
 
@@ -5447,31 +5521,8 @@ function warmArt(paths: string[]): Promise<void> {
   return Promise.all(jobs).then(() => undefined);
 }
 
-/**
- * Every image this match could show: both decks and leaders, the cards the game
- * can create mid-match (curses, fusions), and the keyword overlays.
- */
-function matchArtPaths(decks: DeckList[]): string[] {
-  const ids = new Set<string>();
-  for (const d of decks) {
-    ids.add(d.leaderId);
-    for (const id of d.cards) ids.add(id);
-  }
-  for (const def of allCards()) if (def.uncollectible) ids.add(def.id);
-  // One entry per sheet the two decks touch rather than one per card: the cards
-  // are cells of those sheets, so warming the sheet warms all of them at once.
-  const arts: string[] = [];
-  for (const id of ids) {
-    const art = tryCard(id)?.art;
-    if (art) arts.push(art);
-  }
-  const paths: string[] = sheetsFor(arts);
-  paths.push(...MATCH_EXTRAS);
-  return paths;
-}
-
 /** Overlays, tokens and pips any match can show, whatever the decks are. */
-const MATCH_EXTRAS: string[] = [
+const PACK_EXTRAS: string[] = [
   'Cardgame/Extras/PowerShield.png',
   'Cardgame/Extras/Deathrattle.png',
   'Cardgame/Extras/Locked.png',
@@ -5484,31 +5535,21 @@ const MATCH_EXTRAS: string[] = [
 ];
 
 /**
- * Every image an online match could show. The room redacts both decks, so the
- * cards cannot be listed the way a local match's can; what is knowable is each
- * leader, and a leader's identity bounds what its deck may legally run. Every
- * sheet those cards sit on covers whatever the match goes on to reveal.
+ * Every image the game can show: each sheet, any drawing on no sheet, and the
+ * shared extras. Warmed once at boot and held from then on, so no card ever
+ * flips over transparent waiting for a fetch. Re-warming it is a no-op while
+ * everything is held, which is what lets each state push and each return to a
+ * visible tab retry whatever a flaky connection dropped.
  */
-function onlineArtPaths(state: GameState): string[] {
-  const identities = state.players.map((p) => deckIdentity(p.leaderCardId));
+function allArtPaths(): string[] {
   const arts: string[] = [];
-  for (const def of allCards()) {
-    if (!def.art) continue;
-    if (def.uncollectible || identities.some((identity) => isLegalUnder(def, identity))) {
-      arts.push(def.art);
-    }
-  }
+  for (const def of allCards()) if (def.art) arts.push(def.art);
   const paths: string[] = sheetsFor(arts);
-  paths.push(...MATCH_EXTRAS);
+  paths.push(...PACK_EXTRAS);
   return paths;
 }
 
-/**
- * What the current match warmed. Warming it again is nearly free once every
- * image is held, so each push and each return to the tab retries whatever a
- * flaky connection failed to fetch the first time.
- */
-let matchWarm: string[] = [];
+const packArt: string[] = allArtPaths();
 
 /**
  * The opening hand is dealt rather than drawn: no action produced it, so the
@@ -5580,13 +5621,13 @@ function handleCommand(cmd: string): void {
       return { name: `${d.name} (${who})`, leaderId: d.leaderId, cards: d.cards };
     };
     const decks: [DeckList, DeckList] = [pick(ui.picks[0], 1), pick(ui.picks[1], 2)];
-    // Warm every card face first so nothing pops in mid-game; a slow network
-    // gets cut off rather than holding the match hostage.
+    // The pack warmed at boot, so this is normally instant; on a first visit
+    // still downloading, a slow network gets cut off rather than holding the
+    // match hostage.
     ui.preloading = true;
     render();
-    matchWarm = matchArtPaths(decks);
     const timeout = new Promise<void>((resolve) => setTimeout(resolve, 8000));
-    void Promise.race([warmArt(matchWarm), timeout]).then(() => {
+    void Promise.race([warmArt(packArt), timeout]).then(() => {
       ui.preloading = false;
       startMatch(decks);
     });
@@ -5598,10 +5639,12 @@ function handleCommand(cmd: string): void {
   }
   if (cmd.startsWith('pick0:')) {
     ui.picks[0] = cmd.slice(6);
+    rememberPrefs();
     return render();
   }
   if (cmd.startsWith('pick1:')) {
     ui.picks[1] = cmd.slice(6);
+    rememberPrefs();
     return render();
   }
   if (cmd === 'new-game') {
@@ -6314,6 +6357,7 @@ root.addEventListener('input', (ev) => {
   if (el.dataset.act === 'oname') {
     ui.online.name = (el as HTMLInputElement).value;
     ui.online.error = null;
+    rememberPrefs();
     const bad = nameProblem(ui.online.name);
     for (const cmd of ['o-seek', 'o-host', 'o-join']) {
       const btn = document.querySelector<HTMLButtonElement>(`[data-cmd="${cmd}"]`);
@@ -6348,6 +6392,10 @@ mountDropdowns({
     }
     if (name === 'odeck') {
       ui.online.deckKey = value;
+      // The lobby opens on player one's deck downstairs, so a pick made up here
+      // moves that same choice rather than a second one nothing would remember.
+      ui.picks[0] = value;
+      rememberPrefs();
       return render();
     }
     if (name === 'dimport') {
@@ -6693,6 +6741,7 @@ for (const [name, art] of [
 }
 
 initTheme();
+restorePrefs();
 mountGuy(BASE);
 
 // A browser will not make a sound until the page has been clicked, so the first
@@ -6719,18 +6768,17 @@ document.addEventListener('visibilitychange', () => {
   ropeTick();
   // A backgrounded tab is where the browser sheds what it can. Anything still
   // held survives that; this refetches whatever an earlier warm failed to get.
-  void warmArt(matchWarm);
+  void warmArt(packArt);
 });
 
 render();
 void prepareFrames(BASE).then(render);
 onTintReady(render);
 
-// The pack is not warmed as a whole any more. On disk it is a megabyte and a
-// half, but decoded it is closer to forty, and holding that much bitmap for the
-// handful of faces a match actually shows was what pushed the browser into
-// dropping decoded art and re-rasterising it mid-game. A local match warms its
-// own two decks and nothing else. An online match cannot read the decks, so it
-// warms every sheet its leaders' identities reach instead, which is the same
-// set of sheets those decks could legally touch.
+// The whole pack warms at boot and stays held for the life of the page. That
+// was once the thing that pushed browsers into evicting art mid-game, but that
+// was when the pack was three hundred loose faces each holding its own decoded
+// bitmap. As sheets it pins under a megabyte of encoded bytes, and the browser
+// decodes and drops the bitmaps as it pleases without ever needing the network.
+void warmArt(packArt);
 

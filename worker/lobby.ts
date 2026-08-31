@@ -20,6 +20,12 @@ interface Open {
 const OPEN_ROOM_MS = 2 * 60 * 1000;
 /** How long a private code is good for before the host has to make a new one. */
 const CODE_MS = 15 * 60 * 1000;
+/**
+ * Party lobbies gather slowly: the code makes its way around a group chat and
+ * the last player can be many minutes behind the first. So their codes start
+ * with a longer clock, and every guest who joins winds it up again.
+ */
+const PARTY_CODE_MS = 60 * 60 * 1000;
 
 /**
  * Most live codes to hold at once. Hosting is unauthenticated, so a script can
@@ -114,7 +120,7 @@ export class Lobby extends DurableObject {
     // Vanishingly unlikely, but a collision would put two matches in one room.
     while (this.codes.has(code)) code = makeCode();
     const roomId = `${size ? `prv${size}` : 'prv'}-${crypto.randomUUID()}`;
-    this.codes.set(code, { roomId, expiresAt: Date.now() + CODE_MS });
+    this.codes.set(code, { roomId, expiresAt: Date.now() + (size ? PARTY_CODE_MS : CODE_MS) });
     await this.save();
     return { roomId, code };
   }
@@ -132,7 +138,11 @@ export class Lobby extends DurableObject {
     // third player knock on a room that is already full. A party code has to
     // seat several guests, so it lives out its clock and the room's own
     // "room is full" answer turns away anyone extra.
-    if (!/^prv[34]-/.test(entry.roomId)) this.codes.delete(code.toUpperCase());
+    if (!/^prv[34]-/.test(entry.roomId)) {
+      this.codes.delete(code.toUpperCase());
+    } else {
+      entry.expiresAt = Date.now() + PARTY_CODE_MS;
+    }
     await this.save();
     return { roomId: entry.roomId };
   }

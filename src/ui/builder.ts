@@ -1,6 +1,7 @@
 import { allCards, card, tryCard } from '../engine/registry';
 import { canBeLeader, colorsOf, deckIdentity } from '../engine/identity';
 import { DECK_SIZE, counts, deckProblems } from '../engine/decklist';
+import { requestPersistence } from './prefs';
 
 export { DECK_SIZE, counts };
 import {
@@ -103,6 +104,9 @@ function readJson<T>(key: string, fallback: T): T {
 }
 
 function writeJson(key: string, value: unknown): void {
+  // Everything through here is the player keeping something, which is the one
+  // moment worth asking the browser to hold on to it.
+  void requestPersistence();
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch {
