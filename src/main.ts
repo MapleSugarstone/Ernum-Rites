@@ -2613,40 +2613,61 @@ function syncOppSlider(): void {
 }
 
 let slideAnim: number | null = null;
+/** Where the glide is headed: a seat to chase, or a plain offset from the slider. */
+let slideGoal: { seat: number } | { x: number } | null = null;
 
-function cancelOppSlide(): void {
-  if (slideAnim !== null) cancelAnimationFrame(slideAnim);
-  slideAnim = null;
+/** Whether the glide is chasing the slider's knob, so nothing rewrites the knob. */
+function sliderDriving(): boolean {
+  return slideGoal !== null && 'x' in slideGoal;
 }
 
 /**
- * Glide the carousel to the seat at `at`, one eased step a frame. Driven by
- * hand rather than scrollIntoView because a board rebuild mid-glide restores
- * the old offset and cancels a native smooth scroll; this one just re-finds
- * the seat next frame and carries on, and the slider knob rides along.
+ * One eased step a frame toward the current goal. Driven by hand rather than
+ * scroll-behavior smooth because a board rebuild mid-glide restores the old
+ * offset and cancels a native smooth scroll; this one just re-finds its goal
+ * next frame and carries on. A knob drag retargets the same glide, so the
+ * boards chase the hand smoothly instead of teleporting.
  */
-function slideOppRow(at: number): void {
-  cancelOppSlide();
-  const step = () => {
-    slideAnim = null;
-    const row = document.querySelector<HTMLElement>('.opprow');
-    const seat = row?.querySelectorAll<HTMLElement>('.oppseat')[at];
-    if (!row || !seat) return;
-    const rowRect = row.getBoundingClientRect();
-    const seatRect = seat.getBoundingClientRect();
-    const d = seatRect.left + seatRect.width / 2 - (rowRect.left + rowRect.width / 2);
-    if (Math.abs(d) < 1) {
-      syncOppSlider();
+function stepOppSlide(): void {
+  slideAnim = null;
+  const row = document.querySelector<HTMLElement>('.opprow');
+  if (!row || slideGoal === null) return;
+  let target: number;
+  if ('x' in slideGoal) {
+    target = Math.max(0, Math.min(row.scrollWidth - row.clientWidth, slideGoal.x));
+  } else {
+    const seat = row.querySelectorAll<HTMLElement>('.oppseat')[slideGoal.seat];
+    if (!seat) {
+      slideGoal = null;
       return;
     }
-    const before = row.scrollLeft;
-    row.scrollLeft += d * 0.16;
-    syncOppSlider();
-    // Pinned against the end of the range: no closer to get.
-    if (row.scrollLeft === before) return;
-    slideAnim = requestAnimationFrame(step);
-  };
-  slideAnim = requestAnimationFrame(step);
+    const rowRect = row.getBoundingClientRect();
+    const seatRect = seat.getBoundingClientRect();
+    target =
+      row.scrollLeft + seatRect.left + seatRect.width / 2 - (rowRect.left + rowRect.width / 2);
+  }
+  const fromSlider = sliderDriving();
+  const d = target - row.scrollLeft;
+  if (Math.abs(d) < 0.6) {
+    row.scrollLeft = target;
+    slideGoal = null;
+    if (!fromSlider) syncOppSlider();
+    return;
+  }
+  const before = row.scrollLeft;
+  row.scrollLeft += d * 0.2;
+  if (!fromSlider) syncOppSlider();
+  // Pinned against the end of the range: no closer to get.
+  if (row.scrollLeft === before) {
+    slideGoal = null;
+    return;
+  }
+  slideAnim = requestAnimationFrame(stepOppSlide);
+}
+
+function glideOppRow(goal: { seat: number } | { x: number }): void {
+  slideGoal = goal;
+  if (slideAnim === null) slideAnim = requestAnimationFrame(stepOppSlide);
 }
 
 function renderBoard(): void {
@@ -2718,7 +2739,7 @@ function renderBoard(): void {
   if (isParty(state) && state.active !== lastActiveSlid && !isOver(state)) {
     lastActiveSlid = state.active;
     const at = opps.indexOf(state.active);
-    if (at >= 0) slideOppRow(at);
+    if (at >= 0) glideOppRow({ seat: at });
   }
   syncFuse(el);
 }
@@ -4791,7 +4812,7 @@ function netClient(): NetClient {
     onPlayerLeft(_seat, name) {
       // A party drop is an elimination rather than the end: the room concedes
       // for them and the state push that follows carries the consequences.
-      popNotice(`${name} left the match`, 'They are eliminated. The game goes on.', 'bad');
+      popNotice(name, 'Eliminated', 'bad');
     },
     onError(reason) {
       failOnline(reason);
@@ -6176,13 +6197,12 @@ root.addEventListener('input', (ev) => {
     return;
   }
   if (el.dataset.act === 'oppslider') {
-    // No render here either, and no smoothing: the knob is the hand on the row.
-    // A glide in progress lets go the moment the hand takes over.
-    cancelOppSlide();
+    // No render here: the knob retargets the glide and the boards chase it
+    // smoothly, taking over from any turn-change slide in progress.
     const row = document.querySelector<HTMLElement>('.opprow');
     if (row) {
       const room = row.scrollWidth - row.clientWidth;
-      row.scrollLeft = (Number((el as HTMLInputElement).value) / 1000) * room;
+      glideOppRow({ x: (Number((el as HTMLInputElement).value) / 1000) * room });
     }
     return;
   }
@@ -6267,7 +6287,13 @@ mountDropdowns({
 window.addEventListener(
   'scroll',
   (ev) => {
-    if (ev.target instanceof HTMLElement && ev.target.classList.contains('opprow')) {
+    // Not while the knob is the one driving: rewriting it mid-drag would
+    // wrestle the hand holding it.
+    if (
+      ev.target instanceof HTMLElement &&
+      ev.target.classList.contains('opprow') &&
+      !sliderDriving()
+    ) {
       syncOppSlider();
     }
   },

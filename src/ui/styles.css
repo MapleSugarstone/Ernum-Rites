@@ -5108,7 +5108,6 @@ body.mobile .setup .mixer {
   align-items: flex-start;
   min-width: 0;
   overflow-x: auto;
-  scroll-snap-type: x proximity;
   scrollbar-width: none;
 }
 .opprow::-webkit-scrollbar {
@@ -5123,7 +5122,6 @@ body.mobile .setup .mixer {
 .opprow .oppseat {
   flex: 0 0 70%;
   min-width: 0;
-  scroll-snap-align: center;
 }
 /* zoom shrinks layout as well as paint: the side lays out at full board width
    inside its 70% seat, and every card on it stays clickable at its drawn size. */
@@ -5141,15 +5139,16 @@ body.mobile .setup .mixer {
   appearance: none;
   justify-self: center;
   width: 52%;
-  height: 18px;
+  height: 20px;
   margin: 2px 0 3px;
   padding: 0;
   background: transparent;
   border: 0;
   cursor: pointer;
 }
+/* The groove is as thick as the knob riding in it, one full bar end to end. */
 .oppslider::-webkit-slider-runnable-track {
-  height: 9px;
+  height: 18px;
   border-radius: 999px;
   background: var(--surface-2);
   border: 1px solid var(--line);
@@ -5157,21 +5156,21 @@ body.mobile .setup .mixer {
 .oppslider::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 52px;
-  height: 17px;
-  margin-top: -5px;
+  height: 18px;
+  margin-top: -1px;
   border-radius: 999px;
   background: var(--select);
   border: 1px solid var(--ink);
 }
 .oppslider::-moz-range-track {
-  height: 9px;
+  height: 18px;
   border-radius: 999px;
   background: var(--surface-2);
   border: 1px solid var(--line);
 }
 .oppslider::-moz-range-thumb {
   width: 52px;
-  height: 17px;
+  height: 18px;
   border-radius: 999px;
   background: var(--select);
   border: 1px solid var(--ink);
