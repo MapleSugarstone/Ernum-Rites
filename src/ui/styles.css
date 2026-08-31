@@ -1,3 +1,40 @@
+/* Shipped rather than asked for. Every family below used to be the first name
+   in a stack of system faces, and a machine without them quietly substituted
+   something else: the endgame banner drew its outline against letterforms it
+   was not designed for, and the card text was measured against metrics that
+   were not there. These travel with the game, so every machine draws the same
+   thing. Licences and provenance are in src/ui/fonts/LICENSE.md. */
+@font-face {
+  font-family: 'Source Sans 3';
+  src: url('./fonts/source-sans-3-400.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Source Sans 3';
+  src: url('./fonts/source-sans-3-600.woff2') format('woff2');
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Source Sans 3';
+  src: url('./fonts/source-sans-3-700.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Source Code Pro';
+  src: url('./fonts/source-code-pro-400.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Bodoni Moda';
+  src: url('./fonts/bodoni-moda-var.woff2') format('woff2-variations');
+  font-weight: 400 900;
+  font-display: swap;
+}
+
 /* Theme: bwp seed velvet-casino, mood midnight, dark.
    Blue velvet ground under cyan, magenta and gold. Matte throughout: felt nap
    instead of gloss, soft shadows instead of specular breaks. The ink and border
@@ -25,15 +62,15 @@
   --fuse: #2f6bff;
   --fuse-hot: #8fd8ff;
   --fuse-glow: rgba(64, 132, 255, 0.55);
-  --font-display: Optima, Candara, 'Noto Sans', source-sans-pro, sans-serif;
-  --font-ui: Seravek, 'Gill Sans Nova', Ubuntu, Calibri, 'DejaVu Sans', source-sans-pro,
+  --font-display: 'Source Sans 3', Optima, Candara, 'Noto Sans', sans-serif;
+  --font-ui: 'Source Sans 3', Seravek, 'Gill Sans Nova', Ubuntu, Calibri, 'DejaVu Sans',
     sans-serif;
-  --font-mono: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas,
+  --font-mono: 'Source Code Pro', ui-monospace, 'Cascadia Code', Menlo, Consolas,
     'DejaVu Sans Mono', monospace;
   /* The wordmark alone: a display serif with real stroke contrast, which is what
      lets the gold plate read without an outline holding the letters together. */
-  --font-wordmark: 'Sitka Display', Didot, 'Bodoni MT', 'Noto Serif Display',
-    'Palatino Linotype', 'Iowan Old Style', Georgia, serif;
+  --font-wordmark: 'Bodoni Moda', 'Sitka Display', Didot, 'Bodoni MT',
+    'Noto Serif Display', 'Palatino Linotype', 'Iowan Old Style', Georgia, serif;
   --radius: 13px;
   --radius-lg: 25px;
   --radius-sm: 6px;
@@ -124,6 +161,14 @@
   --cw-board: clamp(50px, min(calc(23vh - 95px), var(--board-cap, 104px)), 104px);
   --cw-hand: clamp(100px, 15.5vh, 132px);
   --cw-big: 232px;
+  /* The size every card is laid out at before it is scaled to where it sits.
+     Text on a card runs to a couple of pixels at the sizes these are drawn, and
+     a browser with a minimum font size set rewrites anything under it, which
+     lands hardest on the smallest text and pushes the credit line up through the
+     rules. Drawn at this width and scaled down, the smallest thing on a card is
+     asked for at about 15px, which is past any minimum worth setting, and the
+     transform does the shrinking where no setting reaches. */
+  --card-design-w: 720;
   /* HP cards worn under a summon, small but still real cards. */
   --hpw: clamp(28px, 4.6vh, 38px);
 
@@ -1427,6 +1472,10 @@ button.on {
 
 .card {
   --cw: var(--cw-board);
+  /* How far the fixed-size interior has to shrink to reach this card's width.
+     tan(atan2()) is how a length is turned into the plain number a scale needs,
+     since calc cannot divide one length by another. */
+  --cardscale: calc(tan(atan2(var(--cw), 1px)) / var(--card-design-w));
   position: relative;
   width: var(--cw);
   height: calc(var(--cw) * var(--card-ratio));
@@ -1932,6 +1981,22 @@ body.dragging .bookgrid .card {
 .edmg {
   color: var(--ok);
   font-weight: 700;
+}
+
+/* The card's interior, drawn at --card-design-w and scaled to the card's real
+   width. Redefining --cw here is what lets every rule inside keep its existing
+   arithmetic: they now work out to fixed pixels, and the transform does the
+   fitting. Positioned, so the percentages inside resolve against this box. */
+.cardbox {
+  --cw: calc(var(--card-design-w) * 1px);
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--cw);
+  height: calc(var(--cw) * var(--card-ratio));
+  transform: scale(var(--cardscale));
+  transform-origin: top left;
+  border-radius: inherit;
 }
 
 /* --- keyword and status overlays on the card itself ------------------------ */
@@ -2484,16 +2549,26 @@ body.dragging .bookgrid .card {
 .banner h2 {
   /* Same lockup as the menu wordmark, so the result reads as the game speaking. */
   font-family: var(--font-wordmark);
-  font-size: 44px;
+  /* Shrinks on a narrow window rather than running past the banner's edge. */
+  font-size: clamp(28px, 6.5vw, 44px);
   font-weight: 600;
   letter-spacing: 0.02em;
   color: #fff;
-  text-shadow:
-    -2px -2px 0 var(--ink),
-    2px -2px 0 var(--ink),
-    -2px 2px 0 var(--ink),
-    2px 2px 0 var(--ink),
-    0 6px 0 rgba(4, 9, 31, 0.45);
+  /* One stroke painted behind the glyph, not four offset copies of it. The
+     stack this font comes from is whatever the machine happens to own, and on a
+     face with thinner strokes than the one it was drawn against the copies
+     close up the counters and the word turns to a blot. A real stroke follows
+     the letterform instead, so it holds whatever it lands on. */
+  -webkit-text-stroke: 3px var(--ink);
+  paint-order: stroke fill;
+  text-shadow: 0 4px 0 rgba(4, 9, 31, 0.45);
+}
+/* Without paint-order the stroke would print over the letter and fill it in. */
+@supports not (paint-order: stroke) {
+  .banner h2 {
+    -webkit-text-stroke: 0;
+    text-shadow: 0 2px 5px rgba(4, 9, 31, 0.7);
+  }
 }
 .banner p {
   margin: 0;
@@ -5022,28 +5097,87 @@ body.mobile .setup .mixer {
 }
 
 /* --- party mode: 3-4 players -------------------------------------------------
-   The opponents share the top band the single opponent used to fill: each one
-   a full-size board, side by side in a carousel that shows one at a time. The
-   row slides itself to whoever's turn begins, and the dots under it jump it by
-   hand. Scroll behaviour is left auto here: renders restore the offset
-   instantly and only the turn-change slide asks to be smooth. */
+   The opponents' boards sit next to each other at 70% size, so whoever is in
+   focus fills the view with the neighbours' edges showing, and a battle between
+   two of them plays out side to side. The row's own scrollbar is hidden; the
+   slider under it drives the scroll instead, sized and placed on its own so it
+   stays clear of the End Turn pill. The row also slides itself to whoever's
+   turn begins. */
 .opprow {
   display: flex;
   align-items: flex-start;
   min-width: 0;
   overflow-x: auto;
-  scroll-snap-type: x mandatory;
+  scroll-snap-type: x proximity;
   scrollbar-width: none;
 }
-.opprow::-webkit-scrollbar { display: none; }
+.opprow::-webkit-scrollbar {
+  display: none;
+}
+/* Breathing room at both ends, so the first and last seat can centre too. */
+.opprow::before,
+.opprow::after {
+  content: '';
+  flex: 0 0 15%;
+}
 .opprow .oppseat {
-  flex: 0 0 100%;
+  flex: 0 0 70%;
   min-width: 0;
   scroll-snap-align: center;
 }
-/* Room for the dot row between the carousel and the divider. */
+/* zoom shrinks layout as well as paint: the side lays out at full board width
+   inside its 70% seat, and every card on it stays clickable at its drawn size. */
+.opprow .oppseat .side {
+  zoom: 0.7;
+}
+/* Room for the slider between the carousel and the divider. */
 .board.party {
   grid-template-rows: 1fr auto auto 1fr;
+}
+/* The view slider: grab and hold to look along the table. Kept short and
+   centred so it never reaches the End Turn pill at the right edge. */
+.oppslider {
+  -webkit-appearance: none;
+  appearance: none;
+  justify-self: center;
+  width: 52%;
+  height: 18px;
+  margin: 2px 0 3px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.oppslider::-webkit-slider-runnable-track {
+  height: 9px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+.oppslider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 52px;
+  height: 17px;
+  margin-top: -5px;
+  border-radius: 999px;
+  background: var(--select);
+  border: 1px solid var(--ink);
+}
+.oppslider::-moz-range-track {
+  height: 9px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+.oppslider::-moz-range-thumb {
+  width: 52px;
+  height: 17px;
+  border-radius: 999px;
+  background: var(--select);
+  border: 1px solid var(--ink);
+}
+body.mobile .oppslider {
+  width: 60%;
 }
 .oppname {
   text-align: center;
@@ -5073,23 +5207,21 @@ body.mobile .setup .mixer {
   filter: grayscale(1);
   opacity: 0.55;
 }
-.oppdots {
-  display: flex;
-  justify-content: center;
-  gap: 10px;
-  padding: 4px 0;
+
+/* The clash lunge for an attacker standing in the carousel. The row is a
+   scroller and clips at its edges, so the swing rides a stand-in pinned to the
+   viewport while the real card hides; see playSmack. */
+.smackfly {
+  position: fixed;
+  z-index: 80;
+  pointer-events: none;
 }
-.oppdot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  padding: 0;
-  border: 1px solid var(--line);
-  background: var(--surface-2);
-}
-.oppdot.on {
-  background: var(--select);
-  border-color: var(--select);
+.smackfly .card {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
 }
 
 /* Several small fans share the bar, each named beside its own cards. In flow

@@ -1,12 +1,12 @@
 # Ernum Rites
 
-A two-player card game of summons, traps, spells and debt. The client is a
-static site built for GitHub Pages; the rules engine is a pure TypeScript module
-that also runs inside a Cloudflare Durable Object as the authority for online
-play.
+A card game of summons, traps, spells and debt for two to four players. The
+client is a static site built for GitHub Pages; the rules engine is a pure
+TypeScript module that also runs inside a Cloudflare Durable Object as the
+authority for online play.
 
 Hotseat, single-player against a bot, and online play against another person
-all work today.
+all work today. Three or four people can share one online match in party mode.
 
 ## Running it
 
@@ -231,6 +231,57 @@ into play as a summon, or push your debt onto the other player. Any target a
 card needs is declared up front in `targets`. That lets the client collect the
 choices before dispatching and keeps effect resolution free of continuations.
 
+## Party mode
+
+Three or four players can share one online match. Host a private game with the
+Players toggle set to 3 Player or 4 Player and share the code; a party code
+seats every guest rather than only the first, and the match starts the moment
+the room fills. Party games are hosted only, so the random queue stays
+head-to-head.
+
+The rules travel almost unchanged. Everyone opens with two extra cards, the
+debt limit rises from 25 to 30, and turns pass around the table in seat order.
+Losing eliminates you rather than ending the game: your cards leave the board,
+your turns are skipped, and you may keep watching or head back to the menu. The
+last player standing wins, and the final two inherit every head-to-head ending
+rule, the attacker-takes-the-trade tiebreak included. A card that says "the
+enemy" makes you pick one by clicking their leader, effects that touch every
+enemy or every character still touch them all, an attack's trap window goes to
+whoever is being attacked, and a spell offers its window to each enemy holding
+a Spell Trap in turn order until one springs. The in-game rulebook carries all
+of this under section 2-3.
+
+The engine handles any seat count with one code path: `PlayerIdx` covers four
+seats, `state.players` is an array, and helpers like `livingOpponents` decide
+who "the enemy side" fans out to. The interesting problem was the roughly
+hundred card effects that read `c.opp` meaning the one opponent. Rather than
+editing every card, the context's `opp` became a getter: an action can carry an
+`enemy` pick, and when a party action arrives without one the effect runs once
+against the discarded trial state with a tracking getter. If the effect reached
+for its enemy, the action is refused with a `NEEDS_ENEMY` sentinel, the client
+rings the enemy leaders, and one click re-sends the action with the pick
+attached. Automatic triggers with no action to carry a pick fall back to a
+derived enemy: the other side of the battle, then the caster of the spell being
+answered, then whoever acted. Every branch collapses to the one opponent in a
+duel, which is what keeps the two-player game bit-for-bit unchanged.
+
+Party mode lives only in the TypeScript engine. The C# mirror, the replay
+corpus and the balance harness stay strictly two-player, and the digest keeps
+that honest by printing the new state fields only when they are set, which
+never happens in a duel, so the conformance suite still pins both engines to
+identical two-player strings. On the wire, the party size rides in the room's
+own name, a mid-game disconnect concedes for the player who dropped and the
+game goes on, and `RULES_REVISION` was bumped so a stale build cannot be
+seated in a room it does not understand.
+
+On screen the opponents' boards sit next to each other at 70% size in a
+horizontal carousel: a slider under the row pans between them, the row glides
+to whoever's turn begins, and one hand fan per opponent shares the top bar. A
+clash between two opponents plays out sideways across their boards, riding a
+stand-in pinned to the viewport so the scroller cannot clip the lunge. The
+design story, the trap-window queue and the elimination bookkeeping are written
+up in [claude-notes/party-mode.md](claude-notes/party-mode.md).
+
 ## The deckbuilder
 
 The setup screen has a Deckbuilder button. Pick a leader, and the browser shows
@@ -399,6 +450,11 @@ card manifest in `conformance/` compared field by field. The whole arrangement,
 including the engine bug the port flushed out, is written up in
 [claude-notes/two-engines.md](claude-notes/two-engines.md).
 
+Party mode is the one deliberate gap between the two: three and four player
+games exist only in TypeScript, and every two-player position still digests
+identically in both engines, so the conformance suite is what proves a party
+change left the duel untouched.
+
 ```bash
 npm run conform
 ```
@@ -442,6 +498,14 @@ opens a public room, `/api/queue/host` opens a private one and returns a code,
 waiting room back out of the queue. `src/net/client.ts` is the browser side of
 all of them.
 
+Hosting with `?party=3` or `?party=4` opens a party room. The seat count rides
+in the room's name (`prv3-` or `prv4-`), so the `MatchRoom` sizes itself before
+the first join and a tampered client can only mislead a room nobody else is
+routed to. A head-to-head code is consumed by its first guest; a party code
+lives out its clock so it can seat every guest, and the room's own "room is
+full" answer turns away anyone extra. While a party room fills, everyone seated
+gets a roster with each `waiting` push.
+
 Both players have to be running the same build. `src/version.ts` derives a
 version from the digest format and every printed number, cost and rules line in
 the set, the client sends it with `join`, and a room refuses a seat to anything
@@ -451,6 +515,8 @@ both are out the two halves disagree and nobody is seated.
 
 What is still missing is reconnection. Closing a socket frees the seat in
 `worker/room.ts`, so a player who drops cannot resume the match they were in.
+A party room softens this without fixing it: a mid-game drop concedes for that
+seat, the player is eliminated, and the match carries on for everyone else.
 
 ```bash
 npx wrangler dev

@@ -763,15 +763,19 @@ function renderCard(def: CardDef, opts: CardOpts = {}): string {
   const vars = Object.entries(opts.vars ?? {})
     .map(([k, v]) => `--${k}:${esc(String(v))};`)
     .join('');
+  // Everything inside is drawn at one fixed size and scaled to fit, so no text
+  // on a card is ever asked for in a font size a browser is allowed to overrule.
   return `<div class="${classes.join(' ')}"${idAttr} style="${vars}--rf:${fitFactor(chars)};--nf:${nameFactor(def.name)};--ffs:${flipFitFactor(def)}" ${attrs}>
-    <span class="art" style="${artCss(def)}"></span>
-    <img decoding="sync" class="frame" src="${frameUrl(def)}" alt="" draggable="false">
-    ${gem}
-    <div class="txt name">${esc(def.name)}</div>
-    ${badges}
-    <div class="txt rules${rulesCls}">${atkGuard}${body}</div>
-    ${flipBlock}
-    ${foot}
+    <span class="cardbox">
+      <span class="art" style="${artCss(def)}"></span>
+      <img decoding="sync" class="frame" src="${frameUrl(def)}" alt="" draggable="false">
+      ${gem}
+      <div class="txt name">${esc(def.name)}</div>
+      ${badges}
+      <div class="txt rules${rulesCls}">${atkGuard}${body}</div>
+      ${flipBlock}
+      ${foot}
+    </span>
     ${opts.extra ?? ''}
   </div>`;
 }
@@ -1668,8 +1672,34 @@ function playSmack(): void {
   const dx = d.left + d.width / 2 - (a.left + a.width / 2);
   const dy = d.top + d.height / 2 - (a.top + a.height / 2);
   const lean = Math.max(-10, Math.min(10, dx * 0.04));
-  atk.style.zIndex = '70';
-  const anim = atk.animate(
+
+  // An attacker standing in the party carousel would have its swing clipped at
+  // the scroller's edge, so a stand-in pinned to the viewport rides the lunge
+  // while the real card hides. Sized by the rect, so zoom and scale carry over.
+  const clipped = !!atk.closest('.opprow');
+  let rider: HTMLElement = atk;
+  let done = () => {
+    atk.style.zIndex = '';
+  };
+  if (clipped) {
+    const shell = document.createElement('div');
+    shell.className = 'smackfly';
+    shell.style.cssText =
+      `left:${a.left}px;top:${a.top}px;width:${a.width}px;height:${a.height}px;` +
+      `--cw:${a.width}px;--cw-board:${a.width}px`;
+    shell.appendChild(atk.cloneNode(true));
+    document.body.appendChild(shell);
+    atk.style.visibility = 'hidden';
+    rider = shell;
+    done = () => {
+      shell.remove();
+      atk.style.visibility = '';
+    };
+  } else {
+    atk.style.zIndex = '70';
+  }
+
+  const anim = rider.animate(
     [
       { transform: 'translate(0, 0)', easing: 'ease-in', offset: 0 },
       {
@@ -1687,9 +1717,8 @@ function playSmack(): void {
     // A clash let through a trap window waits for the reveal to clear first.
     { duration: 560, delay: trapFx ? 1250 : 0 },
   );
-  anim.onfinish = () => {
-    atk.style.zIndex = '';
-  };
+  anim.onfinish = done;
+  anim.oncancel = done;
 }
 
 /**
@@ -2574,6 +2603,52 @@ function renderHistory(): void {
   el.innerHTML = html;
 }
 
+/** Seat the view slider's knob against wherever the carousel actually is. */
+function syncOppSlider(): void {
+  const row = document.querySelector<HTMLElement>('.opprow');
+  const slider = document.querySelector<HTMLInputElement>('.oppslider');
+  if (!row || !slider) return;
+  const room = Math.max(1, row.scrollWidth - row.clientWidth);
+  slider.value = String(Math.round((row.scrollLeft / room) * 1000));
+}
+
+let slideAnim: number | null = null;
+
+function cancelOppSlide(): void {
+  if (slideAnim !== null) cancelAnimationFrame(slideAnim);
+  slideAnim = null;
+}
+
+/**
+ * Glide the carousel to the seat at `at`, one eased step a frame. Driven by
+ * hand rather than scrollIntoView because a board rebuild mid-glide restores
+ * the old offset and cancels a native smooth scroll; this one just re-finds
+ * the seat next frame and carries on, and the slider knob rides along.
+ */
+function slideOppRow(at: number): void {
+  cancelOppSlide();
+  const step = () => {
+    slideAnim = null;
+    const row = document.querySelector<HTMLElement>('.opprow');
+    const seat = row?.querySelectorAll<HTMLElement>('.oppseat')[at];
+    if (!row || !seat) return;
+    const rowRect = row.getBoundingClientRect();
+    const seatRect = seat.getBoundingClientRect();
+    const d = seatRect.left + seatRect.width / 2 - (rowRect.left + rowRect.width / 2);
+    if (Math.abs(d) < 1) {
+      syncOppSlider();
+      return;
+    }
+    const before = row.scrollLeft;
+    row.scrollLeft += d * 0.16;
+    syncOppSlider();
+    // Pinned against the end of the range: no closer to get.
+    if (row.scrollLeft === before) return;
+    slideAnim = requestAnimationFrame(step);
+  };
+  slideAnim = requestAnimationFrame(step);
+}
+
 function renderBoard(): void {
   const state = ui.state;
   const el = document.getElementById('board');
@@ -2614,12 +2689,8 @@ function renderBoard(): void {
         </div>`,
         )
         .join('')}</div>
-      <div class="oppdots">${opps
-        .map(
-          (p, i) =>
-            `<button class="oppdot${i === 0 ? ' on' : ''}" data-act="btn" data-cmd="oppdot:${i}" aria-label="${esc(state.players[p].name)}"></button>`,
-        )
-        .join('')}</div>`
+      <input type="range" class="oppslider" data-act="oppslider" min="0" max="1000" value="0"
+        aria-label="Scroll between opponents">`
     : sideHtml(state, them, false);
   const html = `
     ${oppRow}
@@ -2641,18 +2712,13 @@ function renderBoard(): void {
     const row = el.querySelector<HTMLElement>('.opprow');
     if (row) row.scrollLeft = rowScroll;
   }
+  syncOppSlider();
   // The carousel slides itself to whoever's turn began, once per turn, and
   // stays wherever it was scrolled to for the rest of it.
   if (isParty(state) && state.active !== lastActiveSlid && !isOver(state)) {
     lastActiveSlid = state.active;
     const at = opps.indexOf(state.active);
-    if (at >= 0) {
-      const seat = el.querySelectorAll<HTMLElement>('.opprow .oppseat')[at];
-      seat?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-      document
-        .querySelectorAll<HTMLElement>('.oppdot')
-        .forEach((d, i) => d.classList.toggle('on', i === at));
-    }
+    if (at >= 0) slideOppRow(at);
   }
   syncFuse(el);
 }
@@ -3919,14 +3985,15 @@ function renderRules(): string {
       HP is represented by cards drawn from your deck. When a summon dies, it goes to your debt
       zone and adds its level to your debt. Reach ${DEBT_LIMIT} debt and you lose. Destroy the
       enemy leader to win. A leader can be chosen from any summon and a deck may only use its
-      leader's colors for its cards.</p>
+      leader's colors for its cards. Up to four can play: a game of three or four is a party
+      game, where a defeated player is eliminated and the last one standing wins.</p>
 
     <h2>1. The Game</h2>
-    ${sec('1-1.', `Ernum Rites is a game for two players. Each player brings one leader and one deck of ${DECK_SIZE} cards.`)}
+    ${sec('1-1.', `Ernum Rites is a game for two to four players. Each player brings one leader and one deck of ${DECK_SIZE} cards. A game of three or four players is a party game and follows section 2-3.`)}
     ${sec('1-1-1.', `A deck may hold at most ${COPY_LIMIT} copies of any one card.`)}
     ${sec('1-1-2.', 'A card is legal in a deck only if every color on it appears on the leader. A Neutral card has no color and is legal in any deck.')}
-    ${sec('1-2.', 'Players take alternating turns.')}
-    ${sec('1-2-1.', 'Neither player may attack during their own first turn.')}
+    ${sec('1-2.', 'Players take turns. Two players alternate. A party game passes the turn around the table in seat order.')}
+    ${sec('1-2-1.', 'No player may attack during their own first turn.')}
     ${sec('1-2-2.', 'The player who takes the first turn does not draw on that turn.')}
     ${sec('1-3.', 'A character is a summon or a leader. Anything that affects a character affects both kinds unless it says otherwise.')}
     ${sec('1-4.', 'A card beats this book. Where the text on a card and a rule here disagree, the card is right and the rule is what happens when no card has said otherwise.')}
@@ -3938,7 +4005,12 @@ function renderRules(): string {
     ${sec('2-1-1-1.', `When your debt reaches ${DEBT_LIMIT} or more (${PARTY_DEBT_LIMIT} in a party game).`)}
     ${sec('2-1-1-2.', 'When your leader dies.')}
     ${sec('2-2.', 'Both players can be defeated at once. If both leaders are still in play then the attacking player wins. Otherwise the game is a draw.')}
-    ${sec('2-3.', `Party games seat 3 or 4 players. A defeated player is eliminated instead: their cards leave the board and their turns are skipped. The last player standing wins. Everyone opens with ${PARTY_HAND_BONUS} extra cards, and a card that names "the enemy" makes you choose one by clicking their leader.`)}
+    ${sec('2-3.', 'A party game seats three or four players. Every rule applies with the changes below.')}
+    ${sec('2-3-1.', `Everyone opens with ${PARTY_HAND_BONUS} extra cards, and the debt limit is ${PARTY_DEBT_LIMIT}.`)}
+    ${sec('2-3-2.', 'A defeated player is eliminated rather than ending the game. Their cards leave the board for their discard pile and their turns are skipped. The last player standing wins.')}
+    ${sec('2-3-3.', 'A card that names &ldquo;the enemy&rdquo; means one enemy of your choice, picked by clicking their leader. Anything that touches every enemy or every character still touches them all, and anything aimed at a target can aim at any enemy.')}
+    ${sec('2-3-4.', 'An attack offers its trap window to the player being attacked. A spell offers a window to each enemy holding a Spell Trap, one at a time in turn order. The first trap sprung answers it and nobody after is asked.')}
+    ${sec('2-3-5.', 'A player who leaves a running party game concedes. They are eliminated and the game goes on without them.')}
 
     <h2>3. Debt</h2>
     ${sec('3-1.', 'Debt is the clock. It never goes down unless a card says it does.')}
@@ -5453,16 +5525,6 @@ function handleCommand(cmd: string): void {
     ui.enemyPick = null;
     return render();
   }
-  if (cmd.startsWith('oppdot:')) {
-    const at = Number(cmd.slice(7));
-    const seats = document.querySelectorAll<HTMLElement>('.opprow .oppseat');
-    seats[at]?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-    // Lit here as well as by the scroll listener, so a tap answers at once.
-    document
-      .querySelectorAll<HTMLElement>('.oppdot')
-      .forEach((d, i) => d.classList.toggle('on', i === at));
-    return;
-  }
   if (cmd === 'spectate') {
     ui.online.spectating = true;
     return render();
@@ -6113,6 +6175,17 @@ root.addEventListener('input', (ev) => {
     setLevel(el.dataset.bus as 'music' | 'sfx', Number((el as HTMLInputElement).value) / 100);
     return;
   }
+  if (el.dataset.act === 'oppslider') {
+    // No render here either, and no smoothing: the knob is the hand on the row.
+    // A glide in progress lets go the moment the hand takes over.
+    cancelOppSlide();
+    const row = document.querySelector<HTMLElement>('.opprow');
+    if (row) {
+      const room = row.scrollWidth - row.clientWidth;
+      row.scrollLeft = (Number((el as HTMLInputElement).value) / 1000) * room;
+    }
+    return;
+  }
   // These three fields update a label or a button beside themselves. A full
   // render would replace the field mid-keystroke and flash, so each patches the
   // one thing it changes and leaves the rest of the page alone.
@@ -6188,24 +6261,15 @@ mountDropdowns({
     }
   },
 });
-// The party carousel's dots follow the swipe. Scroll does not bubble, so the
-// listener rides the capture phase and cheaply ignores everything else.
+// Keeps the view slider's knob under the carousel as it moves for any other
+// reason: a finger swipe, or the smooth slide to whoever's turn began. Scroll
+// does not bubble, so the listener rides the capture phase.
 window.addEventListener(
   'scroll',
   (ev) => {
-    const row = ev.target instanceof HTMLElement ? ev.target : null;
-    if (!row || !row.classList.contains('opprow')) return;
-    const seats = [...row.querySelectorAll<HTMLElement>('.oppseat')];
-    if (seats.length === 0) return;
-    const centre = row.scrollLeft + row.clientWidth / 2;
-    const off = (s: HTMLElement) => Math.abs(s.offsetLeft + s.offsetWidth / 2 - centre);
-    let best = 0;
-    seats.forEach((s, i) => {
-      if (off(s) < off(seats[best])) best = i;
-    });
-    document
-      .querySelectorAll<HTMLElement>('.oppdot')
-      .forEach((d, i) => d.classList.toggle('on', i === best));
+    if (ev.target instanceof HTMLElement && ev.target.classList.contains('opprow')) {
+      syncOppSlider();
+    }
   },
   true,
 );
@@ -6220,6 +6284,9 @@ root.addEventListener('click', (ev) => {
   const act = el.dataset.act;
 
   if (act === 'btn') return handleCommand(el.dataset.cmd ?? '');
+  // The view slider handles itself through input events; a click on it must
+  // not fall through to the render at the bottom and rebuild it mid-drag.
+  if (act === 'oppslider') return;
   if (act === 'theme') {
     setTheme(el.dataset.cmd === 'light' ? 'light' : 'dark');
     return render();
