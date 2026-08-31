@@ -22,12 +22,14 @@ export function sheetFor(art: string): string | null {
   return cell ? `${DIR}${cell.group}.png` : null;
 }
 
-/** Every sheet the given drawings are spread across, each named once. */
+/**
+ * Every sheet the given drawings are spread across, each named once. A drawing
+ * on no sheet stands for itself, since that is the file it paints from.
+ */
 export function sheetsFor(arts: Iterable<string>): string[] {
   const out = new Set<string>();
   for (const art of arts) {
-    const sheet = sheetFor(art);
-    if (sheet) out.add(sheet);
+    out.add(sheetFor(art) ?? art);
   }
   return [...out];
 }

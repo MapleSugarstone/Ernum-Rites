@@ -58,7 +58,7 @@ import {
   targetCandidates,
   type DeckList,
 } from './engine/engine';
-import { canBeLeader, colorsOf, deckIdentity } from './engine/identity';
+import { canBeLeader, colorsOf, deckIdentity, isLegalUnder } from './engine/identity';
 import { allCards, card, tryCard } from './engine/registry';
 import {
   allSummons,
@@ -4781,6 +4781,10 @@ function netClient(): NetClient {
       // card it entered as rather than flashing straight to its answer.
       beginLeaderReform(ui.state);
       render();
+      // Warmed on every push rather than once: a warm is a no-op while every
+      // image is held, and it is the retry for anything a failed fetch dropped.
+      if (opening) matchWarm = onlineArtPaths(state);
+      void warmArt(matchWarm);
       if (opening) {
         playOpeningDraw(seat);
         return;
@@ -4921,6 +4925,10 @@ async function startOnline(how: 'public' | 'host' | 'join'): Promise<void> {
   const saved = savedDecks().find((d) => d.key === o.deckKey);
   const deck = saved ? { leaderId: saved.leaderId, cards: saved.cards } : undefined;
   client.connect(reply.roomId, reply.kind, o.deckKey, o.name.trim(), reply.code, deck);
+  // The wait for an opponent is dead air, so this side's own art downloads now
+  // rather than racing the opening push.
+  const mine = [...everyDeck, ...savedDeckList()].find((d) => d.key === o.deckKey);
+  if (mine) void warmArt(matchArtPaths([mine]));
 }
 
 /** Leave cleanly, so a half-made room does not sit in the queue. */
@@ -5426,7 +5434,12 @@ function warmArt(paths: string[]): Promise<void> {
           // that decodes it.
           void img.decode?.().catch(() => undefined).then(() => resolve());
         };
-        img.onerror = () => resolve();
+        img.onerror = () => {
+          // A failure must not stand as warmed, or the art it covers would
+          // never get another try at loading.
+          warmedArt.delete(path);
+          resolve();
+        };
         img.src = `${BASE}${path}`;
       }),
     );
@@ -5453,18 +5466,49 @@ function matchArtPaths(decks: DeckList[]): string[] {
     if (art) arts.push(art);
   }
   const paths: string[] = sheetsFor(arts);
-  paths.push(
-    'Cardgame/Extras/PowerShield.png',
-    'Cardgame/Extras/Deathrattle.png',
-    'Cardgame/Extras/Locked.png',
-    WOUND_TOKEN,
-    NO_UNSAP,
-    REDIRECT_TOKEN,
-    SPELL_IMMUNE_TOKEN,
-    CARD_BACK,
-  );
+  paths.push(...MATCH_EXTRAS);
   return paths;
 }
+
+/** Overlays, tokens and pips any match can show, whatever the decks are. */
+const MATCH_EXTRAS: string[] = [
+  'Cardgame/Extras/PowerShield.png',
+  'Cardgame/Extras/Deathrattle.png',
+  'Cardgame/Extras/Locked.png',
+  WOUND_TOKEN,
+  NO_UNSAP,
+  REDIRECT_TOKEN,
+  SPELL_IMMUNE_TOKEN,
+  CARD_BACK,
+  ...Object.values(PIP_ART),
+];
+
+/**
+ * Every image an online match could show. The room redacts both decks, so the
+ * cards cannot be listed the way a local match's can; what is knowable is each
+ * leader, and a leader's identity bounds what its deck may legally run. Every
+ * sheet those cards sit on covers whatever the match goes on to reveal.
+ */
+function onlineArtPaths(state: GameState): string[] {
+  const identities = state.players.map((p) => deckIdentity(p.leaderCardId));
+  const arts: string[] = [];
+  for (const def of allCards()) {
+    if (!def.art) continue;
+    if (def.uncollectible || identities.some((identity) => isLegalUnder(def, identity))) {
+      arts.push(def.art);
+    }
+  }
+  const paths: string[] = sheetsFor(arts);
+  paths.push(...MATCH_EXTRAS);
+  return paths;
+}
+
+/**
+ * What the current match warmed. Warming it again is nearly free once every
+ * image is held, so each push and each return to the tab retries whatever a
+ * flaky connection failed to fetch the first time.
+ */
+let matchWarm: string[] = [];
 
 /**
  * The opening hand is dealt rather than drawn: no action produced it, so the
@@ -5540,8 +5584,9 @@ function handleCommand(cmd: string): void {
     // gets cut off rather than holding the match hostage.
     ui.preloading = true;
     render();
+    matchWarm = matchArtPaths(decks);
     const timeout = new Promise<void>((resolve) => setTimeout(resolve, 8000));
-    void Promise.race([warmArt(matchArtPaths(decks)), timeout]).then(() => {
+    void Promise.race([warmArt(matchWarm), timeout]).then(() => {
       ui.preloading = false;
       startMatch(decks);
     });
@@ -6672,6 +6717,9 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
   resyncFuse();
   ropeTick();
+  // A backgrounded tab is where the browser sheds what it can. Anything still
+  // held survives that; this refetches whatever an earlier warm failed to get.
+  void warmArt(matchWarm);
 });
 
 render();
@@ -6681,6 +6729,8 @@ onTintReady(render);
 // The pack is not warmed as a whole any more. On disk it is a megabyte and a
 // half, but decoded it is closer to forty, and holding that much bitmap for the
 // handful of faces a match actually shows was what pushed the browser into
-// dropping decoded art and re-rasterising it mid-game. A match warms its own
-// two decks and nothing else.
+// dropping decoded art and re-rasterising it mid-game. A local match warms its
+// own two decks and nothing else. An online match cannot read the decks, so it
+// warms every sheet its leaders' identities reach instead, which is the same
+// set of sheets those decks could legally touch.
 
