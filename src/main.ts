@@ -4727,6 +4727,7 @@ function netClient(): NetClient {
       ui.online.seat = seat;
       ui.online.roomCode = code ?? ui.online.roomCode;
       desyncStrikes = 0;
+      rejoinTried = false;
       render();
     },
     onWaiting(players, code, needed, names) {
@@ -4816,6 +4817,18 @@ function netClient(): NetClient {
       popNotice(name, 'Eliminated', 'bad');
     },
     onError(reason) {
+      // A lobby that has not started survives a dropped socket: the close freed
+      // the seat, the code is still live, and joining with it again takes the
+      // seat back. So a host or guest whose connection quietly died while
+      // waiting walks back in on their own. One quiet try; a second failure in
+      // a row reads as a real outage and falls through to the lobby screen.
+      const o = ui.online;
+      if (!rejoinTried && o.roomCode && (o.phase === 'waiting' || o.phase === 'connecting')) {
+        rejoinTried = true;
+        o.code = o.roomCode;
+        void startOnline('join');
+        return;
+      }
       failOnline(reason);
     },
     onDesync() {
@@ -4837,6 +4850,9 @@ function netClient(): NetClient {
 /** Digest disagreements this match. One is survivable; a streak is a bug. */
 let desyncStrikes = 0;
 
+/** Whether the one quiet lobby rejoin has been spent. Reset on being seated. */
+let rejoinTried = false;
+
 /** Drop back to the lobby with something to read. */
 function failOnline(reason: string): void {
   stopRopeWatch();
@@ -4850,6 +4866,11 @@ function failOnline(reason: string): void {
   if (ui.state && isOver(ui.state) && ui.online.phase === 'playing') {
     render();
     return;
+  }
+  // A lobby code outlives the socket that carried it there, so hand it to the
+  // join box: whoever got dropped is one click from taking their seat back.
+  if (ui.online.roomCode && ui.online.phase !== 'playing') {
+    ui.online.code = ui.online.roomCode;
   }
   ui.online.phase = 'idle';
   ui.online.roomCode = null;
