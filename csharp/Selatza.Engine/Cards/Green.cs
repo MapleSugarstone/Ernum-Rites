@@ -80,9 +80,13 @@ public static class Green
             flip: c => c.Reinforce(c.HolderRef, 1)),
 
         K.Summon(1, "computerbug", "Computer Bug", F(Faction.Machine, Faction.Hedron), str: 2,
-            hp: 3,
+            hp: 1,
             supporterLock: true,
-            text: "Supporter Lock. The enemy cannot play supporters."),
+            text: "Supporter Lock. The enemy cannot play supporters. At the start of your turn, you take 1 debt.",
+            triggers: new Triggers
+            {
+                OnAwake = c => c.AddDebt(c.Me, 1, "The bug bills its keeper."),
+            }),
 
         K.Summon(1, "defender", "Defender", F(Faction.Machine), str: 1, hp: 5,
             redirect: true,

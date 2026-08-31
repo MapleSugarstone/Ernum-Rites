@@ -85,10 +85,13 @@ export const greenCards: CardDef[] = [
     flip: (c) => c.reinforce(holderRef(c), 1),
   }),
   k.summon(1, 'computerbug', 'Computer Bug', ['Machine', 'Hedron'], {
-    hp: 3,
+    hp: 1,
     str: 2,
     supporterLock: true,
-    text: 'Supporter Lock. The enemy cannot play supporters.',
+    text: 'Supporter Lock. The enemy cannot play supporters. At the start of your turn, you take 1 debt.',
+    triggers: {
+      onAwake: (c) => c.addDebt(c.me, 1, 'The bug bills its keeper.'),
+    },
   }),
   k.summon(1, 'defender', 'Defender', ['Machine'], {
     str: 1,

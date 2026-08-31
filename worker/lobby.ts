@@ -105,11 +105,14 @@ export class Lobby extends DurableObject {
 
   /**
    * A room only somebody holding the code can find, or null when too many are
-   * live. A party size rides in the room's name: the MatchRoom reads its own
-   * seat count from it, so a tampering client can only mislead a room nobody
-   * else is routed to.
+   * live. A party size and whether the room runs clocks both ride in its name:
+   * the MatchRoom reads them off its own id, so a tampering client can only
+   * mislead a room nobody else is routed to.
    */
-  async hostPrivate(size?: 3 | 4): Promise<{ roomId: string; code: string } | null> {
+  async hostPrivate(
+    size?: 3 | 4,
+    noTimers = false,
+  ): Promise<{ roomId: string; code: string } | null> {
     await this.load();
     this.sweep();
     if (this.codes.size >= MAX_CODES) {
@@ -119,7 +122,7 @@ export class Lobby extends DurableObject {
     let code = makeCode();
     // Vanishingly unlikely, but a collision would put two matches in one room.
     while (this.codes.has(code)) code = makeCode();
-    const roomId = `${size ? `prv${size}` : 'prv'}-${crypto.randomUUID()}`;
+    const roomId = `${size ? `prv${size}` : 'prv'}-${noTimers ? 'nt-' : ''}${crypto.randomUUID()}`;
     this.codes.set(code, { roomId, expiresAt: Date.now() + (size ? PARTY_CODE_MS : CODE_MS) });
     await this.save();
     return { roomId, code };

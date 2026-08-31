@@ -67,6 +67,43 @@ export function displayedMs(kind: ClockKind): number {
   return CLOCK_SECONDS[kind] * 1000;
 }
 
+/**
+ * Seconds handed back for the first card a player plays on their own turn.
+ *
+ * A turn spent playing is not a turn spent stalling, so the clock gives a little
+ * of itself back for each card that goes down. The refund shrinks with every
+ * play so a hand of cheap cards cannot be walked into an unlimited turn.
+ */
+export const PLAY_BONUS_SECONDS = 1.5;
+
+/** Plays in one turn by which the refund has faded to nothing. */
+export const PLAY_BONUS_CARDS = 10;
+
+/**
+ * Milliseconds returned for the nth card played this turn, counting from 1. The
+ * count is per turn: the next turn starts back at a full refund.
+ */
+export function playBonusMs(nth: number): number {
+  if (nth < 1 || nth > PLAY_BONUS_CARDS) return 0;
+  return Math.round((PLAY_BONUS_SECONDS * 1000 * (PLAY_BONUS_CARDS - nth + 1)) / PLAY_BONUS_CARDS);
+}
+
+/**
+ * Whether an action is a card leaving a hand, which is what earns the refund.
+ * A trap is on the list but only ever springs on somebody else's turn, and the
+ * room hands the refund out to the active player alone.
+ */
+export function isCardPlay(type: import('./actions').ActionType): boolean {
+  return (
+    type === 'PLAY_SUPPORTER' ||
+    type === 'PLAY_SUMMON' ||
+    type === 'CAST_SPELL' ||
+    type === 'PLAY_STAGE' ||
+    type === 'REPLACE_SUMMON' ||
+    type === 'CAST_TRAP'
+  );
+}
+
 /** A running clock, as it travels over the wire. */
 export interface Clock {
   kind: ClockKind;
@@ -87,7 +124,9 @@ export function asDisplayed(clock: Clock): Clock {
   return {
     ...clock,
     endsAt: clock.endsAt - NETWORK_GRACE_SECONDS * 1000,
-    totalMs: displayedMs(clock.kind),
+    // Taken off what the room actually granted rather than recomputed from the
+    // kind, so a turn extended by the play refund draws its real length.
+    totalMs: Math.max(0, clock.totalMs - NETWORK_GRACE_SECONDS * 1000),
   };
 }
 

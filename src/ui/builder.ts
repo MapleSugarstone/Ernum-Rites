@@ -36,6 +36,21 @@ export function deckNameProblem(raw: string): string | null {
   return null;
 }
 
+/**
+ * A free name for a copy of one. Trimmed to fit the limit, and numbered when an
+ * earlier copy already holds the obvious one, so copying twice does not produce
+ * two decks the player cannot tell apart in the list.
+ */
+export function copyName(name: string, taken: string[] = savedDecks().map((d) => d.name)): string {
+  const used = new Set(taken.map((n) => n.trim().toLowerCase()));
+  const base = name.trim().replace(/ copy(\s+\d+)?$/i, '').trim() || 'Deck';
+  const fit = (suffix: string) =>
+    `${base.slice(0, Math.max(1, DECK_NAME_MAX - suffix.length)).trim()}${suffix}`;
+  let candidate = fit(' copy');
+  for (let n = 2; used.has(candidate.toLowerCase()); n++) candidate = fit(` copy ${n}`);
+  return candidate;
+}
+
 /** One note about one card, collected in dev mode and exported in a batch. */
 export interface Suggestion {
   cardId: string;
@@ -73,7 +88,9 @@ export interface BuilderState {
   /** A line the player writes about the deck, kept alongside the name. */
   blurb: string;
   /** Which button opened the save dialog, or null while it is closed. */
-  saving: 'save' | 'play' | null;
+  saving: 'save' | 'play' | 'copy' | null;
+  /** The book shows the deck itself, card by card, instead of the collection. */
+  viewingDeck: boolean;
 }
 
 export function newBuilder(): BuilderState {
@@ -89,6 +106,7 @@ export function newBuilder(): BuilderState {
     suggestFor: null,
     blurb: '',
     saving: null,
+    viewingDeck: false,
   };
 }
 
@@ -213,6 +231,19 @@ export function browseSections(tab: BrowseTab): Section[] {
     { title: 'Traps', cards: by((d) => d.type === 'trap') },
     { title: 'Fields', cards: by((d) => d.type === 'stage') },
   ].filter((s) => s.cards.length > 0);
+}
+
+/**
+ * Every card in the deck, one entry per copy, ordered the way the deck list
+ * beside the book orders them. The leader is not among them: it holds a seat
+ * rather than one of the slots.
+ */
+export function deckCards(cards: readonly string[]): CardDef[] {
+  const rank = (d: CardDef) =>
+    d.type === 'summon' ? (d.level ?? 1) : d.type === 'spell' ? 4 : d.type === 'trap' ? 5 : 6;
+  return cards
+    .map((id) => card(id))
+    .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
 }
 
 /**

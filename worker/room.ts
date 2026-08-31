@@ -8,7 +8,7 @@ import { digestShort } from '../src/engine/digest';
 import { publicView, redactFor } from '../src/engine/redact';
 import { currentActor, type GameState } from '../src/engine/state';
 import { timeoutAction } from '../src/engine/timeout';
-import { clockKindFor, enforcedMs, type Clock } from '../src/engine/timing';
+import { clockKindFor, enforcedMs, isCardPlay, playBonusMs, type Clock } from '../src/engine/timing';
 import type { PlayerIdx } from '../src/engine/types';
 import { BUILD_VERSION } from '../src/version';
 import { nameProblem } from './protocol';
@@ -34,6 +34,15 @@ function seatCountFor(name: string | undefined): number {
 }
 
 /**
+ * Whether this room runs without clocks, read off its own name the same way the
+ * seat count is. A host who turned timers off gets an `nt-` segment, and only a
+ * room the lobby actually routes guests to can carry one.
+ */
+function timersOffFor(name: string | undefined): boolean {
+  return /^prv[34]?-nt-/.test(name ?? '');
+}
+
+/**
  * One match. This object is the authority: clients send intents, it runs the
  * shared rules engine and pushes each side a redacted view of the result.
  *
@@ -53,8 +62,14 @@ export class MatchRoom extends DurableObject {
    * window's time rather than the turn's, and the turn picks up where it was.
    */
   private turnLeftMs = 0;
+  /** The whole budget this turn was given, refunds included, for drawing the bar. */
+  private turnTotalMs = 0;
   /** Which turn the bank belongs to. A different one refills it. */
   private turnKey = '';
+  /** Cards the active player has put down this turn, which the refund fades on. */
+  private turnPlays = 0;
+  /** Set for a room the host asked to run without clocks. */
+  private readonly timersOff = timersOffFor(this.ctx.id.name);
   private kind: RoomKind = 'public';
   private code: string | undefined;
 
@@ -236,7 +251,9 @@ export class MatchRoom extends DurableObject {
         });
       }
       this.state = result.state;
-      await this.restartClock();
+      // Only the player whose turn it is buys time back, so a trap sprung on
+      // somebody else's turn earns nothing.
+      await this.restartClock(isCardPlay(msg.action.type) && this.state.active === seat);
       this.pushState({ action: msg.action, actor: seat });
     }
   }
@@ -262,8 +279,8 @@ export class MatchRoom extends DurableObject {
    * enforces it. Called after every accepted action, because an action can hand
    * the turn over, open a response window, or close one.
    */
-  private async restartClock(): Promise<void> {
-    if (!this.state || this.state.winner !== null) {
+  private async restartClock(played = false): Promise<void> {
+    if (!this.state || this.state.winner !== null || this.timersOff) {
       this.clock = null;
       await this.ctx.storage.deleteAlarm();
       return;
@@ -279,6 +296,8 @@ export class MatchRoom extends DurableObject {
     if (key !== this.turnKey) {
       this.turnKey = key;
       this.turnLeftMs = enforcedMs('turn');
+      this.turnTotalMs = enforcedMs('turn');
+      this.turnPlays = 0;
     } else if (this.clock?.kind === 'turn') {
       // Still the same turn and still in the main phase, so what it has left is
       // whatever its own clock says. Reading it back here is what stops an
@@ -286,8 +305,17 @@ export class MatchRoom extends DurableObject {
       this.turnLeftMs = Math.max(0, this.clock.endsAt - now);
     }
 
+    // A card going down buys a little of the turn back, and less each time. The
+    // refund goes into the bank rather than onto the live clock, so a play that
+    // opens a response window still has it waiting when the turn resumes.
+    if (played) {
+      const bonus = playBonusMs(++this.turnPlays);
+      this.turnLeftMs += bonus;
+      this.turnTotalMs += bonus;
+    }
+
     if (kind === 'turn') {
-      this.clock = { kind, player, endsAt: now + this.turnLeftMs, totalMs: enforcedMs('turn') };
+      this.clock = { kind, player, endsAt: now + this.turnLeftMs, totalMs: this.turnTotalMs };
     } else if (this.clock && this.clock.kind === kind && this.clock.player === player) {
       // The same window still open: acting inside one does not buy more of it.
     } else {

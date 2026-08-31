@@ -492,16 +492,24 @@ placeholder card (`src/engine/redact.ts`), so the authority never hands a client
 anything it should not see. A turn clock runs on Durable Object alarms and times
 out a player who stops acting.
 
+The clock lives entirely in the room. A card played on your own turn buys a
+little of it back, 1.5 seconds for the first and less for each one after until
+the refund reaches nothing around the tenth, and the count starts over on your
+next turn (`playBonusMs` in `src/engine/timing.ts`). Clients never compute a
+refund: they draw whatever `clock` the push carries, and the clock is no part of
+the digest either, so nothing about it can put two sides out of step.
+
 Matchmaking is four POST routes onto the lobby. `/api/queue/public` joins or
 opens a public room, `/api/queue/host` opens a private one and returns a code,
 `/api/queue/join?code=` looks a private room up, and `/api/queue/cancel` takes a
 waiting room back out of the queue. `src/net/client.ts` is the browser side of
 all of them.
 
-Hosting with `?party=3` or `?party=4` opens a party room. The seat count rides
-in the room's name (`prv3-` or `prv4-`), so the `MatchRoom` sizes itself before
-the first join and a tampered client can only mislead a room nobody else is
-routed to. A head-to-head code is consumed by its first guest; a party code
+Hosting with `?party=3` or `?party=4` opens a party room, and `?timers=off`
+opens one that runs no clocks at all. Both ride in the room's name (`prv3-`,
+`prv4-`, and an `nt-` segment for a room without clocks), so the `MatchRoom`
+sizes itself and decides whether to arm an alarm before the first join, and a
+tampered client can only mislead a room nobody else is routed to. A head-to-head code is consumed by its first guest; a party code
 lives out its clock so it can seat every guest, and the room's own "room is
 full" answer turns away anyone extra. While a party room fills, everyone seated
 gets a roster with each `waiting` push.

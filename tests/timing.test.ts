@@ -8,9 +8,14 @@ import { currentActor, type GameState } from '../src/engine/state';
 import { timeoutAction } from '../src/engine/timeout';
 import {
   CLOCK_SECONDS,
+  asDisplayed,
   clockKindFor,
   fractionLeft,
+  isCardPlay,
   isRoping,
+  PLAY_BONUS_CARDS,
+  PLAY_BONUS_SECONDS,
+  playBonusMs,
   ROPE_SECONDS,
   secondsLeft,
   enforcedMs,
@@ -84,6 +89,56 @@ describe('clock arithmetic', () => {
     const c = clock('turn', 20_000, now);
     // A client whose clock runs 5s behind the room must not think it has 5s more.
     expect(secondsLeft(c, now, 5_000)).toBe(secondsLeft(c, now + 5_000));
+  });
+});
+
+describe('the time a card buys back', () => {
+  it('hands the first play the full refund and fades it to nothing', () => {
+    expect(playBonusMs(1)).toBe(PLAY_BONUS_SECONDS * 1000);
+    expect(playBonusMs(PLAY_BONUS_CARDS)).toBeGreaterThan(0);
+    expect(playBonusMs(PLAY_BONUS_CARDS + 1)).toBe(0);
+    expect(playBonusMs(0)).toBe(0);
+  });
+
+  it('never grows from one play to the next', () => {
+    for (let n = 1; n < PLAY_BONUS_CARDS + 4; n++) {
+      expect(playBonusMs(n + 1)).toBeLessThanOrEqual(playBonusMs(n));
+    }
+  });
+
+  it('cannot be walked into a turn longer than a few of them', () => {
+    // Every refund a single turn can earn, which stays well under a second turn.
+    let total = 0;
+    for (let n = 1; n <= PLAY_BONUS_CARDS; n++) total += playBonusMs(n);
+    expect(total).toBeLessThan(CLOCK_SECONDS.turn * 1000);
+  });
+
+  it('counts cards leaving a hand and nothing else', () => {
+    expect(isCardPlay('PLAY_SUMMON')).toBe(true);
+    expect(isCardPlay('CAST_SPELL')).toBe(true);
+    expect(isCardPlay('PLAY_SUPPORTER')).toBe(true);
+    expect(isCardPlay('END_TURN')).toBe(false);
+    expect(isCardPlay('DECLARE_ATTACK')).toBe(false);
+    expect(isCardPlay('ACTIVATE_POWER')).toBe(false);
+  });
+
+  it('draws the bar against the length the room actually granted', () => {
+    const now = 1_700_000_000_000;
+    // An ordinary turn still reads as the printed window.
+    const plain: Clock = {
+      kind: 'turn',
+      player: 0,
+      endsAt: now + enforcedMs('turn'),
+      totalMs: enforcedMs('turn'),
+    };
+    expect(asDisplayed(plain).totalMs).toBe(displayedMs('turn'));
+    // A refunded one reads longer by exactly the refund, so the bar stays full
+    // rather than emptying ahead of the clock.
+    const bonus = playBonusMs(1);
+    const extended: Clock = { ...plain, endsAt: plain.endsAt + bonus, totalMs: plain.totalMs + bonus };
+    const shown = asDisplayed(extended);
+    expect(shown.totalMs).toBe(displayedMs('turn') + bonus);
+    expect(fractionLeft(shown, now)).toBe(1);
   });
 });
 

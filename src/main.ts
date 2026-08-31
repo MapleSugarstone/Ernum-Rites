@@ -24,7 +24,9 @@ import {
   browseSections,
   canAdd,
   clearSuggestions,
+  copyName,
   counts,
+  deckCards,
   deckMarkdown,
   deleteDeck,
   download,
@@ -180,6 +182,8 @@ interface Ui {
     error: string | null;
     /** Seats a hosted game deals: 2 head-to-head, 3 or 4 for party mode. */
     party: 2 | 3 | 4;
+    /** Whether a hosted game runs clocks. Off means nobody is ever on one. */
+    timers: boolean;
     /** Who is in the room while it fills, from the room's waiting pushes. */
     roster: { players: number; needed: number; names: string[] } | null;
     /** The local player chose to keep watching after being eliminated. */
@@ -224,6 +228,7 @@ const ui: Ui = {
     seat: null,
     error: null,
     party: 2,
+    timers: true,
     roster: null,
     spectating: false,
   },
@@ -4303,10 +4308,25 @@ function renderOnline(): string {
         )
         .join('')}</div></div>
 
-      <p class="lobbynote">Turns last ${CLOCK_SECONDS.turn} seconds, responses last
-        ${CLOCK_SECONDS.response} seconds.${
-          o.party > 2 ? ' Party games are hosted: share the code with everyone joining.' : ''
-        }</p>
+      <div class="lobbyrow"><span>Timers</span><div class="seats">${(
+        [
+          [1, 'On'],
+          [0, 'Off'],
+        ] as const
+      )
+        .map(
+          ([on, label]) =>
+            `<button data-act="btn" data-cmd="o-timers:${on}" class="seattile${
+              o.timers === !!on ? ' on' : ''
+            }" ${busy ? 'disabled' : ''}>${label}</button>`,
+        )
+        .join('')}</div></div>
+
+      <p class="lobbynote">${
+        o.timers
+          ? `Turns last ${CLOCK_SECONDS.turn} seconds, responses last ${CLOCK_SECONDS.response} seconds. Playing a card gives a little turn time back.`
+          : 'No timers. Everyone gets as long as they want. This only works in a game you host.'
+      }${o.party > 2 ? ' Party games are hosted: share the code with everyone joining.' : ''}</p>
 
       ${status}
 
@@ -4425,6 +4445,29 @@ function browseCardHtml(def: CardDef, have: number): string {
   </div>`;
 }
 
+/**
+ * One copy of one card as it stands in the deck view. No drag handle: the book
+ * is showing the deck here, so dragging a card towards the deck would be asking
+ * for a copy of something already in it. Clicking takes the copy back out,
+ * which is what clicking the same card in the list beside it does.
+ */
+function deckViewCardHtml(def: CardDef): string {
+  const b = ui.builder;
+  const note = b.dev
+    ? `<button class="tiny" data-act="btn" data-cmd="suggest:${def.id}">note</button>`
+    : '';
+  const chip = def.type === 'summon' ? `L${def.level ?? 1}` : pipHtml(def.cost) || '·';
+  return `<div class="bcell dcell" title="Click the card to take this copy out">
+    <div class="copystack">
+    ${renderCard(def, { classes: ['browse'], data: { act: 'btn', cmd: `bdrop:${def.id}` } })}
+    </div>
+    <div class="bcap">
+      <span class="bcount">${chip}</span>
+      <span class="bcapbtns"><button class="tiny" data-act="btn" data-cmd="binspect:${def.id}">?</button>${note}</span>
+    </div>
+  </div>`;
+}
+
 function renderBuilder(): string {
   const b = ui.builder;
   const have = counts(b.cards);
@@ -4434,16 +4477,20 @@ function renderBuilder(): string {
 
   const leader = tryCard(b.leaderId);
 
-  const tabs = BROWSE_TABS.map((t) => {
-    const label = t === 'M' ? 'Mixed' : t === 'N' ? 'Neutral' : COLOR_NAME[t];
-    const dot =
-      t === 'M'
-        ? '<span class="tabdot dual"></span>'
-        : t === 'N'
-          ? '<span class="tabdot neutral"></span>'
-          : `<span class="tabdot" style="background: var(--c-${t})"></span>`;
-    return `<button data-act="btn" data-cmd="btab:${t}" class="tab${b.tab === t ? ' on' : ''}">${dot}${label}</button>`;
-  }).join('');
+  // The colour tabs slice the collection, so the whole row goes while the book
+  // is showing the deck.
+  const tabs = b.viewingDeck
+    ? ''
+    : `<nav class="tabs">${BROWSE_TABS.map((t) => {
+        const label = t === 'M' ? 'Mixed' : t === 'N' ? 'Neutral' : COLOR_NAME[t];
+        const dot =
+          t === 'M'
+            ? '<span class="tabdot dual"></span>'
+            : t === 'N'
+              ? '<span class="tabdot neutral"></span>'
+              : `<span class="tabdot" style="background: var(--c-${t})"></span>`;
+        return `<button data-act="btn" data-cmd="btab:${t}" class="tab${b.tab === t ? ' on' : ''}">${dot}${label}</button>`;
+      }).join('')}</nav>`;
 
   const rarityChips = RARITY_FILTERS.map((r) => {
     const on = b.rarities.includes(r);
@@ -4452,15 +4499,26 @@ function renderBuilder(): string {
   }).join('');
 
   const hit = (d: CardDef) => matchesSearch(d, b.search, b.rarities);
-  const browser =
-    browseSections(b.tab)
-      .map((sec) => ({ ...sec, cards: sec.cards.filter(hit) }))
-      .filter((sec) => sec.cards.length > 0)
-      .map(
-        (sec) => `<h4 class="bookhead"><span>${esc(sec.title)}</span></h4>
+  // Viewing the deck drops the headings entirely: one flat grid holding every
+  // copy, which is the whole point of the toggle.
+  const browser = b.viewingDeck
+    ? (() => {
+        const shown = deckCards(b.cards).filter(hit);
+        if (shown.length === 0) {
+          return `<p class="hint">${
+            b.cards.length > 0 ? 'No matches in this deck.' : 'This deck is empty.'
+          }</p>`;
+        }
+        return `<div class="bookgrid deckgrid">${shown.map(deckViewCardHtml).join('')}</div>`;
+      })()
+    : browseSections(b.tab)
+        .map((sec) => ({ ...sec, cards: sec.cards.filter(hit) }))
+        .filter((sec) => sec.cards.length > 0)
+        .map(
+          (sec) => `<h4 class="bookhead"><span>${esc(sec.title)}</span></h4>
         <div class="bookgrid">${sec.cards.map((d) => browseCardHtml(d, have.get(d.id) ?? 0)).join('')}</div>`,
-      )
-      .join('') || '<p class="hint">No matches.</p>';
+        )
+        .join('') || '<p class="hint">No matches.</p>';
 
   const leaderGroups = leaderChoices().map((g) => ({
     label: g.label,
@@ -4516,7 +4574,13 @@ function renderBuilder(): string {
     ? (() => {
         const bad = deckNameProblem(b.name);
         return `<div class="promptlayer savelayer"><div class="prompt">
-        <h3>${b.editingKey ? 'Save changes' : 'Save this deck'}</h3>
+        <h3>${
+          b.saving === 'copy'
+            ? 'Save a copy'
+            : b.editingKey
+              ? 'Save changes'
+              : 'Save this deck'
+        }</h3>
         <label class="savefield"><span>Name</span>
           <input id="savename" data-act="dname" value="${esc(b.name)}"
             maxlength="${DECK_NAME_MAX}"
@@ -4530,7 +4594,7 @@ function renderBuilder(): string {
         <p class="lobbyerr saveerr">${bad && b.name.length > 0 ? esc(bad) : ''}</p>
         <div class="row">
           <button class="primary" data-act="btn" data-cmd="bsave-confirm" ${bad ? 'disabled' : ''}>${
-            b.saving === 'play' ? 'Save and play' : 'Save'
+            b.saving === 'play' ? 'Save and play' : b.saving === 'copy' ? 'Save the copy' : 'Save'
           }</button>
           <button data-act="btn" data-cmd="bsave-cancel">Cancel</button>
         </div>
@@ -4565,7 +4629,10 @@ function renderBuilder(): string {
     <header class="bheader">
       <button data-act="btn" data-cmd="to-setup">Main Menu</button>
       <span class="wordmark">Deckbuilder</span>
-      <nav class="tabs">${tabs}</nav>
+      <button class="viewtoggle${b.viewingDeck ? ' on' : ''}" data-act="btn" data-cmd="bview">${
+        b.viewingDeck ? 'View cards' : 'View deck'
+      }</button>
+      ${tabs}
     </header>
     ${devPanel}
     <div class="bmain">
@@ -4625,6 +4692,8 @@ function renderBuilder(): string {
             ${issues.length ? `title="${esc(issues.join(' '))}"` : ''}>${b.cards.length}/${DECK_SIZE}</span>
           <button class="primary" data-act="btn" data-cmd="bsave" ${issues.length ? 'disabled' : ''}>Save</button>
           <button data-act="btn" data-cmd="bplay" ${issues.length ? 'disabled' : ''}>Save and play</button>
+          <button class="savecopy" data-act="btn" data-cmd="bcopy" ${issues.length ? 'disabled' : ''}
+            title="Keep this one and start a new deck from it">Save as copy</button>
         </div>
         <div class="deckfoot2">
           <button data-act="btn" data-cmd="bexport-deck">Export list</button>
@@ -4987,7 +5056,7 @@ async function startOnline(how: 'public' | 'host' | 'join'): Promise<void> {
     how === 'public'
       ? await client.findPublicGame()
       : how === 'host'
-        ? await client.hostPrivateGame(o.party === 2 ? undefined : o.party)
+        ? await client.hostPrivateGame(o.party === 2 ? undefined : o.party, !o.timers)
         : await client.joinPrivateGame(o.code);
 
   if (!reply.ok) {
@@ -5364,6 +5433,9 @@ function handleBuilderCommand(cmd: string): boolean {
       if ((n === 2 || n === 3 || n === 4) && ui.online.phase === 'idle') ui.online.party = n;
       break;
     }
+    case 'o-timers':
+      if (ui.online.phase === 'idle') ui.online.timers = arg === '1';
+      break;
     case 'o-seek':
       void startOnline('public');
       break;
@@ -5423,10 +5495,22 @@ function handleBuilderCommand(cmd: string): boolean {
       ui.inspect = arg;
       ui.inspectRef = null;
       break;
+    case 'bview':
+      b.viewingDeck = !b.viewingDeck;
+      break;
     case 'bsave':
     case 'bplay':
       if (!isLegal(b)) break;
       b.saving = head === 'bplay' ? 'play' : 'save';
+      break;
+    case 'bcopy':
+      if (!isLegal(b)) break;
+      // Cutting the workspace loose from the deck it was opened from is what
+      // makes this a copy: everything from here on saves as a new deck, so the
+      // original keeps its cards even if the dialog is cancelled.
+      b.saving = 'copy';
+      b.name = copyName(b.name);
+      b.editingKey = null;
       break;
     case 'bsave-cancel':
       b.saving = null;

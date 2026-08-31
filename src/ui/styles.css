@@ -2884,6 +2884,23 @@ body.mobile .modes .mixer {
   background: var(--c-N);
 }
 
+/* Swaps the book between the collection and the deck itself. Lit while the deck
+   is showing, so the header says which of the two is on screen. */
+.viewtoggle {
+  font-size: 13px;
+  padding: 4px 14px;
+  white-space: nowrap;
+}
+.viewtoggle.on {
+  background: var(--select);
+  color: #1b1405;
+}
+/* The deck view has no headings to break it up, so one flat grid holds every
+   copy. The cells are the browser's, minus the stack of spares behind them. */
+.deckgrid { padding-top: 10px; }
+.dcell .copystack::before,
+.dcell .copystack::after { content: none; }
+
 .devtoggle { font-size: 13px; opacity: 0.8; }
 .devpanel {
   background: var(--fill-2);
@@ -3413,6 +3430,10 @@ body.mobile .modes .mixer {
   box-shadow: var(--sheen);
 }
 .deckfoot .primary { flex: 1; }
+/* Three save buttons will not sit on one 330px rail without every label
+   wrapping, so the copy takes its own line under the two that end the edit. */
+.deckfoot { flex-wrap: wrap; }
+.savecopy { flex: 1 0 100%; font-size: 12px; padding: 3px 12px; }
 .deckfoot2 {
   display: flex;
   gap: 8px;
@@ -3453,6 +3474,9 @@ body.mobile .modes .mixer {
     flex: 1 1 100%;
   }
   .bheader .tabs .tab { flex: none; }
+  /* Both labels sized alike and tightened, so the toggle stays beside the
+     wordmark on a phone instead of hopping to its own line when it is used. */
+  .viewtoggle { padding: 4px 9px; min-width: 82px; }
 }
 
 /* Narrow enough that the rail and the book cannot both keep their desktop

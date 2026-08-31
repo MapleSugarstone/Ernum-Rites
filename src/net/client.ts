@@ -84,8 +84,12 @@ export class NetClient {
     return this.queue('/api/queue/public');
   }
 
-  hostPrivateGame(party?: 3 | 4): Promise<QueueReply> {
-    return this.queue('/api/queue/host', party ? `?party=${party}` : '');
+  hostPrivateGame(party?: 3 | 4, noTimers = false): Promise<QueueReply> {
+    const params = new URLSearchParams();
+    if (party) params.set('party', String(party));
+    if (noTimers) params.set('timers', 'off');
+    const query = params.toString();
+    return this.queue('/api/queue/host', query ? `?${query}` : '');
   }
 
   joinPrivateGame(code: string): Promise<QueueReply> {
