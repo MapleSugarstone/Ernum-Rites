@@ -264,6 +264,18 @@ describe('every card can be drawn', () => {
     }
   });
 
+  it('reprices Powers and the flip price on a whole-card copy', () => {
+    // Orange Farmer pays Solar for both its Powers and its flip, so a copy that
+    // only rewrote the play cost handed a Robot deck three buttons it cannot press.
+    const g = card(robotCopy('s2-orangefarmer'));
+    for (const p of g.powers ?? []) {
+      expect(p.cost?.S ?? 0, `${p.name} keeps a Solar pip`).toBe(0);
+      expect(p.cost?.R ?? 0, `${p.name} is priced in Robot`).toBeGreaterThan(0);
+    }
+    expect(g.flipCost?.mana?.S ?? 0, 'the flip keeps a Solar pip').toBe(0);
+    expect(g.flipCost?.mana?.R ?? 0, 'the flip is priced in Robot').toBe(1);
+  });
+
   it('lends the whole text side on a graft, host keeping its own', () => {
     const host = card('p3-Pod');
     const g = card(graftedCopy('p3-Pod', 'n3-NerveLite', {

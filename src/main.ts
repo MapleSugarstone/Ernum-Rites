@@ -1,3 +1,6 @@
+// First, before any other module can fail to load: a boot error must land on
+// the player's screen rather than leave a blank page.
+import './ui/bootguard';
 import { chooseAction } from './ai/bot';
 import { NetClient } from './net/client';
 import { nameProblem } from '../worker/protocol';
@@ -5076,7 +5079,18 @@ function dispatch(action: Action): void {
   // Whoever is giving up, not whoever is on the clock: crediting the concession
   // to the active player would hand the match to the wrong side.
   const by = action.type === 'CONCEDE' ? viewSeat() : actor();
-  const res = applyAction(ui.state, by, action);
+  // A reducer exception leaves the state untouched; naming it beats a click
+  // that silently does nothing.
+  let res: ReturnType<typeof applyAction>;
+  try {
+    res = applyAction(ui.state, by, action);
+  } catch (err) {
+    console.error('applyAction threw', action.type, err);
+    res = {
+      ok: false,
+      error: `That move hit a bug: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
   if (!res.ok) {
     // Nothing happened, so stop recording rather than leave the buffer open for
     // the bot to search into.

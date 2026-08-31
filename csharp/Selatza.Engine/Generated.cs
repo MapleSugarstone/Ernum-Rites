@@ -13,7 +13,7 @@ public static class Generated
     public static string RobotCopy(string sourceId)
     {
         var src = Registry.Card(sourceId);
-        var cost = new Cost(R: ColoredTotal(src.Cost), C: src.Cost.C);
+        var cost = RobotizedCost(src.Cost);
         return Registry.RegisterGenerated(new CardDef
         {
             Id = $"gen-hack-{sourceId}",
@@ -44,13 +44,15 @@ public static class Generated
             Art = src.Art,
             Artist = src.Artist,
             Num = "GEN",
-            Powers = src.Powers,
+            // A body's Powers and flip price are costs too. Leaving them in
+            // their old colours hands a mono-Robot deck a button it can never pay.
+            Powers = Repriced(src.Powers, RobotizedCost),
             Triggers = src.Triggers,
             Targets = src.Targets,
             Effect = src.Effect,
             Flip = src.Flip,
             FlipText = src.FlipText,
-            FlipCost = src.FlipCost,
+            FlipCost = Repriced(src.FlipCost, RobotizedCost),
             StageHooks = src.StageHooks,
         });
     }
@@ -209,6 +211,8 @@ public static class Generated
     }
 
     /// <summary>Every colour pip on a cost rewritten as Oil, colourless left alone.</summary>
+    private static Cost RobotizedCost(Cost cost) => new(R: ColoredTotal(cost), C: cost.C);
+
     private static Cost OiledCost(Cost cost) => new(O: ColoredTotal(cost), C: cost.C);
 
     /// <summary>

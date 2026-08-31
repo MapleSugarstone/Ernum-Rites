@@ -27,10 +27,6 @@ function coloredTotal(cost: Cost | undefined): number {
 /** A copy of any card rebuilt in Robot: same rules text, every colour pip now R. */
 export function robotCopy(sourceId: string): string {
   const src = card(sourceId);
-  const colored = coloredTotal(src.cost);
-  const cost: Cost = {};
-  if (colored) cost.R = colored;
-  if (src.cost?.C) cost.C = src.cost.C;
   return registerGenerated({
     ...src,
     id: `gen-hack-${sourceId}`,
@@ -39,7 +35,11 @@ export function robotCopy(sourceId: string): string {
     color2: undefined,
     color3: undefined,
     identity: undefined,
-    cost,
+    cost: robotizedCost(src.cost),
+    // A body's Powers and flip price are costs too. Leaving them in their old
+    // colours hands a mono-Robot deck a button it can never pay.
+    powers: repriced(src.powers, robotizedCost),
+    flipCost: repricedFlip(src.flipCost, robotizedCost),
     uncollectible: true,
     num: 'GEN',
   });
@@ -152,6 +152,15 @@ function splitThreeWays(cost: Cost | undefined): Cost {
   if (o) out.O = o;
   if (r) out.R = r;
   if (base) out.P = base;
+  if (cost?.C) out.C = cost.C;
+  return out;
+}
+
+/** Every colour pip on a cost rewritten as Robot, colourless left alone. */
+function robotizedCost(cost: Cost | undefined): Cost {
+  const colored = coloredTotal(cost);
+  const out: Cost = {};
+  if (colored) out.R = colored;
   if (cost?.C) out.C = cost.C;
   return out;
 }

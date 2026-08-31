@@ -51,7 +51,16 @@
     </script>
   </head>
   <body>
-    <div id="app"></div>
+    <!-- Stands in until the first render replaces it. If the script never runs
+         at all (a stale cache pointing at a bundle a newer deploy replaced, a
+         blocked download), the player sees this instead of a blank page, and
+         its being on screen says the game's code never arrived. -->
+    <div id="app">
+      <div class="bootfallback">
+        <p>Loading Ernum Rites&hellip;</p>
+        <p class="boothint">Stuck on this screen? Reload the page. If it keeps happening, clear this site's cached data and try again.</p>
+      </div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

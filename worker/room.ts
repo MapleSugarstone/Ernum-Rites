@@ -112,11 +112,15 @@ export class MatchRoom extends DurableObject {
     if (this.state.winner !== null || this.state.drawn) return;
     if (this.state.players[seat].eliminated) return;
     this.broadcast({ type: 'playerLeft', seat, name: gone.name });
-    const result = applyAction(this.state, seat, { type: 'CONCEDE' });
-    if (result.ok) {
-      this.state = result.state;
-      await this.restartClock();
-      this.pushState({ action: { type: 'CONCEDE' }, actor: seat });
+    try {
+      const result = applyAction(this.state, seat, { type: 'CONCEDE' });
+      if (result.ok) {
+        this.state = result.state;
+        await this.restartClock();
+        this.pushState({ action: { type: 'CONCEDE' }, actor: seat });
+      }
+    } catch (err) {
+      console.error('concede applyAction threw', err);
     }
   }
 
@@ -211,7 +215,19 @@ export class MatchRoom extends DurableObject {
     if (msg.type === 'resync' || msg.type === 'desync') return this.pushState();
 
     if (msg.type === 'action') {
-      const result = applyAction(this.state, seat, msg.action);
+      // An engine exception must not take the room down with it: the reducer
+      // works on a clone, so the state is untouched. Refuse the action, name
+      // the bug for the player, and leave the stack in the log for the tail.
+      let result: ReturnType<typeof applyAction>;
+      try {
+        result = applyAction(this.state, seat, msg.action);
+      } catch (err) {
+        console.error('applyAction threw', msg.action?.type, err);
+        result = {
+          ok: false,
+          error: `The server hit a bug applying that: ${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
       if (!result.ok) {
         return this.send(socket, {
           type: 'rejected',
@@ -294,7 +310,15 @@ export class MatchRoom extends DurableObject {
     const player = this.clock.player;
     const action = timeoutAction(this.state);
     if (!action) return;
-    const result = applyAction(this.state, player, action);
+    // Guarded like a player's own action: a bug in the passive move must not
+    // wedge the alarm loop, and the state is untouched when the reducer throws.
+    let result: ReturnType<typeof applyAction>;
+    try {
+      result = applyAction(this.state, player, action);
+    } catch (err) {
+      console.error('timeout applyAction threw', action.type, err);
+      result = { ok: false, error: 'timeout action failed' };
+    }
     if (result.ok) {
       this.state = result.state;
       this.broadcast({ type: 'timedOut', player, action: action.type });

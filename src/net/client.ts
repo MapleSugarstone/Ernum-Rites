@@ -180,7 +180,17 @@ export class NetClient {
     if (this.socket?.readyState !== WebSocket.OPEN) {
       return { ok: false, reason: 'The connection is down.' };
     }
-    const trial = applyAction(this.mirror, this.status.seat, action);
+    let trial: ReturnType<typeof applyAction>;
+    try {
+      trial = applyAction(this.mirror, this.status.seat, action);
+    } catch (err) {
+      // The pre-check crashed on this side's redacted copy. The room holds the
+      // real state, so the action still goes: at worst it comes back rejected.
+      // Swallowing the click here is how a bug reads as "nothing happened".
+      console.error('local pre-check threw; sending anyway', action.type, err);
+      this.send({ type: 'action', action, version: this.mirror.version });
+      return { ok: true };
+    }
     if (!trial.ok) return { ok: false, reason: trial.error };
     this.send({ type: 'action', action, version: this.mirror.version });
     return { ok: true };

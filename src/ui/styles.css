@@ -186,6 +186,31 @@
   color-scheme: dark;
 }
 
+/* The stand-in index.html ships inside #app, on screen only until the first
+   render replaces it. Faded in late, so a boot quicker than the delay never
+   shows it at all; if it does appear, the script has not run and the page
+   would otherwise be blank. */
+.bootfallback {
+  max-width: 640px;
+  margin: 24vh auto 0;
+  padding: 0 24px;
+  text-align: center;
+  font-size: 17px;
+  color: var(--text, #dfe6ff);
+  opacity: 0;
+  animation: bootfade 400ms ease 700ms forwards;
+}
+.bootfallback .boothint {
+  margin-top: 10px;
+  font-size: 13px;
+  opacity: 0.7;
+}
+@keyframes bootfade {
+  to {
+    opacity: 1;
+  }
+}
+
 /* --- light scheme -----------------------------------------------------------
    The page this started as: a pale sky ground with dark ink borders, aero's
    light-on-glass rather than the velvet's nap. Pulled off aero's cyan onto the
