@@ -292,12 +292,12 @@ export const mixedCards: CardDef[] = [
     powers: [
       {
         name: 'Maul',
-        cost: { P: 1, F: 1 },
-        text: 'Deal 1 to an enemy summon. If it dies, draw a card.',
+        cost: { P: 1, F: 1, C: 1 },
+        text: 'Deal 2 to an enemy summon. If it dies, draw a card.',
         sapSelf: true,
         targets: [T.enemy()],
         effect: (c) => {
-          c.damage(c.targets[0], 1);
+          c.damage(c.targets[0], 2);
           if (!c.summonAt(c.targets[0])) c.draw(c.me, 1);
         },
       },

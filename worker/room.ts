@@ -205,6 +205,21 @@ export class MatchRoom extends DurableObject {
           reason: 'Your copy of the game is a different version. Reload the page and try again.',
         });
       }
+      // A second join from a socket that already holds a seat is that player
+      // changing their deck while they wait, not a second player arriving.
+      // Handing it a fresh seat would sit one person on both sides of the room,
+      // and leaving it alone was why a deck swapped in the queue never reached
+      // the match. Only before the match starts: once the cards are dealt the
+      // deck is part of the game.
+      const held = this.seats.findIndex((s) => s?.socket === socket);
+      if (held >= 0) {
+        if (this.state !== null) {
+          return this.send(socket, { type: 'error', reason: 'The match has already started.' });
+        }
+        this.seats[held] = { socket, name: msg.name.trim(), deckKey: msg.deckKey, deck: msg.deck };
+        this.broadcastWaiting();
+        return;
+      }
       const seat = this.seats.findIndex((s) => s === null);
       if (seat < 0) return this.send(socket, { type: 'error', reason: 'room is full' });
       this.seats[seat] = { socket, name: msg.name.trim(), deckKey: msg.deckKey, deck: msg.deck };

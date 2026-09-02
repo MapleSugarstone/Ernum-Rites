@@ -35,14 +35,47 @@ export function isGenerated(id: string): boolean {
   return id.startsWith('gen-');
 }
 
+/**
+ * Rebuilds a card the game minted mid-match, from its id alone.
+ *
+ * Only the engine that ran the effect ever minted the card. Online a client is
+ * handed the finished state rather than the actions behind it, so the seat that
+ * did not cast the spell holds a board naming a card its own registry has never
+ * seen: no art, no name, no printed Powers. Rebuilding from the id closes that,
+ * and it works precisely because a generated id carries everything its mint
+ * took.
+ *
+ * Set by generated.ts at load, because the builders live there and importing
+ * them here would be a cycle.
+ */
+let rebuildGenerated: ((id: string) => void) | null = null;
+
+export function setGeneratedRebuilder(fn: (id: string) => void): void {
+  rebuildGenerated = fn;
+}
+
+/** The card, minting it first if it is a generated one this build can rebuild. */
+function found(id: string): CardDef | undefined {
+  const hit = registry.get(id);
+  if (hit || !rebuildGenerated || !isGenerated(id)) return hit;
+  try {
+    rebuildGenerated(id);
+  } catch {
+    // An id this build cannot read is not worth throwing over here; the caller
+    // sees the same miss it would have seen anyway.
+    return undefined;
+  }
+  return registry.get(id);
+}
+
 export function card(id: string): CardDef {
-  const c = registry.get(id);
+  const c = found(id);
   if (!c) throw new Error(`unknown card id: ${id}`);
   return c;
 }
 
 export function tryCard(id: string): CardDef | undefined {
-  return registry.get(id);
+  return found(id);
 }
 
 export function allCards(): CardDef[] {

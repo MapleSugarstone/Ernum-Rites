@@ -1372,7 +1372,7 @@ describe('leader health', () => {
 describe('flips worth asking about', () => {
   /** A costed flip waiting on its owner, as the client would find it. */
   function offer(cardId: string, holder: TargetRef) {
-    return { player: 0 as PlayerIdx, holder, cardId };
+    return { player: 0 as PlayerIdx, holder, cardId, pending: 0, depth: 0 };
   }
 
   const leaderRef: TargetRef = { kind: 'leader', player: 0 };
@@ -1861,5 +1861,37 @@ describe('a match cannot run forever', () => {
     const r = applyAction(s, currentActor(s), { type: 'END_TURN' });
     expect(r.ok).toBe(true);
     if (r.ok && r.state.winner !== null) expect(r.state.drawn).toBe(false);
+  });
+});
+
+describe('Drowned Wanderer', () => {
+  it('lands what it washes ashore with the attack it promises, not only the HP', () => {
+    // The Power reads "+1 attack and 1 extra HP". The extra HP always arrived
+    // and the attack never did: the bonus was passed as an override, and an
+    // override is exactly what asPrinted discards.
+    let s = game();
+    s = place(s, 0, 'm-bry-drownedwanderer', 0);
+    s = passTo(passTo(s, 1), 0);
+
+    const washed = 'o1-skeleton';
+    const printed = card(washed);
+    const me = s.players[0];
+    me.deck = [washed, ...filler(30)];
+    me.mana.F = 1;
+    me.mana.P = 1;
+    me.mana.S = 1;
+
+    s = must(s, 0, {
+      type: 'ACTIVATE_POWER',
+      source: src(0, 0),
+      powerIndex: 0,
+      targets: [],
+    });
+
+    const landed = s.players[0].slots.find((b, i) => i !== 0 && b && b.cardId === washed);
+    expect(landed, 'the summon came ashore').toBeTruthy();
+    expect(effectiveStrength(s, landed!), 'printed attack plus one')
+      .toBe((printed.strength ?? 0) + 1);
+    expect(remainingHp(landed!), 'printed HP plus one').toBe((printed.hp ?? 1) + 1);
   });
 });

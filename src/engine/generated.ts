@@ -1,4 +1,4 @@
-import { card, registerGenerated } from './registry';
+import { card, registerGenerated, setGeneratedRebuilder, tryCard } from './registry';
 import type {
   CardColour,
   Cost,
@@ -277,6 +277,14 @@ export function graftedCopy(
     ...(host.muffleFlips || src.muffleFlips ? { muffleFlips: true } : {}),
     ...(host.stationary || src.stationary ? { stationary: true } : {}),
     ...(merged ? { triggers: merged } : { triggers: undefined }),
+    // A body that has taken on a spell wears that spell's face. Living Curse
+    // grafts from an Oil-tinted copy of the spell it swallowed, and without
+    // this the host's own portrait spread over the top of it and the card gave
+    // no sign of what it had become. A graft from a summon is the other case:
+    // the host is still itself, wearing borrowed Powers, and keeps its face.
+    ...(src.type === 'spell'
+      ? { art: src.art, artTint: src.artTint, artist: src.artist }
+      : {}),
     uncollectible: true,
     num: 'GEN',
   });
@@ -438,3 +446,96 @@ export function livingSummon(
     num: 'GEN',
   });
 }
+
+/**
+ * Mint a generated card from its id.
+ *
+ * Every id below is built by one of the functions above out of a source card and
+ * a handful of numbers, so reading it back is a matter of taking those numbers
+ * off the end and handing the rest to the same builder. Card ids contain
+ * hyphens and the numeric tail does not, which is why the parsing runs from the
+ * right.
+ *
+ * Silence on an unrecognised id is deliberate. This is a fallback for a client
+ * holding a board it did not build, and a shape it cannot read should look the
+ * same as a card it has never heard of rather than throw in the middle of a
+ * render.
+ */
+function rebuild(id: string): void {
+  const simple: Array<[string, (src: string) => string]> = [
+    ['gen-hack-', robotCopy],
+    ['gen-raise-', oilRaise],
+    ['gen-oil-', oilCopy],
+    ['gen-malware-', malwareCopy],
+    ['gen-virus-', pepperRobotCopy],
+  ];
+  for (const [prefix, build] of simple) {
+    if (!id.startsWith(prefix)) continue;
+    const src = id.slice(prefix.length);
+    if (tryCard(src)) build(src);
+    return;
+  }
+
+  if (id.startsWith('gen-banana-')) {
+    const rest = id.slice('gen-banana-'.length);
+    // The colour is the last character and the banana is everything before it.
+    const color = rest.slice(-1) as CardColour;
+    const banana = rest.slice(0, -1).replace(/-$/, '');
+    if (tryCard(banana)) coloredBanana(banana, color);
+    return;
+  }
+
+  if (id.startsWith('gen-live-')) {
+    // gen-live-<spellId>-<strength>x<hp>L<level>[f]
+    const rest = id.slice('gen-live-'.length);
+    const cut = rest.lastIndexOf('-');
+    if (cut < 0) return;
+    const spellId = rest.slice(0, cut);
+    const m = /^(\d+)x(\d+)L(\d+)(f?)$/.exec(rest.slice(cut + 1));
+    if (!m || !tryCard(spellId)) return;
+    livingSummon(spellId, {
+      strength: Number(m[1]),
+      hp: Number(m[2]),
+      level: Number(m[3]),
+      ...(m[4] ? { free: true } : {}),
+    });
+    return;
+  }
+
+  if (id.startsWith('gen-fuse-')) {
+    // gen-fuse-<aId>+<bId>-<strength>x<hp>L<level>
+    const rest = id.slice('gen-fuse-'.length);
+    const cut = rest.lastIndexOf('-');
+    if (cut < 0) return;
+    const pair = rest.slice(0, cut).split('+');
+    const m = /^(\d+)x(\d+)L(\d+)$/.exec(rest.slice(cut + 1));
+    if (!m || pair.length !== 2) return;
+    if (!tryCard(pair[0]) || !tryCard(pair[1])) return;
+    fusedRecomp(pair[0], pair[1], Number(m[1]), Number(m[2]), Number(m[3]));
+    return;
+  }
+
+  if (id.startsWith('gen-graft-')) {
+    // gen-graft-<hostId>+<sourceId>-<strength>L<level><colour>
+    const rest = id.slice('gen-graft-'.length);
+    const cut = rest.lastIndexOf('-');
+    if (cut < 0) return;
+    const pair = rest.slice(0, cut).split('+');
+    const m = /^(\d+)L(\d+)([A-Z])$/.exec(rest.slice(cut + 1));
+    if (!m || pair.length !== 2) return;
+    const host = tryCard(pair[0]);
+    if (!host || !tryCard(pair[1])) return;
+    // A graft carries the host's own Powers alongside the borrowed ones, and
+    // the host here is a card rather than a body, so its printed list is what
+    // the mint was given.
+    graftedCopy(pair[0], pair[1], {
+      strength: Number(m[1]),
+      level: Number(m[2]),
+      color: m[3] as CardColour,
+      powers: host.powers ?? [],
+    });
+    return;
+  }
+}
+
+setGeneratedRebuilder(rebuild);

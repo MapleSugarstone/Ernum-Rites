@@ -176,9 +176,22 @@ export type Pending = {
 /** A costed flip waiting on its owner to pay for it or wave it away. */
 export interface FlipOffer {
   player: PlayerIdx;
-  /** The summon the card was protecting, so a dead holder can be skipped. */
+  /** The summon the card is protecting. */
   holder: TargetRef;
   cardId: string;
+  /**
+   * Points of the same blow still to land once this flip is answered. A costed
+   * flip stops the damage that revealed it, so a card that would save the body
+   * gets its chance before the body is gone.
+   */
+  pending: number;
+  /**
+   * Nesting depth the blow was at, carried so the resumed half is held to the
+   * same recursion guard as the first half. Left out of the digest for the same
+   * reason instance uids are: it bounds the engine rather than describing the
+   * position.
+   */
+  depth: number;
 }
 
 export interface LogEntry {
@@ -362,6 +375,20 @@ export interface PendingChoice {
    * "whoever isn't choosing". Party games only.
    */
   victim?: PlayerIdx;
+}
+
+/**
+ * Whether the waiting choice is the thing the game is actually asking about.
+ *
+ * A Strike fires as an attack is declared and can queue a choice for the
+ * attacker, and the response window then opens for the defender. The game is
+ * waiting on the defender, so a client that draws the head of the choice queue
+ * whenever its own seat may act hands them a prompt no action of theirs can
+ * resolve, over the top of the trap window they are actually being asked about.
+ * This is the same priority `currentActor` reads, stated once so both agree.
+ */
+export function choiceIsLive(state: GameState): boolean {
+  return state.choiceQueue.length > 0 && !state.pending;
 }
 
 /** Whoever the game is currently waiting on, which is not always the active player. */

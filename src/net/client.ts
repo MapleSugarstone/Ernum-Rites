@@ -106,6 +106,16 @@ export class NetClient {
 
   // --- the match socket -----------------------------------------------------
 
+  /**
+   * Swap the deck on a connection that is already waiting. The room reads a
+   * second join from a seated socket as a deck change, so this is the same
+   * message the seat was taken with.
+   */
+  changeDeck(deckKey: string, name: string, deck?: { leaderId: string; cards: string[] }): void {
+    if (this.socket?.readyState !== WebSocket.OPEN) return;
+    this.send({ type: 'join', deckKey, name, version: BUILD_VERSION, deck });
+  }
+
   connect(
     roomId: string,
     kind: RoomKind,

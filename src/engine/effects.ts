@@ -378,6 +378,27 @@ export function dealDamage(
     log(state, summon.owner, `A Power Shield on ${def.name} takes all ${amount} of it.`);
     return 0;
   }
+  return turnCards(state, summon, amount, depth, muffle);
+}
+
+/**
+ * Turn HP cards over one at a time, and stop dead at a costed flip.
+ *
+ * A costed flip is a question for its owner, and the rest of the blow waits on
+ * the answer. Damage used to carry straight past it: the body ran out of cards,
+ * died, and its owner was then asked to pay for something protecting a body
+ * already in the debt pile. A flip that heals what it was covering has to fire
+ * while there is still something to heal, and that is true of the last card as
+ * much as the first.
+ */
+function turnCards(
+  state: GameState,
+  summon: SummonInstance,
+  amount: number,
+  depth: number,
+  muffle: boolean,
+): number {
+  const def = card(summon.cardId);
   let muted = 0;
   for (let i = 0; i < amount; i++) {
     const next = summon.hp.find((h) => !h.flipped);
@@ -395,13 +416,16 @@ export function dealDamage(
         muted++;
         log(state, summon.owner, `${flipped.name}'s FLIP is muted.`);
       } else if (flipped.flipCost) {
-        // Costed flips are optional, so they wait for their owner rather than
-        // interrupting damage resolution with a question.
+        // The blow stops here. What is left of it is parked on the offer, and
+        // the body is not settled until the offer is answered, even at 0 HP.
         state.flipQueue.push({
           player: summon.owner,
           holder: refFor(state, summon),
           cardId: next.cardId,
+          pending: amount - i - 1,
+          depth,
         });
+        return muted;
       } else {
         flipped.flip(makeFlipCtx(state, summon, flipped, depth + 1));
       }
@@ -417,12 +441,31 @@ export function dealDamage(
       log(state, summon.owner, `${def.name} frenzies.`);
       fireTrigger(state, summon, 'onSurvive');
     }
-    if (remainingHp(summon) === 0) {
-      destroySummon(state, summon);
-      return muted;
-    }
   }
+  settleBody(state, summon);
   return muted;
+}
+
+/** Send a body to debt once it has nothing face down left to lose. */
+function settleBody(state: GameState, summon: SummonInstance): void {
+  if (remainingHp(summon) === 0) destroySummon(state, summon);
+}
+
+/**
+ * Land whatever the answered flip was holding up, then settle the body.
+ *
+ * Called from both sides of the question, because declining is an answer too:
+ * the points still owed arrive either way and only the flip's own effect turns
+ * on whether it was paid for.
+ */
+export function resumeDamage(state: GameState, offer: FlipOffer): void {
+  const holder = findSummon(state, offer.holder);
+  if (!holder) return;
+  if (offer.pending > 0) {
+    turnCards(state, holder, offer.pending, offer.depth, false);
+    return;
+  }
+  settleBody(state, holder);
 }
 
 /** Whether any other side is fielding anything that forbids this player supporters. */
@@ -594,9 +637,39 @@ export function destroySummon(state: GameState, summon: SummonInstance): void {
 
   // The owner gets a chance to plug the hole before their leader is exposed.
   // On their own turn the main phase already offers that, so no prompt.
-  if (summon.owner !== state.active && p.hand.some((id) => card(id).type === 'summon')) {
+  //
+  // Only while the hole is still there. A Deathrattle that refills the slot it
+  // just left closed it before this ran: Slime stands a smaller Slime up in the
+  // first empty slot, which is its own, and the offer went out anyway. The
+  // player was asked to fill a slot with a Slime already standing in it, and a
+  // chain of them asked once a link.
+  if (
+    summon.owner !== state.active &&
+    !p.slots[slot] &&
+    p.hand.some((id) => card(id).type === 'summon')
+  ) {
     state.replaceQueue.push({ player: summon.owner, slot });
   }
+}
+
+/**
+ * Drop replace offers nobody can answer any more.
+ *
+ * An offer is made the moment a body falls, and the board moves on before it is
+ * put to its owner: two bodies dying together queue two offers, answering the
+ * first can empty the hand, and the second is then a question with no answer.
+ * Something else refilling the slot has the same effect. Checked after every
+ * action rather than only when the offer is made, because that is when it stops
+ * being true.
+ */
+export function sweepReplaceQueue(state: GameState): void {
+  if (state.replaceQueue.length === 0) return;
+  state.replaceQueue = state.replaceQueue.filter((offer) => {
+    const p = state.players[offer.player];
+    if (p.eliminated) return false;
+    if (p.slots[offer.slot]) return false;
+    return p.hand.some((id) => tryCard(id)?.type === 'summon');
+  });
 }
 
 export function endGame(state: GameState, winner: PlayerIdx, reason: string): void {

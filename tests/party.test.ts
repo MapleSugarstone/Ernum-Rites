@@ -12,7 +12,9 @@ import { NEEDS_ENEMY } from '../src/engine/engine';
 import { addDebt, defaultOpp, destroySummon, putSummonDirect } from '../src/engine/effects';
 import { HIDDEN_ID, redactFor } from '../src/engine/redact';
 import {
+  currentActor,
   DEBT_LIMIT,
+  debtLimitOf,
   isOver,
   livingOpponents,
   nextLiving,
@@ -22,6 +24,7 @@ import {
   type GameState,
 } from '../src/engine/state';
 import type { PlayerIdx, TargetSpec } from '../src/engine/types';
+import { chooseAction, defaultWeights, evaluate } from '../src/ai/bot';
 
 const D1 = 'x-r-dummy-1';
 const D2 = 'x-p-dummy-2';
@@ -355,4 +358,59 @@ describe('party elimination', () => {
     expect(s.pending).toBeNull();
     expect(s.players[0].supporters).toHaveLength(1);
   });
+});
+
+describe('the bot reads the debt cap off the mode', () => {
+  /** The debt at which the panic term starts, which is two short of the cap. */
+  function cliffBites(seats: number, debt: number): boolean {
+    const s = game(seats);
+    s.players[0].debtCount = debt;
+    const withDebt = evaluate(s, 0);
+    // The same position with the panic term certainly off, so the difference is
+    // the term rather than the flat per-debt charge either side of it.
+    const q = game(seats);
+    q.players[0].debtCount = debt;
+    const flat = evaluate(q, 0, { ...defaultWeights, debtCliff: 0 });
+    return Math.abs(withDebt - flat) > 1e-9;
+  }
+
+  it('puts the cap where the engine puts it', () => {
+    expect(debtLimitOf(game(2))).toBe(DEBT_LIMIT);
+    expect(debtLimitOf(game(3))).toBe(PARTY_DEBT_LIMIT);
+  });
+
+  it('panics two short of 25 in a duel and two short of 30 in a party', () => {
+    expect(cliffBites(2, DEBT_LIMIT - 3), 'quiet at 22 of 25').toBe(false);
+    expect(cliffBites(2, DEBT_LIMIT - 2), 'biting at 23 of 25').toBe(true);
+
+    // The number that would be wrong if the bot carried the duel cap into a
+    // party game: 23 is three short of nothing there.
+    expect(cliffBites(3, DEBT_LIMIT - 2), 'quiet at 23 of 30').toBe(false);
+    expect(cliffBites(3, PARTY_DEBT_LIMIT - 3), 'quiet at 27 of 30').toBe(false);
+    expect(cliffBites(3, PARTY_DEBT_LIMIT - 2), 'biting at 28 of 30').toBe(true);
+  });
+});
+
+describe('the bot in a party game', () => {
+  it('plays three and four seats without offering an illegal action', () => {
+    // The search was two-player throughout: it scored one opponent, measured
+    // progress against one, and handed one seat a turn. Every part of that now
+    // walks `livingOpponents`, and this is the guard that the walk is legal at
+    // every seat count the engine seats.
+    // Deliberately short. Each decision now plays out every other seat's turn,
+    // so a party position costs roughly one rollout per opponent and a long run
+    // here would be a benchmark rather than a guard.
+    for (const seats of [3, 4]) {
+      let s = game(seats);
+      for (let step = 0; step < 24 && !isOver(s); step++) {
+        const who = currentActor(s);
+        const action = chooseAction(s, who);
+        const res = applyAction(s, who, action);
+        expect(res.ok, res.ok ? '' : `${seats} seats: ${action.type} rejected: ${res.error}`)
+          .toBe(true);
+        if (!res.ok) break;
+        s = res.state;
+      }
+    }
+  }, 300_000);
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import '../src/cards';
-import { createGame } from '../src/engine/engine';
+import { applyAction, createGame } from '../src/engine/engine';
 import { dealDamage } from '../src/engine/effects';
 import { remainingHp, type GameState } from '../src/engine/state';
 import { card } from '../src/engine/registry';
@@ -79,7 +79,11 @@ describe('a healing flip on the last HP card', () => {
     expect(s.winner, 'the leader survived').toBeNull();
   });
 
-  it('does not save it when the flip has a cost', () => {
+  it('also saves it when the flip has a cost and the cost is paid', () => {
+    // This used to go the other way, and the asymmetry was deliberate: a costed
+    // flip only queued, so the body was checked for death before its owner was
+    // ever asked. That meant paying for a card whose holder was already in the
+    // debt pile. Damage now stops at a costed flip instead.
     const s = game();
     const leader = s.players[0].leader!;
     leader.hp.length = 0;
@@ -87,13 +91,18 @@ describe('a healing flip on the last HP card', () => {
     leader.hp.push({ cardId: 'f1-whaleshark', flipped: false });
     leader.hp.push({ cardId: 's1-livingraincloud', flipped: false });
     leader.shields = 0;
+    s.players[0].mana.S = 1;
     expect(card('s1-livingraincloud').flipCost, 'this heal is costed').toBeTruthy();
 
     dealDamage(s, { kind: 'leader', player: 0 }, 3);
+    expect(s.flipQueue.length, 'the blow stopped to ask').toBe(1);
+    expect(s.winner, 'and nobody has won yet').toBeNull();
 
-    // A costed flip only queues, so it is never offered before the body is
-    // checked for death.
-    expect(remainingHp(leader), 'nothing came back').toBe(0);
-    expect(s.winner, 'the leader died anyway').toBe(1);
+    const paid = applyAction(s, 0, { type: 'PAY_FLIP' });
+    expect(paid.ok, paid.ok ? '' : paid.error).toBe(true);
+    const after = paid.ok ? paid.state : s;
+    expect(remainingHp(after.players[0].leader!), 'healed back above zero')
+      .toBeGreaterThan(0);
+    expect(after.winner, 'the leader survived').toBeNull();
   });
 });

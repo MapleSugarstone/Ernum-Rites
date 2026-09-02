@@ -57,6 +57,12 @@ export function dropdownHtml(o: {
   value: string;
   placeholder: string;
   groups: DropdownGroup[];
+  /**
+   * Placeholder for a box that filters the list as you type. Worth having on a
+   * list long enough that finding a name in it means reading all of them, which
+   * for the leaders is two hundred and twenty.
+   */
+  search?: string;
 }): string {
   const flat = o.groups.flatMap((g) => g.options);
   const chosen = flat.find((opt) => opt.value === o.value);
@@ -83,7 +89,12 @@ export function dropdownHtml(o: {
       <span class="ddvalue${chosen ? '' : ' placeheld'}">${esc(chosen ? chosen.label : o.placeholder)}</span>
       <span class="ddcaret" aria-hidden="true"></span>
     </button>
-    <div class="ddlist" id="${listId}" role="listbox">${groups}</div>
+    <div class="ddlist" id="${listId}" role="listbox">${
+      o.search
+        ? `<div class="ddsearch"><input type="text" autocomplete="off" spellcheck="false"
+            aria-label="${esc(o.search)}" placeholder="${esc(o.search)}"></div>`
+        : ''
+    }${groups}<div class="ddempty" hidden>Nothing matches.</div></div>
   </div>`;
 }
 
@@ -91,8 +102,57 @@ function wrapOf(name: string): HTMLElement | null {
   return wiring?.root.querySelector<HTMLElement>(`.dropdown[data-dd="${CSS.escape(name)}"]`) ?? null;
 }
 
+/**
+ * The options the keyboard and the mouse can reach: what the filter has left.
+ * Everything that moves a selection goes through here, so hiding a row is
+ * enough to take it out of play.
+ */
 function optionsOf(wrap: HTMLElement): HTMLElement[] {
-  return [...wrap.querySelectorAll<HTMLElement>('.ddopt')];
+  return [...wrap.querySelectorAll<HTMLElement>('.ddopt')].filter((el) => !el.hidden);
+}
+
+function searchBox(wrap: HTMLElement): HTMLInputElement | null {
+  return wrap.querySelector<HTMLInputElement>('.ddsearch input');
+}
+
+/**
+ * Hide what does not match what has been typed.
+ *
+ * A group header carries no text of its own worth matching, so it is kept only
+ * when something under it survived. Headers come before their options in
+ * document order, which is what lets one pass do both.
+ */
+function applyFilter(wrap: HTMLElement): void {
+  const needle = (searchBox(wrap)?.value ?? '').trim().toLowerCase();
+  let head: HTMLElement | null = null;
+  let headHas = false;
+  let shown = 0;
+  for (const row of wrap.querySelectorAll<HTMLElement>('.ddopt, .ddgroup')) {
+    if (row.classList.contains('ddgroup')) {
+      if (head) head.hidden = !headHas;
+      head = row;
+      headHas = false;
+      continue;
+    }
+    const hit = needle === '' || (row.textContent ?? '').toLowerCase().includes(needle);
+    row.hidden = !hit;
+    if (hit) {
+      headHas = true;
+      shown += 1;
+    }
+  }
+  if (head) head.hidden = !headHas;
+  const empty = wrap.querySelector<HTMLElement>('.ddempty');
+  if (empty) empty.hidden = shown > 0;
+}
+
+/** Put every row back, for the next time the list opens. */
+function clearFilter(wrap: HTMLElement): void {
+  const box = searchBox(wrap);
+  if (box) box.value = '';
+  for (const row of wrap.querySelectorAll<HTMLElement>('.ddopt, .ddgroup')) row.hidden = false;
+  const empty = wrap.querySelector<HTMLElement>('.ddempty');
+  if (empty) empty.hidden = true;
 }
 
 /** Places the fixed list against its button, flipping above when it would fall off. */
@@ -126,7 +186,11 @@ function setActive(wrap: HTMLElement, next: number, scroll = true): void {
   if (!opts.length || !open) return;
   const i = Math.max(0, Math.min(next, opts.length - 1));
   open.active = i;
-  for (const [n, el] of opts.entries()) el.classList.toggle('active', n === i);
+  // Cleared across every option, not only the ones still on show: a row that was
+  // highlighted before the filter hid it would otherwise keep the highlight and
+  // two rows would look chosen at once.
+  for (const el of wrap.querySelectorAll<HTMLElement>('.ddopt')) el.classList.remove('active');
+  opts[i].classList.add('active');
   const list = wrap.querySelector<HTMLElement>('.ddlist');
   if (list) list.setAttribute('aria-activedescendant', opts[i].id);
   if (scroll) opts[i].scrollIntoView({ block: 'nearest' });
@@ -143,7 +207,12 @@ export function openDropdown(name: string): void {
   wrap.querySelector('.ddbtn')?.setAttribute('aria-expanded', 'true');
   layout();
   setActive(wrap, open.active);
-  wrap.querySelector<HTMLElement>('.ddlist')?.focus({ preventScroll: true });
+  // The box takes the focus when there is one, so typing filters rather than
+  // jumping. The list still answers the arrow keys, because the keydown handler
+  // is on the root and the box is inside the list.
+  const box = searchBox(wrap);
+  if (box) box.focus({ preventScroll: true });
+  else wrap.querySelector<HTMLElement>('.ddlist')?.focus({ preventScroll: true });
 }
 
 export function closeDropdown(refocus = false): void {
@@ -153,6 +222,7 @@ export function closeDropdown(refocus = false): void {
   wrap?.classList.remove('open');
   btn?.setAttribute('aria-expanded', 'false');
   for (const el of wrap ? optionsOf(wrap) : []) el.classList.remove('active');
+  if (wrap) clearFilter(wrap);
   open = null;
   if (refocus) btn?.focus();
 }
@@ -252,14 +322,20 @@ function onKeydown(ev: KeyboardEvent): void {
       ev.preventDefault();
       setActive(wrap, open.active - 8);
       return;
-    case 'Enter':
-    case ' ': {
+    case ' ':
+      // A space belongs to the box when there is one: it is part of a name.
+      if (searchBox(wrap)) return;
+      ev.preventDefault();
+      if (optionsOf(wrap)[open.active]) pick(open.name, optionsOf(wrap)[open.active]);
+      return;
+    case 'Enter': {
       ev.preventDefault();
       const el = optionsOf(wrap)[open.active];
       if (el) pick(open.name, el);
       return;
     }
     default:
+      if (searchBox(wrap)) return;
       if (ev.key.length === 1 && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
         ev.preventDefault();
         typeahead(wrap, ev.key);
@@ -295,6 +371,17 @@ export function mountDropdowns(w: Wiring): void {
     true,
   );
   w.root.addEventListener('keydown', onKeydown);
+  // Filtering happens on input rather than on keydown, so held keys, paste and
+  // composition all land the same way.
+  w.root.addEventListener('input', (ev) => {
+    const el = ev.target as HTMLElement;
+    if (!el.closest('.ddsearch')) return;
+    const wrap = el.closest<HTMLElement>('.dropdown');
+    if (!wrap || !open) return;
+    applyFilter(wrap);
+    setActive(wrap, 0);
+    layout();
+  });
   // Anywhere else on the page shuts it, including the parts the app owns.
   document.addEventListener(
     'pointerdown',

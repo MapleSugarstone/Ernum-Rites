@@ -16,6 +16,8 @@ import {
   newSummon,
   playerLoses,
   resolveClash,
+  resumeDamage,
+  sweepReplaceQueue,
   setActingPlayer,
   toDebt,
   clearSpellBonus,
@@ -593,7 +595,8 @@ function resolveSpell(
   try {
     for (let i = 0; i < times && state.winner === null; i++) {
       if (i > 0) log(state, caster, `${def.name} echoes.`);
-      def.effect?.(makeEffectCtx(state, caster, null, def, targets, oppMode));
+      const aim = i === 0 ? targets : echoTargets(state, caster, def, targets);
+      def.effect?.(makeEffectCtx(state, caster, null, def, aim, oppMode));
     }
   } finally {
     clearSpellBonus();
@@ -613,6 +616,46 @@ function resolveSpell(
       if (s) fireTrigger(state, s, 'onEnemySpellCast', [cast]);
     }
   }
+}
+
+/**
+ * Where an echo points when what it pointed at is gone.
+ *
+ * A spell that consumes its targets leaves refs naming bodies that are no
+ * longer on the board, and the echo then resolves against nothing: Recompiler
+ * fuses two summons off the board and its second cast found both slots empty.
+ * Any ref that has gone is swapped for another legal one, preferring the side
+ * it was originally aimed at, and refs that are still there are left alone so
+ * an echo hits what it was aimed at wherever it still can.
+ */
+function echoTargets(
+  state: GameState,
+  caster: PlayerIdx,
+  def: CardDef,
+  targets: TargetRef[],
+): TargetRef[] {
+  const specs = def.targets;
+  if (!specs || specs.length === 0) return targets;
+  const out: TargetRef[] = [];
+  for (let i = 0; i < targets.length; i++) {
+    const ref = targets[i];
+    const isBody = ref.kind === 'summon' || ref.kind === 'leader';
+    if (!isBody || findSummon(state, ref)) {
+      out.push(ref);
+      continue;
+    }
+    const spec = specs[i];
+    if (!spec) return targets;
+    const free = targetCandidates(state, caster, spec, def).filter(
+      (r) => !out.some((u) => sameRef(u, r)),
+    );
+    const side = ref.player;
+    const fresh = free.find((r) => (r.kind === 'summon' || r.kind === 'leader')
+      && r.player === side) ?? free[0];
+    if (!fresh) return targets;
+    out.push(fresh);
+  }
+  return out;
 }
 
 function reduce(state: GameState, actor: PlayerIdx, action: Action): string | null {
@@ -713,7 +756,11 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
       log(state, actor, `${me.name} pays for ${def.name}'s flip.`);
       clearOppWanted();
       if (holder) def.flip(makeFlipCtx(state, holder, def, 0, mode));
-      return mode?.kind === 'track' && oppWasWanted() ? NEEDS_ENEMY : null;
+      const needsEnemy = mode?.kind === 'track' && oppWasWanted();
+      // The blow that revealed this card stopped on it. Now that it has fired,
+      // the rest of the damage lands and the body is settled after it.
+      if (!needsEnemy) resumeDamage(state, offer);
+      return needsEnemy ? NEEDS_ENEMY : null;
     }
 
     case 'DECLINE_FLIP': {
@@ -722,6 +769,8 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
       state.flipQueue.shift();
       // Deliberately unnamed: the card stays face down, and the log is public.
       log(state, actor, `${me.name} lets the card lie.`);
+      // Declining is an answer too, so the rest of the blow lands either way.
+      resumeDamage(state, offer);
       return null;
     }
 
@@ -936,7 +985,13 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
       if (!ch || ch.player !== actor) return 'No choice is waiting.';
       if (ch.cards) {
         if (action.index === undefined) {
-          if (!ch.optional) return 'Pick a card.';
+          // A mandatory reveal with nothing legal in it has exactly one
+          // resolution, which is to resolve it with nothing. Refusing here left
+          // a choice on the board that no action could answer: picking was
+          // refused because no index was legal, and passing was refused because
+          // the choice was not optional. The board-pick branch below already
+          // reads this way and this one did not.
+          if (!ch.optional && (ch.legal?.length ?? 0) > 0) return 'Pick a card.';
           state.choiceQueue.shift();
           runChoiceResolver(state, ch, {});
           return null;
@@ -1154,6 +1209,7 @@ export function applyAction(
   }
   if (error) return { ok: false, error };
   sweepEliminated(next);
+  sweepReplaceQueue(next);
   next.version += 1;
   next.actions += 1;
   // A blow that took both leaders leaves nobody to hand the match to. The

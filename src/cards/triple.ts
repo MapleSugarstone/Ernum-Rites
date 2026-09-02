@@ -212,7 +212,7 @@ export const tripleCards: CardDef[] = [
       {
         name: 'Wash Ashore',
         cost: { F: 1, P: 1, S: 1 },
-        text: 'Draw 5 cards. Put any summons among them into empty slots with +2 attack and 2 extra HP, then discard the rest.',
+        text: 'Draw 5 cards. Put any summons among them into empty slots with +1 attack and 1 extra HP, then discard the rest.',
         sapSelf: true,
         effect: (c) => {
           const p = c.state.players[c.me];
@@ -225,12 +225,21 @@ export const tripleCards: CardDef[] = [
               continue;
             }
             const landed = c.putSummon(c.me, id, slot, {
-              strength: (def.strength ?? 0) + 2,
+              strength: def.strength ?? 0,
               color: def.color,
-              hp: (def.hp ?? 1) + 2,
+              hp: (def.hp ?? 1) + 1,
               asPrinted: true,
             });
-            if (!landed) p.discard.push(id);
+            if (!landed) {
+              p.discard.push(id);
+              continue;
+            }
+            // The body plays as its own card, so the strength it arrives with is
+            // the printed one and the +1 has to be laid on top. Passing it as an
+            // override instead replaces the printed line and is dropped outright
+            // by asPrinted, which is how this card spent its life granting the
+            // extra HP and none of the attack.
+            c.buffStrength({ kind: 'summon', player: c.me, slot }, 1, 'permanent');
           }
         },
       },

@@ -97,10 +97,12 @@ describe('bot', () => {
     // Every deck against every other in the slow engine, and the length of a
     // game is a rules constant: raising the debt limit pushed this past the
     // five second default, and grafted Powers repriced into Oil pushed it
-    // again by making more of them affordable.
-  }, 120_000);
+    // again by making more of them affordable. Giving the bot a turn search
+    // pushed it a third time, since it now plans a turn and the opponent's
+    // reply to it instead of picking an action.
+  }, 900_000);
 
-  it('grinds an empty board to a finish on fatigue alone', () => {
+  it('grinds an empty board to a finish rather than deadlocking', () => {
     // The position that used to deadlock: nothing in either deck, hand or slot.
     const s = createGame(
       [
@@ -117,7 +119,10 @@ describe('bot', () => {
     });
     const { state } = playOut(s, 400, 60);
     expect(isOver(state)).toBe(true);
-    expect(state.winReason).toContain('debt');
+    // Deliberately not asserting which clock ran out. Fatigue debt used to be
+    // the only route because the bot passed; a bot that swings its leader when
+    // it has nothing else finishes by combat instead, and either is a finish.
+    expect(state.winReason).toBeTruthy();
   });
 
   it('develops its board rather than passing every turn', () => {
@@ -213,5 +218,5 @@ describe('triple-colour legends in play', () => {
       const out = playOut(createGame([deck, deck], 4242, 0));
       expect(isOver(out.state), `${def.id} finished`).toBe(true);
     }
-  }, 20000);
+  }, 600_000);
 });

@@ -238,7 +238,19 @@ public sealed class Pending
 public readonly record struct ReplaceSlot(int Player, int Slot);
 
 /// <summary>A costed flip waiting on its owner to pay for it or wave it away.</summary>
-public readonly record struct FlipOffer(int Player, TargetRef Holder, string CardId);
+/// <summary>
+/// A costed flip waiting on its owner.
+///
+/// <paramref name="Pending"/> is the points of the same blow still to land once
+/// the flip is answered: a costed flip stops the damage that revealed it, so a
+/// card that would save the body gets its chance before the body is gone.
+/// <paramref name="Depth"/> carries the nesting the blow was at so the resumed
+/// half is held to the same recursion guard, and is left out of the digest for
+/// the same reason instance uids are: it bounds the engine rather than
+/// describing the position.
+/// </summary>
+public readonly record struct FlipOffer(
+    int Player, TargetRef Holder, string CardId, int Pending, int Depth);
 
 public readonly record struct LogEntry(int Turn, int Player, string Text);
 

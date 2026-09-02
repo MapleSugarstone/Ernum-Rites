@@ -9,6 +9,11 @@
     <AssemblyName>Selatza.Sim</AssemblyName>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Every applied action deep-clones the game state, so a parallel sweep
+         allocates hard on every thread. Under workstation GC that collapses to
+         about three cores' worth of work on sixteen. Selatza.Train has carried
+         this for the same reason. -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Selatza.Engine\Selatza.Engine.csproj" />

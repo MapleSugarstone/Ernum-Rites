@@ -262,13 +262,13 @@ public static class Mixed
             powers: Powers(new Power
             {
                 Name = "Maul",
-                Cost = new Cost(P: 1, F: 1),
-                Text = "Deal 1 to an enemy summon. If it dies, draw a card.",
+                Cost = new Cost(P: 1, F: 1, C: 1),
+                Text = "Deal 2 to an enemy summon. If it dies, draw a card.",
                 SapSelf = true,
                 Targets = Specs(Enemy()),
                 Effect = c =>
                 {
-                c.Damage(c.Target(0), 1);
+                c.Damage(c.Target(0), 2);
                 if (c.SummonAt(c.Target(0)) is null) c.Draw(c.Me, 1);
                 },
             })),

@@ -78,7 +78,7 @@ describe('replays', () => {
 
   // A representative slice only. The exhaustive sweep across every pairing is
   // the C# simulator's job, where it runs in a fraction of the time.
-  it('records a spread of pairings without producing an illegal action', { timeout: 30000 }, () => {
+  it('records a spread of pairings without producing an illegal action', { timeout: 600_000 }, () => {
     for (let i = 0; i < allDecks.length; i++) {
       const a = allDecks[i];
       const b = allDecks[(i * 3 + 1) % allDecks.length];

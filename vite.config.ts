@@ -7,6 +7,10 @@ export default defineConfig({
   // Card art ships verbatim: assets/Cardgame/... is served at /Cardgame/...
   publicDir: 'assets',
   build: { outDir: 'dist', sourcemap: true },
+  // The suite runs the bot with its searches turned down (see tests/setup.ts),
+  // which is what keeps it to a length you would run after an edit. The timeout
+  // is still generous because the slow tests play thousands of games.
+  test: { testTimeout: 60_000, setupFiles: ['tests/setup.ts'] },
   server: {
     port: Number(process.env.PORT) || 5173,
     // Training writes snapshots continuously; watching them makes any vite

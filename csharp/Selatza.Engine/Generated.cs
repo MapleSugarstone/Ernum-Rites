@@ -417,8 +417,15 @@ public static class Generated
             MuffleFlips = host.MuffleFlips || src.MuffleFlips,
             Stationary = host.Stationary || src.Stationary,
             Uncollectible = true,
-            Art = host.Art,
-            Artist = host.Artist,
+            // A body that has taken on a spell wears that spell's face. Living
+            // Curse grafts from an Oil-tinted copy of the spell it swallowed,
+            // and without this the host's own portrait spread over the top of it
+            // and the card gave no sign of what it had become. A graft from a
+            // summon is the other case: the host is still itself, wearing
+            // borrowed Powers, and keeps its face. The tint that goes with it is
+            // presentation and lives only on the TypeScript side.
+            Art = src.Type == CardType.Spell ? src.Art : host.Art,
+            Artist = src.Type == CardType.Spell ? src.Artist : host.Artist,
             Num = "GEN",
             // A grafted Power arrives on a body the host paid for, so its pips
             // are rewritten as Oil rather than the colour it was printed in.

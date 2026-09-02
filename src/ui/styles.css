@@ -3236,6 +3236,37 @@ body.mobile .modes .mixer {
 .ddlist:focus {
   outline: none;
 }
+/* The filter box rides at the top of the list and stays put while the options
+   under it scroll, so what you typed is still readable at the bottom of a long
+   list. */
+.ddsearch {
+  position: sticky;
+  top: -4px;
+  z-index: 1;
+  margin: -4px -4px 4px;
+  padding: 6px;
+  background: var(--panel-lift);
+  border-bottom: var(--stroke) solid var(--ink);
+}
+.ddsearch input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  font: inherit;
+  color: inherit;
+  background: var(--panel);
+  border: var(--stroke) solid var(--ink);
+  border-radius: var(--radius-sm);
+}
+.ddsearch input:focus {
+  outline: none;
+  border-color: var(--accent, currentColor);
+}
+.ddempty {
+  padding: 8px 9px;
+  color: var(--muted);
+  font-style: italic;
+}
 .ddgroup {
   padding: 7px 9px 3px;
   font-family: var(--font-mono);
@@ -3937,6 +3968,35 @@ body.mobile .modes .mixer {
 }
 .unit .wtok.idle {
   animation-name: wtokidle;
+}
+/* A wound already on the body, drawn where it landed and going nowhere. It is a
+   standing debt rather than an event, so it does not animate in and it does not
+   fade: it sits there until something spends it. */
+.unit .wtok.held {
+  animation: none;
+  opacity: 0.92;
+  transform: translate(calc(var(--cw-board) * var(--tx)), calc(var(--cw-board) * var(--ty)));
+}
+
+/* The ward answering a spell that is being aimed at it and cannot land. It
+   grows a little and turns slowly, which reads as refusal without flashing. */
+.unit .token.warding {
+  animation: wardturn 2.6s linear infinite;
+  z-index: 13;
+}
+@keyframes wardturn {
+  from {
+    transform: rotate(var(--tilt)) scale(1.18);
+  }
+  to {
+    transform: rotate(calc(var(--tilt) + 360deg)) scale(1.18);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .unit .token.warding {
+    animation: none;
+    transform: rotate(var(--tilt)) scale(1.18);
+  }
 }
 
 /* Two tokens converge on the point between them and pop: that pop is the point

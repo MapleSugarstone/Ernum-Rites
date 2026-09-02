@@ -585,8 +585,9 @@ public static class Engine
             for (int i = 0; i < times && state.Winner < 0; i++)
             {
                 if (i > 0) Effects.Log(state, caster, $"{def.Name} echoes.");
+                var aim = i == 0 ? targets : EchoTargets(state, caster, def, targets);
                 def.Effect?.Invoke(new EffectCtx
-                { State = state, Me = caster, Card = def, Targets = targets });
+                { State = state, Me = caster, Card = def, Targets = aim });
             }
         }
         finally { Effects.ClearSpellBonus(); }
@@ -640,6 +641,7 @@ public static class Engine
         next.Fx.Clear();
         var error = Reduce(next, actor, action);
         if (error is not null) return ApplyResult.Fail(error);
+        Effects.SweepReplaceQueue(next);
         next.Version++;
         next.Actions++;
         // A blow that took both leaders leaves nobody to hand the match to. The
@@ -656,6 +658,46 @@ public static class Engine
             Effects.Log(next, -1, next.WinReason);
         }
         return ApplyResult.Pass(next);
+    }
+
+    /// <summary>
+    /// Where an echo points when what it pointed at is gone.
+    ///
+    /// A spell that consumes its targets leaves refs naming bodies that are no
+    /// longer on the board, and the echo then resolves against nothing:
+    /// Recompiler fuses two summons off the board and its second cast found both
+    /// slots empty. Any ref that has gone is swapped for another legal one,
+    /// preferring the side it was originally aimed at, and refs that are still
+    /// there are left alone so an echo hits what it was aimed at wherever it
+    /// still can.
+    /// </summary>
+    private static TargetRef[] EchoTargets(GameState state, int caster, CardDef def,
+        TargetRef[] targets)
+    {
+        var specs = def.Targets;
+        if (specs is null || specs.Length == 0) return targets;
+        var outRefs = new List<TargetRef>();
+        for (int i = 0; i < targets.Length; i++)
+        {
+            var r = targets[i];
+            if (!r.IsBody || state.Find(r) is not null)
+            {
+                outRefs.Add(r);
+                continue;
+            }
+            if (i >= specs.Length) return targets;
+            var free = TargetCandidates(state, caster, specs[i], def)
+                .Where(c => !outRefs.Contains(c)).ToList();
+            TargetRef? fresh = null;
+            foreach (var c in free)
+            {
+                if (c.IsBody && c.Player == r.Player) { fresh = c; break; }
+            }
+            fresh ??= free.Count > 0 ? free[0] : null;
+            if (fresh is not { } pick) return targets;
+            outRefs.Add(pick);
+        }
+        return outRefs.ToArray();
     }
 
     private static string? Reduce(GameState state, int actor, GameAction action)
@@ -767,6 +809,10 @@ public static class Engine
                     fdef.Flip(new FlipCtx
                     { State = state, Me = actor, Holder = holder, Card = fdef });
                 }
+                // The blow that revealed this card stopped on it. Now that it
+                // has fired, the rest of the damage lands and the body is
+                // settled after it.
+                Effects.ResumeDamage(state, offer);
                 return null;
             }
 
@@ -780,6 +826,9 @@ public static class Engine
                 state.FlipQueue.RemoveAt(0);
                 // Deliberately unnamed: the card stays face down, and the log is public.
                 Effects.Log(state, actor, $"{me.Name} lets the card lie.");
+                // Declining is an answer too, so the rest of the blow lands
+                // either way.
+                Effects.ResumeDamage(state, offer);
                 return null;
             }
 
@@ -984,7 +1033,14 @@ public static class Engine
                 {
                     if (action.ChoiceIndex is not { } idx)
                     {
-                        if (!ch.Optional) return "Pick a card.";
+                        // A mandatory reveal with nothing legal in it has exactly
+                        // one resolution, which is to resolve it with nothing.
+                        // Refusing here left a choice on the board that no action
+                        // could answer: picking was refused because no index was
+                        // legal, and passing was refused because the choice was
+                        // not optional. The board-pick branch below already reads
+                        // this way and this one did not.
+                        if (!ch.Optional && (ch.Legal?.Length ?? 0) > 0) return "Pick a card.";
                         state.ChoiceQueue.RemoveAt(0);
                         Choices.Run(state, ch, new ChoicePick());
                         return null;

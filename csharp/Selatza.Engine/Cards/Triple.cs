@@ -201,7 +201,7 @@ public static class Triple
             {
                 Name = "Wash Ashore",
                 Cost = new Cost(F: 1, P: 1, S: 1),
-                Text = "Draw 5 cards. Put any summons among them into empty slots with +2 attack and 2 extra HP, then discard the rest.",
+                Text = "Draw 5 cards. Put any summons among them into empty slots with +1 attack and 1 extra HP, then discard the rest.",
                 SapSelf = true,
                 Effect = c =>
                 {
@@ -219,8 +219,19 @@ public static class Triple
                             continue;
                         }
                         var landed = Effects.PutSummonDirect(c.State, c.Me, id, open,
-                            def.Strength + 2, def.Color, def.Hp + 2, asPrinted: true);
-                        if (landed is null) p.Discard.Add(id);
+                            def.Strength, def.Color, def.Hp + 1, asPrinted: true);
+                        if (landed is null)
+                        {
+                            p.Discard.Add(id);
+                            continue;
+                        }
+                        // The body plays as its own card, so the strength it
+                        // arrives with is the printed one and the +1 has to be
+                        // laid on top. Passing it as an override instead
+                        // replaces the printed line and is dropped outright by
+                        // asPrinted, which is how this card spent its life
+                        // granting the extra HP and none of the attack.
+                        c.BuffStrength(TargetRef.Summon(c.Me, open), 1, ModDuration.Permanent);
                     }
                 },
             })),

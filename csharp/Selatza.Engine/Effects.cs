@@ -847,6 +847,23 @@ public static class Effects
             Log(state, summon.Owner, $"A Power Shield on {def.Name} takes all {amount} of it.");
             return 0;
         }
+        return TurnCards(state, summon, amount, depth, muffle);
+    }
+
+    /// <summary>
+    /// Turn HP cards over one at a time, and stop dead at a costed flip.
+    ///
+    /// A costed flip is a question for its owner, and the rest of the blow waits
+    /// on the answer. Damage used to carry straight past it: the body ran out of
+    /// cards, died, and its owner was then asked to pay for something protecting
+    /// a body already in the debt pile. A flip that heals what it was covering
+    /// has to fire while there is still something to heal, and that is true of
+    /// the last card as much as the first.
+    /// </summary>
+    private static int TurnCards(GameState state, SummonInstance summon, int amount,
+        int depth, bool muffle)
+    {
+        var def = Registry.Card(summon.CardId);
         int muted = 0;
         for (int i = 0; i < amount; i++)
         {
@@ -867,9 +884,12 @@ public static class Effects
                 }
                 else if (flipped.FlipCost is not null)
                 {
-                    // Costed flips are optional, so they wait for their owner
-                    // rather than interrupting damage with a question.
-                    state.FlipQueue.Add(new FlipOffer(summon.Owner, RefFor(state, summon), next.CardId));
+                    // The blow stops here. What is left of it is parked on the
+                    // offer, and the body is not settled until the offer is
+                    // answered, even at 0 HP.
+                    state.FlipQueue.Add(new FlipOffer(
+                        summon.Owner, RefFor(state, summon), next.CardId, amount - i - 1, depth));
+                    return muted;
                 }
                 else
                 {
@@ -890,13 +910,34 @@ public static class Effects
                 Log(state, summon.Owner, $"{def.Name} frenzies.");
                 FireTrigger(state, summon, TriggerName.OnSurvive);
             }
-            if (summon.RemainingHp == 0)
-            {
-                DestroySummon(state, summon);
-                return muted;
-            }
         }
+        SettleBody(state, summon);
         return muted;
+    }
+
+    /// <summary>Send a body to debt once it has nothing face down left to lose.</summary>
+    private static void SettleBody(GameState state, SummonInstance summon)
+    {
+        if (summon.RemainingHp == 0) DestroySummon(state, summon);
+    }
+
+    /// <summary>
+    /// Land whatever the answered flip was holding up, then settle the body.
+    ///
+    /// Called from both sides of the question, because declining is an answer
+    /// too: the points still owed arrive either way and only the flip's own
+    /// effect turns on whether it was paid for.
+    /// </summary>
+    public static void ResumeDamage(GameState state, FlipOffer offer)
+    {
+        var holder = state.Find(offer.Holder);
+        if (holder is null) return;
+        if (offer.Pending > 0)
+        {
+            TurnCards(state, holder, offer.Pending, offer.Depth, false);
+            return;
+        }
+        SettleBody(state, holder);
     }
 
     /// <summary>Whether the other side fields anything forbidding this player supporters.</summary>
@@ -1064,6 +1105,12 @@ public static class Effects
         // On the owner's own turn the main phase already lets them refill, so
         // the immediate-replacement prompt is only for the side not on the play.
         if (summon.Owner == state.Active) return;
+        // And only while the hole is still there. A Deathrattle that refills the
+        // slot it just left closed it before this ran: Slime stands a smaller
+        // Slime up in the first empty slot, which is its own, and the offer went
+        // out anyway. The player was asked to fill a slot with a Slime already
+        // standing in it, and a chain of them asked once a link.
+        if (p.Slots[slot] is not null) return;
         foreach (var id in p.Hand)
         {
             if (Registry.Card(id).Type == CardType.Summon)
@@ -1072,6 +1119,31 @@ public static class Effects
                 break;
             }
         }
+    }
+
+    /// <summary>
+    /// Drop replace offers nobody can answer any more.
+    ///
+    /// An offer is made the moment a body falls, and the board moves on before
+    /// it is put to its owner: two bodies dying together queue two offers,
+    /// answering the first can empty the hand, and the second is then a question
+    /// with no answer. Something else refilling the slot has the same effect.
+    /// Checked after every action rather than only when the offer is made,
+    /// because that is when it stops being true.
+    /// </summary>
+    public static void SweepReplaceQueue(GameState state)
+    {
+        if (state.ReplaceQueue.Count == 0) return;
+        state.ReplaceQueue.RemoveAll(offer =>
+        {
+            var p = state.Players[offer.Player];
+            if (p.Slots[offer.Slot] is not null) return true;
+            foreach (var id in p.Hand)
+            {
+                if (Registry.TryCard(id)?.Type == CardType.Summon) return false;
+            }
+            return true;
+        });
     }
 
     public static void EndGame(GameState state, int winner, string reason)

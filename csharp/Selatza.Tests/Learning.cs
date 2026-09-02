@@ -344,7 +344,11 @@ public static class Learning
             var a = MakeAgent("me", "fh-thefish", rng, greedy);
             var b = MakeAgent("them", "ph-archlife", rng, IntelConfig.Blind);
             var intel = new Intel(0, greedy, 3);
-            var state = Play(a, b, 778, 14, new[] { intel });
+            // Stopped early on purpose. The tracker clamps every remembered card
+            // against the real zones, so a scouted card that has since been
+            // drawn or played stops being known, and a bot that empties its hand
+            // faster leaves nothing scouted still sitting in the deck.
+            var state = Play(a, b, 778, 6, new[] { intel });
 
             var enc = new Encoder(0, intel, state);
             var obs = enc.EncodeNew(state);

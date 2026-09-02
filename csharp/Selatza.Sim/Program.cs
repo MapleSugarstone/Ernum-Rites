@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Diagnostics;
 using Selatza;
 using Selatza.Ai;
@@ -26,6 +27,8 @@ public static class Program
         return cmd switch
         {
             "sweep" => Sweep(games),
+            "duel" => Duel(games),
+            "tune" => Tune(games, ArgInt(args, "--rounds", 3), ArgInt(args, "--threads", Environment.ProcessorCount), ArgStr(args, "--only", "")),
             "pair" => Pair(a, b, games, verbose: true),
             "record" => Record(games),
             "verify" => Verify(),
@@ -36,7 +39,7 @@ public static class Program
 
     private static int Usage()
     {
-        Console.WriteLine("commands: sweep | pair | record | verify | cards");
+        Console.WriteLine("commands: sweep | pair | record | verify | cards | tune");
         return 2;
     }
 
@@ -67,6 +70,201 @@ public static class Program
             actions++;
         }
         return new Outcome(s.Winner, s.WinReason, s.Turn);
+    }
+
+    /// <summary>
+    /// Hill-climbs the bot's weights against themselves.
+    ///
+    /// Every weight is a number somebody reasoned to, and reasoning is what the
+    /// rest of this project refuses to accept as evidence. This plays candidate
+    /// weights against the incumbent over mirror matches on matched seeds with
+    /// the seats alternating, so the deck and the seat are out of the comparison
+    /// and only the weights are left.
+    ///
+    /// A move is kept only when it clears the noise floor by the stated margin.
+    /// With so many comparisons in a round some of what it keeps will be luck
+    /// anyway, which is what the validation pass at the end is for: it replays
+    /// the finished set against the defaults on seeds the tuning never saw.
+    /// </summary>
+    private static int Tune(int games, int rounds, int threads, string only)
+    {
+        // A run that names weights tunes only those. The long-standing ones are
+        // already close to a local best, so re-deriving them costs hours to say
+        // so again; the ones worth the machine are whichever were last added.
+        var wanted = only.Length == 0
+            ? null
+            : new HashSet<string>(only.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(n => n.Trim()), StringComparer.OrdinalIgnoreCase);
+        var knobs = typeof(BotWeights)
+            .GetFields(BindingFlags.Public | BindingFlags.Instance)
+            .Where(f => f.FieldType == typeof(double))
+            .Where(f => wanted is null || wanted.Contains(f.Name))
+            .ToArray();
+        if (knobs.Length == 0)
+        {
+            Console.Error.WriteLine($"no weights match --only {only}");
+            return 2;
+        }
+
+        var best = new BotWeights();
+        double se = 50.0 / Math.Sqrt(games);
+        double bar = 50 + 2 * se;
+        Console.WriteLine($"tuning {knobs.Length} weights, {games} games a comparison");
+        Console.WriteLine($"one standard error is {se:0.00} points, so a move has to reach {bar:0.0}%\n");
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        for (int round = 1; round <= rounds; round++)
+        {
+            bool moved = false;
+            foreach (var knob in knobs)
+            {
+                foreach (double factor in new[] { 0.6, 1.6 })
+                {
+                    var cand = CloneWeights(best, knobs);
+                    double was = (double)knob.GetValue(best)!;
+                    double now = was * factor;
+                    // The reply share is a proportion, so it cannot leave [0,1].
+                    if (knob.Name == nameof(BotWeights.Reply)) now = Math.Clamp(now, 0.05, 1.0);
+                    if (Math.Abs(now - was) < 1e-9) continue;
+                    knob.SetValue(cand, now);
+
+                    var (wins, losses) = Match(cand, best, games, seed: 1000, threads);
+                    int decided = wins + losses;
+                    double rate = decided == 0 ? 50 : wins * 100.0 / decided;
+                    bool keep = rate >= bar;
+                    Console.WriteLine($"  r{round} {knob.Name,-13} {was,7:0.###} -> {now,7:0.###}"
+                        + $"  {wins,4}-{losses,-4} {rate,5:0.0}%  {(keep ? "kept" : "")}");
+                    if (!keep) continue;
+                    knob.SetValue(best, now);
+                    moved = true;
+                }
+            }
+            if (!moved)
+            {
+                Console.WriteLine($"\nround {round} moved nothing; stopping.");
+                break;
+            }
+        }
+
+        Console.WriteLine($"\ntuned weights after {sw.Elapsed.TotalSeconds:0}s:");
+        // The whole set, not only what this run touched: a reader wants the
+        // finished weights entire.
+        foreach (var knob in typeof(BotWeights)
+            .GetFields(BindingFlags.Public | BindingFlags.Instance)
+            .Where(f => f.FieldType == typeof(double)))
+        {
+            double now = (double)knob.GetValue(best)!;
+            double was = (double)knob.GetValue(BotWeights.Default)!;
+            string mark = Math.Abs(now - was) < 1e-9 ? "" : $"   (was {was:0.###})";
+            Console.WriteLine($"  {knob.Name,-13} {now,8:0.###}{mark}");
+        }
+
+        // Fresh seeds the hill-climb never saw. Anything it kept by luck has no
+        // reason to survive this, which is the only part of the run worth
+        // quoting.
+        int check = games * 3;
+        var (tw, tl) = Match(best, BotWeights.Default, check, seed: 987_001, threads);
+        int total = tw + tl;
+        double final = total == 0 ? 50 : tw * 100.0 / total;
+        double checkSe = 50.0 / Math.Sqrt(Math.Max(1, total));
+        Console.WriteLine($"\nvalidation on unseen seeds: tuned {tw} - {tl} default"
+            + $"  ({final:0.0}%, one standard error {checkSe:0.00})");
+        Console.WriteLine(Math.Abs(final - 50) < 2 * checkSe
+            ? "  inside the noise: the tuning did not find anything that holds up."
+            : final > 50
+                ? "  the tuned set is genuinely ahead."
+                : "  the tuned set is genuinely behind. Keep the defaults.");
+        return 0;
+    }
+
+    private static BotWeights CloneWeights(BotWeights src, FieldInfo[] knobs)
+    {
+        var copy = new BotWeights();
+        foreach (var f in knobs) f.SetValue(copy, f.GetValue(src));
+        return copy;
+    }
+
+    /// <summary>
+    /// Two weight sets over the same decks and seeds, each taking both seats.
+    /// </summary>
+    private static (int A, int B) Match(BotWeights a, BotWeights b, int games, int seed, int threads)
+    {
+        var decks = CardSets.Starters.ToList();
+        int aWins = 0, bWins = 0;
+        var gate = new object();
+        var opts = new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, threads) };
+
+        Parallel.For(0, games, opts, g =>
+        {
+            // The deck turns over half as fast as the seat, so a deck is never
+            // tied to a seat however many decks there are.
+            var d = decks[(g / 2) % decks.Count];
+            int seatA = g % 2;
+            Bot.ClearPlan();
+            var s = Engine.CreateGame(d.ToDeckList("A"), d.ToDeckList("B"), seed + g * 7919);
+            int actions = 0;
+            while (!s.IsOver && actions < 8000 && s.Turn < 400)
+            {
+                int actor = s.CurrentActor;
+                var res = Engine.Apply(s, actor, Bot.ChooseAction(s, actor, actor == seatA ? a : b));
+                if (!res.Ok) break;
+                s = res.State!;
+                actions++;
+            }
+            if (s.Winner < 0) return;
+            lock (gate)
+            {
+                if (s.Winner == seatA) aWins++;
+                else bWins++;
+            }
+        });
+        return (aWins, bWins);
+    }
+
+    /// <summary>
+    /// TEMPORARY: the searching bot against the pre-search one over the same
+    /// seeds and the same decks, each taking both seats.
+    /// </summary>
+    private static int Duel(int games)
+    {
+        var decks = CardSets.Starters.ToList();
+        int newWins = 0, oldWins = 0, stalls = 0, turns = 0;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        for (int g = 0; g < games; g++)
+        {
+            // The mirror removes the deck from the comparison entirely, and the
+            // seat alternates so neither bot keeps the advantage of going first.
+            // The deck turns over half as fast as the seat, so a deck is never
+            // tied to a seat however many decks there are.
+            var d = decks[(g / 2) % decks.Count];
+            int deep = g % 2;
+            var s = Engine.CreateGame(d.ToDeckList("A"), d.ToDeckList("B"), 1000 + g * 7919);
+            int actions = 0;
+            while (!s.IsOver && actions < 8000 && s.Turn < 400)
+            {
+                int actor = s.CurrentActor;
+                var action = actor == deep
+                    ? Bot.ChooseAction(s, actor)
+                    : LegacyBot.ChooseAction(s, actor);
+                var res = Engine.Apply(s, actor, action);
+                if (!res.Ok) throw new InvalidOperationException($"illegal action turn {s.Turn}: {res.Error}");
+                s = res.State!;
+                actions++;
+            }
+            turns += s.Turn;
+            if (s.Winner < 0) stalls++;
+            else if (s.Winner == deep) newWins++;
+            else oldWins++;
+        }
+
+        int decided = newWins + oldWins;
+        Console.WriteLine($"searching {newWins} - {oldWins} legacy over {games} mirror games"
+            + $"  ({(decided > 0 ? newWins * 100.0 / decided : 0):0.0}% for the searching bot)"
+            + $"  avg {turns / (double)games:0.0} turns"
+            + (stalls > 0 ? $", {stalls} unresolved" : "")
+            + $"  in {sw.Elapsed.TotalSeconds:0.0}s");
+        return 0;
     }
 
     private static int Pair(string aKey, string bKey, int games, bool verbose)

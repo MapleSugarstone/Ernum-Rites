@@ -13,7 +13,7 @@ namespace Selatza;
 /// </summary>
 public static class Digest
 {
-    public const string Format = "v2";
+    public const string Format = "v3";
 
     public static string Of(GameState s)
     {
@@ -65,9 +65,14 @@ public static class Digest
             for (int i = 0; i < s.FlipQueue.Count; i++)
             {
                 if (i > 0) sb.Append(',');
+                // The damage the offer is holding up is part of the position:
+                // two otherwise identical boards owing different remainders play
+                // out differently. The nesting depth beside it is not, the same
+                // way an instance uid is not.
                 sb.Append(s.FlipQueue[i].Player).Append('/')
                   .Append(Ref(s.FlipQueue[i].Holder)).Append('/')
-                  .Append(s.FlipQueue[i].CardId);
+                  .Append(s.FlipQueue[i].CardId).Append('/')
+                  .Append(s.FlipQueue[i].Pending);
             }
         }
         sb.Append("|CQ:");

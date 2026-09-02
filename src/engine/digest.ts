@@ -10,7 +10,7 @@ import { MANA_KINDS, type PlayerIdx, type TargetRef } from './types';
  * excluded on purpose: wording is cosmetic, and uid allocation order is not
  * observable in play.
  */
-export const DIGEST_FORMAT = 'v2';
+export const DIGEST_FORMAT = 'v3';
 
 const PHASE_NAME = { awake: 'awake', draw: 'draw', main: 'main', end: 'end' } as const;
 
@@ -141,7 +141,11 @@ export function digestOf(state: GameState): string {
     state.flipQueue.length === 0
       ? '-'
       : state.flipQueue
-          .map((f) => `${f.player}/${refString(f.holder)}/${f.cardId}`)
+          // The damage the offer is holding up is part of the position: two
+          // otherwise identical boards owing different remainders play out
+          // differently. The nesting depth beside it is not, the same way an
+          // instance uid is not.
+          .map((f) => `${f.player}/${refString(f.holder)}/${f.cardId}/${f.pending}`)
           .join(',');
 
   out += '|CQ:';

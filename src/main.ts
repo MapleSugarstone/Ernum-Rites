@@ -16,6 +16,7 @@ import {
 } from './engine/effects';
 import { everyDeck, starterDecks, type StarterDeck } from './cards';
 import { HIDDEN_ID } from './engine/redact';
+import { closeReport, note } from './ui/diagnostics';
 import {
   BROWSE_TABS,
   DECK_SIZE,
@@ -66,6 +67,7 @@ import {
 import { canBeLeader, colorsOf, deckIdentity } from './engine/identity';
 import { allCards, card, tryCard } from './engine/registry';
 import {
+  choiceIsLive,
   allSummons,
   currentActor,
   DEBT_LIMIT,
@@ -170,6 +172,8 @@ interface Ui {
   setupMode: SetupMode;
   /** Flips the copy button's label for a moment after a successful copy. */
   copied: boolean;
+  /** The match report was just put on the clipboard, for the button label. */
+  reportCopied: boolean;
   online: {
     name: string;
     deckKey: string;
@@ -221,6 +225,7 @@ const ui: Ui = {
   builder: newBuilder(),
   setupMode: 'ai',
   copied: false,
+  reportCopied: false,
   online: {
     name: '',
     deckKey: 'deepcurrent',
@@ -471,6 +476,27 @@ function candidateKeys(): Set<string> {
   const picked = new Set(ui.targeting.collected.map(refKey));
   const keys = targetCandidates(ui.state, viewSeat(), spec, ui.targeting.source).map(refKey);
   return new Set(keys.filter((k) => !picked.has(k)));
+}
+
+/**
+ * Bodies the spell being aimed would reach if they were not warded.
+ *
+ * Running the same spec with no source drops the spell-immunity check, because
+ * that check only applies to a spell or a trap. What is in that list and not in
+ * the real one is exactly the body the player is trying to point at and cannot,
+ * which is the moment the token has something to say.
+ */
+function wardedKeys(): Set<string> {
+  if (!ui.state || !ui.targeting) return new Set();
+  const src = ui.targeting.source;
+  if (!src || (src.type !== 'spell' && src.type !== 'trap')) return new Set();
+  const spec = ui.targeting.specs[ui.targeting.collected.length];
+  if (!spec) return new Set();
+  const reachable = new Set(
+    targetCandidates(ui.state, viewSeat(), spec, undefined).map(refKey),
+  );
+  for (const k of candidateKeys()) reachable.delete(k);
+  return reachable;
 }
 
 /** Refs the currently selected or dragged attacker may swing at. */
@@ -940,7 +966,7 @@ const TOKEN_ORDER = [3, 2, 0, 5, 1, 4];
  * off the body, so a token stays where it was put for as long as the body
  * stands rather than crawling on every render.
  */
-function tokenHtml(uid: string, tokens: { art: string; title: string }[]): string {
+function tokenHtml(uid: string, tokens: { art: string; title: string; cls?: string }[]): string {
   if (tokens.length === 0) return '';
   const rand = seeded(`tok${uid}`);
   // A tilted square stands wider than it lies, so a cell has to hold the leaning
@@ -961,7 +987,7 @@ function tokenHtml(uid: string, tokens: { art: string; title: string }[]): strin
       const top = ART_BOX.y + row * cellH + (boxH - TOKEN_H) / 2 + rand(i + 40) * slackY;
       const tilt = (rand(i + 80) * 2 - 1) * TOKEN_TILT;
       return (
-        `<img decoding="sync" class="overlay token" ` +
+        `<img decoding="sync" class="overlay token${t.cls ? ` ${t.cls}` : ''}" ` +
         `style="left:${left.toFixed(2)}%;top:${top.toFixed(2)}%;--tilt:${tilt.toFixed(1)}deg" ` +
         `src="${BASE}${t.art}" alt="" title="${esc(t.title)}" draggable="false">`
       );
@@ -2228,10 +2254,31 @@ function liveStats(state: GameState, s: SummonInstance): NonNullable<CardOpts['l
   };
 }
 
-/** The wound tokens scattered over a body this action, if any landed on it. */
-function woundHtml(ref: TargetRef): string {
+/**
+ * The wound tokens on a body: the ones that landed this action, and otherwise
+ * the ones already sitting on it.
+ *
+ * A wound is a standing debt against the body rather than a thing that happened,
+ * and it decides whether the next point finishes it. Drawing them only while the
+ * animation ran meant a body carrying one looked identical to a body carrying
+ * none the moment the dust settled.
+ */
+function woundHtml(state: GameState, ref: TargetRef): string {
   const fx = woundFx.get(corpseKey(ref));
-  if (!fx || fx.pool <= 0) return '';
+  if (!fx || fx.pool <= 0) {
+    const body = findSummon(state, ref);
+    const held = body?.wounds ?? 0;
+    if (held <= 0) return '';
+    const rest = woundSpots(corpseKey(ref), held, 0)
+      .map(
+        (spot, i) =>
+          `<img class="wtok held" style="--tx:${spot.x.toFixed(3)};--ty:${spot.y.toFixed(3)}` +
+          `;--wi:${Math.min(i, WOUND_STEP_CAP)}" src="${BASE}${WOUND_TOKEN}" alt=""` +
+          ` title="${held} wound(s) waiting on this body." draggable="false">`,
+      )
+      .join('');
+    return `<span class="wtoks">${rest}</span>`;
+  }
   // At rate 1 a wound is a point on its own, so nothing pairs off and each
   // token that became damage simply goes. Above that they pair, two to a point.
   const paired = fx.rate > 1 ? fx.damage : 0;
@@ -2300,7 +2347,7 @@ function unitHtml(state: GameState, ref: TargetRef, caption: string): string {
       <div class="hpfan"></div>
       ${corpse}
       ${lockHtml(state, ref)}
-      ${woundHtml(ref)}
+      ${woundHtml(state, ref)}
     </div>`;
   }
 
@@ -2339,7 +2386,8 @@ function unitHtml(state: GameState, ref: TargetRef, caption: string): string {
     const who = s.bestowed ? `Bestowed Deathrattle: ${esc(tryCard(s.bestowed)?.name ?? '')}` : 'Deathrattle';
     extra += `<img class="overlay rattlefx" src="${BASE}Cardgame/Extras/Deathrattle.png" alt="" title="${who}" draggable="false">`;
   }
-  const tokens: { art: string; title: string }[] = [];
+  const warded = wardedKeys();
+  const tokens: { art: string; title: string; cls?: string }[] = [];
   if (def.redirect) {
     tokens.push({
       art: REDIRECT_TOKEN,
@@ -2350,6 +2398,9 @@ function unitHtml(state: GameState, ref: TargetRef, caption: string): string {
     tokens.push({
       art: SPELL_IMMUNE_TOKEN,
       title: 'Spell Immunity: no spell or trap may choose this body as a target, from either side.',
+      // Only while a spell is being aimed that would otherwise land here. The
+      // token is always on the card; this is it answering.
+      cls: warded.has(refKey(ref)) ? 'warding' : '',
     });
   }
   if (s.sapLock) {
@@ -2388,7 +2439,7 @@ function unitHtml(state: GameState, ref: TargetRef, caption: string): string {
     ${renderCard(def, { classes, data, extra, live, edmg: effectDamageOf(state, s.owner) })}
     ${hpFan(state, ref, s)}
     ${lockHtml(state, ref)}
-    ${woundHtml(ref)}
+    ${woundHtml(state, ref)}
   </div>`;
 }
 
@@ -2843,7 +2894,10 @@ function promptHtml(state: GameState): string {
     return `<div class="banner">
       <h2>${title}</h2>
       <p>${esc(state.winReason ?? '')}</p>
-      <div class="row">${btn('new-game', 'New match', 'primary')}</div>
+      <div class="row">
+        ${btn('new-game', 'New match', 'primary')}
+        ${btn('copy-report', ui.reportCopied ? 'Copied' : 'Copy report')}
+      </div>
     </div>`;
   }
 
@@ -2865,7 +2919,7 @@ function promptHtml(state: GameState): string {
   }
 
   const ch = state.choiceQueue[0];
-  if (ch && canAct()) {
+  if (ch && choiceIsLive(state) && canAct()) {
     const sourceName = tryCard(ch.source)?.name ?? 'Choose';
     if (ch.cards) {
       const none = (ch.legal?.length ?? 0) === 0;
@@ -4412,8 +4466,12 @@ function renderOnline(): string {
     { label: 'Your decks', options: savedDeckList().map((d) => ({ value: d.key, label: d.name })) },
     { label: 'Starter decks', options: starterDecks.map((d) => ({ value: d.key, label: d.name })) },
   ].filter((g) => g.options.length > 0);
+  // A match that dropped leaves its report behind: the player is on this screen
+  // precisely because they cannot ask the board what happened any more.
   const status = o.error
     ? `<p class="lobbyerr lobbystatus">${esc(o.error)}</p>`
+      + '<p class="lobbystatus"><button data-act="btn" data-cmd="copy-report">'
+      + `${ui.reportCopied ? 'Copied' : 'Copy match report'}</button></p>`
     : badName && o.name.trim().length > 0
       ? `<p class="lobbyerr lobbystatus">${esc(badName)}</p>`
     : o.phase === 'seeking'
@@ -4837,6 +4895,7 @@ function renderBuilder(): string {
           value: b.leaderId ?? '',
           placeholder: 'pick or drag one in…',
           groups: leaderGroups,
+          search: 'Search leaders…',
         })}</div>
         ${issues.length ? `<ul class="issues">${issues.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : ''}
         <div class="deckscroll">
@@ -5029,6 +5088,7 @@ function netClient(): NetClient {
   if (net) return net;
   net = new NetClient(serverBase(), {
     onSeated(seat, _kind, code) {
+      note(`seated as seat ${seat}${code ? ` in room ${code}` : ''}`);
       ui.online.seat = seat;
       ui.online.roomCode = code ?? ui.online.roomCode;
       desyncStrikes = 0;
@@ -5043,6 +5103,11 @@ function netClient(): NetClient {
       render();
     },
     onState(state, seat, clock, move) {
+      note(
+        move
+          ? `v${state.version} seat ${move.actor} ${move.action.type}`
+          : `v${state.version} resync`,
+      );
       // Seating happens on arrival, which for the host is while still alone in
       // the room. The match starts on the first state the room pushes.
       const opening = ui.online.phase !== 'playing';
@@ -5108,6 +5173,7 @@ function netClient(): NetClient {
       clearActionFx();
     },
     onRejected(reason) {
+      note(`room refused the move: ${reason}`);
       ui.error = reason;
       render();
     },
@@ -5116,6 +5182,7 @@ function netClient(): NetClient {
       render();
     },
     onOpponentLeft() {
+      note('the other player left');
       failOnline('Your opponent left the match.');
     },
     onPlayerLeft(_seat, name) {
@@ -5124,6 +5191,7 @@ function netClient(): NetClient {
       popNotice(name, 'Eliminated', 'bad');
     },
     onError(reason) {
+      note(`error: ${reason}`);
       // A lobby that has not started survives a dropped socket: the close freed
       // the seat, the code is still live, and joining with it again takes the
       // seat back. So a host or guest whose connection quietly died while
@@ -5139,6 +5207,7 @@ function netClient(): NetClient {
       failOnline(reason);
     },
     onDesync() {
+      note('this copy stopped matching the room');
       // The push that exposed the drift also carried the room's copy, and the
       // mirror already took it, so staying seated costs nothing. Leaving would
       // cost plenty: in a party room a closed socket is a concession. Only a
@@ -5613,6 +5682,32 @@ function handleBuilderCommand(cmd: string): boolean {
       leaveOnline();
       ui.screen = 'setup';
       break;
+    case 'copy-report': {
+      // Built at the moment it is asked for, so it describes the board the
+      // player is looking at rather than whatever it looked like when the
+      // trouble started.
+      const text = closeReport({
+        reason: ui.state && isOver(ui.state)
+          ? (ui.state.winReason ?? 'the match ended')
+          : (ui.online.error ?? ui.error ?? 'the match stopped'),
+        state: ui.state,
+        seat: ui.online.seat,
+        roomCode: ui.online.roomCode,
+        online: ui.online.phase === 'playing',
+      });
+      // Selecting nothing to fall back on, so the text goes to the console as
+      // well: without a secure context the clipboard is simply refused, and a
+      // player who cannot copy it can still read it out of the log.
+      console.info(text);
+      void navigator.clipboard?.writeText(text).catch(() => {});
+      ui.reportCopied = true;
+      render();
+      window.setTimeout(() => {
+        ui.reportCopied = false;
+        render();
+      }, 1600);
+      break;
+    }
     case 'o-copy': {
       const code = ui.online.roomCode;
       if (!code) break;
@@ -6680,6 +6775,16 @@ mountDropdowns({
       // moves that same choice rather than a second one nothing would remember.
       ui.picks[0] = value;
       rememberPrefs();
+      // Changing the deck while already queued has to reach the room, or the
+      // match deals the deck that was picked when the seat was taken.
+      if (net && (ui.online.phase === 'connecting' || ui.online.phase === 'waiting')) {
+        const saved = savedDecks().find((d) => d.key === value);
+        net.changeDeck(
+          value,
+          ui.online.name.trim(),
+          saved ? { leaderId: saved.leaderId, cards: saved.cards } : undefined,
+        );
+      }
       return render();
     }
     if (name === 'dimport') {
