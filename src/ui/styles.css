@@ -2581,6 +2581,26 @@ body.dragging .bookgrid .card {
   cursor: default;
 }
 
+/* An HP fan is held rather than clicked, and the press opens the stack. */
+.hpfan[data-act] { cursor: zoom-in; }
+
+/* Every HP card one body wears, on the same layer the discard view uses. */
+#hpview .hpviewlayer {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  pointer-events: auto;
+}
+#hpview .hpviewbox .card {
+  --cw: var(--cw-hand);
+  --cwn: var(--cwn-hand);
+  cursor: default;
+}
+/* A face-down HP card: the shared back at the size of the cards beside it. */
+#hpview .hpviewbox .card.hpback {
+  background: var(--cardback) center / 100% 100% no-repeat;
+}
+
 /* A short notice over the table: what just happened to you, rather than
    something you have to answer. Takes itself away, so it never covers a click. */
 .notice {

@@ -218,6 +218,8 @@ interface Ui {
   zoom: string | null;
   /** Whose discard pile is open for reading, or null when none is. */
   discardView: PlayerIdx | null;
+  /** The body whose HP cards are being read, spread out over the board. */
+  hpView: TargetRef | null;
 }
 
 const ui: Ui = {
@@ -255,6 +257,7 @@ const ui: Ui = {
   preloading: false,
   zoom: null,
   discardView: null,
+  hpView: null,
 };
 
 /**
@@ -1095,6 +1098,19 @@ function computeTriggerCallouts(next: GameState): void {
   }
 }
 
+/** Bodies that were not on the board before this action. */
+let arrivalFx: { cardId: string; ref: TargetRef }[] = [];
+
+function computeArrivals(prev: GameState, next: GameState): void {
+  arrivalFx = [];
+  const before = new Set(allSummons(prev).map((x) => x.summon.uid));
+  // Leaders are dealt rather than played, so they arrive once and say nothing.
+  for (const { ref, summon } of allSummons(next)) {
+    if (summon.isLeader || before.has(summon.uid)) continue;
+    arrivalFx.push({ cardId: summon.cardId, ref });
+  }
+}
+
 /** Cards a deck gained that its owner did not put there. */
 let deckGiftFx: { player: PlayerIdx; cardId: string; count: number }[] = [];
 
@@ -1367,6 +1383,7 @@ function applyActionFx(
   computeDrawFx(prev, next);
   computeFlipFx(prev, next);
   computeTriggerCallouts(next);
+  computeArrivals(prev, next);
   computeDeckGifts(prev, next);
   computeUnitFx(prev, next);
   computeWoundFx(prev, next);
@@ -1625,6 +1642,7 @@ function clearActionFx(): void {
   smackFx = null;
   trapFx = null;
   effectCallouts = [];
+  arrivalFx = [];
   deckGiftFx = [];
   corpseFx = [];
   freshLogFrom = Infinity;
@@ -2075,13 +2093,54 @@ function playDeckGifts(): void {
   }
 }
 
+/** When the callout at `order` floats off the card that earned it. */
+function calloutDelayMs(order: number): number {
+  const fxd = (trapFx ? 1500 : smackFx ? 310 : 0) + woundLeadMs();
+  const step = effectCallouts.length > 4 ? 430 : 640;
+  return fxd + 520 + order * step;
+}
+
+let spotlightTimers: number[] = [];
+
+/**
+ * The rail follows the action, so the card an animation is talking about is the
+ * one you can read beside the board: the body a play put down, then each card
+ * that fires, as its callout appears.
+ *
+ * Desktop only. On a phone the rail is a sheet over the board rather than a
+ * column beside it, and it would cover the thing it is describing. Hovering
+ * anything takes the rail back.
+ */
+function playSpotlight(): void {
+  cancelSpotlight();
+  if (document.body.classList.contains('mobile')) return;
+  for (const a of arrivalFx) spotlight(a.cardId, a.ref, 0);
+  for (const c of effectCallouts) spotlight(c.cardId, c.ref, calloutDelayMs(c.order));
+}
+
+function cancelSpotlight(): void {
+  for (const t of spotlightTimers) window.clearTimeout(t);
+  spotlightTimers = [];
+}
+
+function spotlight(cardId: string, ref: TargetRef | null, delay: number): void {
+  if (cardId === HIDDEN_ID || !tryCard(cardId)) return;
+  spotlightTimers.push(
+    window.setTimeout(() => {
+      // A match left between the schedule and the timer takes its rail with it.
+      if (ui.screen !== 'game') return;
+      ui.inspect = cardId;
+      ui.inspectRef = ref;
+      renderRail();
+    }, delay),
+  );
+}
+
 /** Each card that did something of its own gets a callout floating off it, in order. */
 function playEffectCallouts(): void {
   if (effectCallouts.length === 0) return;
   const stageEl = document.querySelector<HTMLElement>('.stage');
   if (!stageEl) return;
-  const fxd = (trapFx ? 1500 : smackFx ? 310 : 0) + woundLeadMs();
-  const step = effectCallouts.length > 4 ? 430 : 640;
   const stacked = new Map<string, number>();
   for (const c of effectCallouts) {
     // A body that died doing it has left its slot, so the corpse standing in its
@@ -2100,7 +2159,7 @@ function playEffectCallouts(): void {
       ? `<span class="fcart">${artFit(def)}</span>`
       : '';
     el.innerHTML = `${art}<span class="fctext"><b>${esc(def.name)}</b> ${esc(c.says)}</span>`;
-    const delay = fxd + 520 + c.order * step;
+    const delay = calloutDelayMs(c.order);
     el.style.left = `${pos.x}px`;
     el.style.top = `${pos.y - 82 - lift * 36}px`;
     el.style.animationDelay = `${delay}ms`;
@@ -3626,6 +3685,23 @@ function armHold(ev: PointerEvent): void {
     }, HOLD_MS);
     return;
   }
+  // The HP cards a body wears, held to read the whole stack rather than the
+  // slivers the fan can show. Desktop and mobile alike, and before the zoom
+  // below, since a face-up HP card carries a card id of its own.
+  const fan = (ev.target as HTMLElement).closest<HTMLElement>('[data-act="hpfan"]');
+  if (fan) {
+    const ref = refFromEl(fan);
+    if (!ref || !ui.state || !findSummon(ui.state, ref)) return;
+    holdFrom = { x: ev.clientX, y: ev.clientY };
+    holdTimer = window.setTimeout(() => {
+      holdTimer = null;
+      ui.hpView = ref;
+      suppressClick = true;
+      cancelHold();
+      render();
+    }, HOLD_MS);
+    return;
+  }
   if (!document.body.classList.contains('mobile')) return;
   const el = (ev.target as HTMLElement).closest<HTMLElement>('[data-cardid]');
   const id = el?.dataset.cardid;
@@ -3699,6 +3775,60 @@ function renderDiscard(): void {
     });
   }
   host.innerHTML = discardHtml();
+}
+
+/**
+ * Every HP card one body wears, at full size: the spent ones face up and the
+ * rest face down.
+ *
+ * Face-down HP is hidden from both players, so the backs stay backs here and
+ * either side of the table reads the same view.
+ */
+function hpViewHtml(): string {
+  const state = ui.state;
+  const ref = ui.hpView;
+  if (!state || !ref) return '';
+  const s = findSummon(state, ref);
+  if (!s) return '';
+  const left = remainingHp(s);
+  const spent = s.hp.length - left;
+  const name = tryCard(s.cardId)?.name ?? s.cardId;
+  const cards = s.hp
+    .map((h) => {
+      const def = h.flipped ? tryCard(h.cardId) : null;
+      return def ? renderCard(def) : '<div class="card hpback"></div>';
+    })
+    .join('');
+  return `<div class="promptlayer hpviewlayer" data-act="btn" data-cmd="hpview:">
+    <div class="prompt choice hpviewbox">
+      <h2>HP: ${left} / ${s.hp.length}</h2>
+      <p>${esc(name)}: ${spent} spent, ${left} still face down.</p>
+      <div class="revealgrid">${cards}</div>
+      <div class="row"><button data-act="btn" data-cmd="hpview:">Close</button></div>
+    </div>
+  </div>`;
+}
+
+function renderHpView(): void {
+  let host = document.getElementById('hpview');
+  if (!ui.hpView) {
+    host?.remove();
+    return;
+  }
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'hpview';
+    // On the body for the same reason the zoom overlay is. A transformed
+    // ancestor turns position:fixed into position:absolute.
+    document.body.appendChild(host);
+    host.addEventListener('click', (ev) => {
+      const hit = (ev.target as HTMLElement).closest<HTMLElement>('[data-cmd]');
+      if (!hit || !hit.dataset.cmd?.startsWith('hpview:')) return;
+      ui.hpView = null;
+      render();
+    });
+  }
+  host.innerHTML = hpViewHtml();
 }
 
 /**
@@ -4248,6 +4378,7 @@ function render(): void {
   syncFlight();
   renderZoom();
   renderDiscard();
+  renderHpView();
   fitFans();
   // These three measure board elements, so they run after fitFans. The hand
   // fans set their own size there, the rows above them take the remaining
@@ -5159,6 +5290,7 @@ function netClient(): NetClient {
       playTrapReveal();
       playSmack();
       playEffectCallouts();
+      playSpotlight();
       playDraws();
       playDeckGifts();
       playHandPlays();
@@ -5405,6 +5537,7 @@ function dispatch(action: Action): void {
   playTrapReveal();
   playSmack();
   playEffectCallouts();
+  playSpotlight();
   playDraws();
   playDeckGifts();
   playHandPlays();
@@ -5486,6 +5619,7 @@ function botStep(): void {
   playTrapReveal();
   playSmack();
   playEffectCallouts();
+  playSpotlight();
   playDraws();
   playDeckGifts();
   playHandPlays();
@@ -5969,6 +6103,10 @@ function handleCommand(cmd: string): void {
   if (cmd.startsWith('discard:')) {
     const arg = cmd.slice(8);
     ui.discardView = arg === '' ? null : (Number(arg) as PlayerIdx);
+    return render();
+  }
+  if (cmd.startsWith('hpview:')) {
+    ui.hpView = null;
     return render();
   }
   if (cmd.startsWith('zoom:')) {
@@ -6947,6 +7085,10 @@ document.addEventListener('keydown', (ev) => {
     // The magnified card is the top thing on screen, so it goes first.
     if (ui.zoom) {
       ui.zoom = null;
+      return render();
+    }
+    if (ui.hpView) {
+      ui.hpView = null;
       return render();
     }
     if (ui.discardView !== null) {

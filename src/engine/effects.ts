@@ -1205,13 +1205,23 @@ export function clearSpellBonus(): void {
  * Fish catches flipped HP cards: they leave the board and go back to their
  * owner's hand. The summon gets smaller, which is the price, and a card that
  * was spent comes back, which is the point.
+ *
+ * The oldest spent card comes back first. Damage turns cards over from the
+ * front, so that is the one that has been face up longest. Healing goes the
+ * other way and undoes the newest damage first, which is deliberate: healing is
+ * meant to reverse the blow that just landed, and catching is meant to reach
+ * past it for what was spent earliest.
  */
 export function catchHp(state: GameState, ref: TargetRef, count: number): number {
   const summon = findSummon(state, ref);
   if (!summon || count <= 0) return 0;
   let taken = 0;
-  for (let i = summon.hp.length - 1; i >= 0 && taken < count; i--) {
-    if (!summon.hp[i].flipped) continue;
+  // No increment after a splice: the next card shifts down into this index.
+  for (let i = 0; i < summon.hp.length && taken < count; ) {
+    if (!summon.hp[i].flipped) {
+      i++;
+      continue;
+    }
     toHand(state, summon.owner, summon.hp[i].cardId);
     summon.hp.splice(i, 1);
     taken++;

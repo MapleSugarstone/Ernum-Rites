@@ -1536,9 +1536,20 @@ public static class Effects
         var summon = state.Find(r);
         if (summon is null || count <= 0) return 0;
         int taken = 0;
-        for (int i = summon.Hp.Count - 1; i >= 0 && taken < count; i--)
+        // The oldest spent card comes back first. Damage turns cards over from
+        // the front, so that is the one that has been face up longest. Healing
+        // goes the other way and undoes the newest damage first, which is
+        // deliberate: healing reverses the blow that just landed, and catching
+        // reaches past it for what was spent earliest.
+        //
+        // No increment after a removal: the next card shifts down into this index.
+        for (int i = 0; i < summon.Hp.Count && taken < count;)
         {
-            if (!summon.Hp[i].Flipped) continue;
+            if (!summon.Hp[i].Flipped)
+            {
+                i++;
+                continue;
+            }
             ToHand(state, summon.Owner, summon.Hp[i].CardId);
             summon.Hp.RemoveAt(i);
             taken++;
