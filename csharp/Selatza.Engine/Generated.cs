@@ -442,7 +442,7 @@ public static class Generated
             // A grafted Power arrives on a body the host paid for, so its pips
             // are rewritten as Oil rather than the colour it was printed in.
             Powers = basePowers.Concat(Repriced(lent, OiledCost) ?? lent).ToArray(),
-            Triggers = MergeTriggers(host.Triggers, lentTriggers, genId),
+            Triggers = MergeTriggers(host.Triggers, lentTriggers, hostId, sourceId),
             Targets = host.Targets,
             Effect = host.Effect,
             Flip = host.Flip,
@@ -463,10 +463,45 @@ public static class Generated
     /// half before the second's. Without this a fusion silently dropped every
     /// Deathrattle, Battlecry and aura it was built from.
     /// </summary>
-    private static Triggers? MergeTriggers(Triggers? a, Triggers? b, string selfId)
+    /// <summary>
+    /// A parent's strength trigger, judged as if the body were still that parent.
+    ///
+    /// Two opposite things are written as a StrengthBonus and a merge has to keep
+    /// both. An aura buffs every ally but itself and knows itself by card id, so
+    /// a minted id breaks the test and it starts buffing the body it is riding
+    /// on. A self-buff like "+1 attack for every 2 debt you carry" applies to
+    /// nothing else, and knows itself by uid.
+    ///
+    /// The swap is made only while the body being measured is the one carrying
+    /// the trigger, which is the single case the two disagree about. An aura then
+    /// sees its own printed id and stands down; a self-buff sees its own uid,
+    /// which the swap leaves alone, and pays out. Every other body is passed
+    /// through untouched, so an aura still reaches the allies it is for.
+    /// </summary>
+    private static Func<StrengthBonusArgs, int>? AsParent(
+        string id, Func<StrengthBonusArgs, int>? fn)
+    {
+        if (fn is null) return null;
+        return args =>
+        {
+            if (args.Source is null || args.Summon.Uid != args.Source.Uid) return fn(args);
+            var worn = args.Summon.Clone();
+            worn.CardId = id;
+            return fn(new StrengthBonusArgs
+            {
+                State = args.State,
+                Controller = args.Controller,
+                Summon = worn,
+                Def = args.Def,
+                Source = args.Source,
+            });
+        };
+    }
+
+    private static Triggers? MergeTriggers(Triggers? a, Triggers? b, string aId, string bId)
     {
         if (a is null && b is null) return null;
-        var bonus = Sum(a?.StrengthBonus, b?.StrengthBonus);
+        var bonus = Sum(AsParent(aId, a?.StrengthBonus), AsParent(bId, b?.StrengthBonus));
         if (a is null || b is null)
         {
             var only = a ?? b!;
@@ -486,11 +521,7 @@ public static class Generated
             OnSpellCast = Chain(a.OnSpellCast, b.OnSpellCast),
             OnEnemySpellCast = Chain(a.OnEnemySpellCast, b.OnEnemySpellCast),
             OnSummonPlayed = Chain(a.OnSummonPlayed, b.OnSummonPlayed),
-            // An aura names itself by id to stay off its own buff. The fusion
-            // carries a different id, so it has to be excluded by hand.
-            StrengthBonus = bonus is null
-                ? null
-                : args => args.Summon.CardId == selfId ? 0 : bonus(args),
+            StrengthBonus = bonus,
             EffectDamageBonus = Sum(a.EffectDamageBonus, b.EffectDamageBonus),
         };
     }
@@ -551,7 +582,7 @@ public static class Generated
             MuffleFlips = a.MuffleFlips || b.MuffleFlips,
             Stationary = a.Stationary || b.Stationary,
             Powers = powers.Length > 0 ? powers : null,
-            Triggers = MergeTriggers(a.Triggers, b.Triggers, genId),
+            Triggers = MergeTriggers(a.Triggers, b.Triggers, aId, bId),
             Targets = a.Targets,
             Flip = a.Flip,
             FlipText = a.FlipText,

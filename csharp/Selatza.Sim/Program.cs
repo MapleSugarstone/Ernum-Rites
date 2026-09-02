@@ -1,3 +1,5 @@
+using Selatza.Learn;
+using Selatza.Learn.Nn;
 using System.Reflection;
 using System.Diagnostics;
 using Selatza;
@@ -28,7 +30,9 @@ public static class Program
         {
             "sweep" => Sweep(games),
             "duel" => Duel(games),
-            "tune" => Tune(games, ArgInt(args, "--rounds", 3), ArgInt(args, "--threads", Environment.ProcessorCount), ArgStr(args, "--only", "")),
+            "tune" => Tune(games, ArgInt(args, "--rounds", 3),
+                ArgInt(args, "--threads", Environment.ProcessorCount),
+                ArgStr(args, "--only", ""), ArgStr(args, "--decks", "random")),
             "pair" => Pair(a, b, games, verbose: true),
             "record" => Record(games),
             "verify" => Verify(),
@@ -86,7 +90,7 @@ public static class Program
     /// anyway, which is what the validation pass at the end is for: it replays
     /// the finished set against the defaults on seeds the tuning never saw.
     /// </summary>
-    private static int Tune(int games, int rounds, int threads, string only)
+    private static int Tune(int games, int rounds, int threads, string only, string pool)
     {
         // A run that names weights tunes only those. The long-standing ones are
         // already close to a local best, so re-deriving them costs hours to say
@@ -109,7 +113,8 @@ public static class Program
         var best = new BotWeights();
         double se = 50.0 / Math.Sqrt(games);
         double bar = 50 + 2 * se;
-        Console.WriteLine($"tuning {knobs.Length} weights, {games} games a comparison");
+        Console.WriteLine($"tuning {knobs.Length} weights over {pool} decks, "
+            + $"{games} games a comparison");
         Console.WriteLine($"one standard error is {se:0.00} points, so a move has to reach {bar:0.0}%\n");
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -128,7 +133,7 @@ public static class Program
                     if (Math.Abs(now - was) < 1e-9) continue;
                     knob.SetValue(cand, now);
 
-                    var (wins, losses) = Match(cand, best, games, seed: 1000, threads);
+                    var (wins, losses) = Match(cand, best, games, seed: 1000, threads, pool);
                     int decided = wins + losses;
                     double rate = decided == 0 ? 50 : wins * 100.0 / decided;
                     bool keep = rate >= bar;
@@ -163,7 +168,7 @@ public static class Program
         // reason to survive this, which is the only part of the run worth
         // quoting.
         int check = games * 3;
-        var (tw, tl) = Match(best, BotWeights.Default, check, seed: 987_001, threads);
+        var (tw, tl) = Match(best, BotWeights.Default, check, seed: 987_001, threads, pool);
         int total = tw + tl;
         double final = total == 0 ? 50 : tw * 100.0 / total;
         double checkSe = 50.0 / Math.Sqrt(Math.Max(1, total));
@@ -187,9 +192,47 @@ public static class Program
     /// <summary>
     /// Two weight sets over the same decks and seeds, each taking both seats.
     /// </summary>
-    private static (int A, int B) Match(BotWeights a, BotWeights b, int games, int seed, int threads)
+    /**
+     * A deck for one game of the comparison.
+     *
+     * Both seats get the same one. That is the point: a mirror cancels deck
+     * quality exactly, so a random deck costs nothing in noise and buys the one
+     * thing the starters cannot give. There are five of those and they are value
+     * decks, so a weight that only speaks when a combo is on the board never
+     * gets a word in, and anything the sweep does to it is noise fitted to games
+     * where the term never fired. Drawn from every leader the rules allow, which
+     * is the same spread the tournaments use.
+     */
+    private static DeckList DeckFor(string pool, int game)
     {
-        var decks = CardSets.Starters.ToList();
+        if (pool == "starters")
+        {
+            var starters = CardSets.Starters;
+            var d = starters[(game / 2) % starters.Length];
+            return d.ToDeckList("A");
+        }
+        // Seeded off the game index alone, so both weight sets in a comparison
+        // are handed identical decks and the whole run reproduces.
+        var rng = new Gauss(unchecked(50_021 + game * 6_361));
+        string leader = DeckGen.RandomLeader(LeaderPool.All, rng);
+        return new DeckList
+        {
+            Name = "A",
+            LeaderId = leader,
+            Cards = DeckGen.Random(leader, DeckShape.Default, rng),
+        };
+    }
+
+    private static (int A, int B) Match(BotWeights a, BotWeights b, int games, int seed,
+        int threads, string pool)
+    {
+        // Built up front and on one thread. The card index behind the deck
+        // builder assembles itself lazily on first use and is not safe to race,
+        // and the decks are identical for both weight sets in any case, so there
+        // is nothing to gain by making each worker find its own.
+        var decks = new DeckList[games];
+        for (int g = 0; g < games; g++) decks[g] = DeckFor(pool, g);
+
         int aWins = 0, bWins = 0;
         var gate = new object();
         var opts = new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, threads) };
@@ -197,11 +240,12 @@ public static class Program
         Parallel.For(0, games, opts, g =>
         {
             // The deck turns over half as fast as the seat, so a deck is never
-            // tied to a seat however many decks there are.
-            var d = decks[(g / 2) % decks.Count];
+            // tied to a seat.
+            var d = decks[g];
             int seatA = g % 2;
             Bot.ClearPlan();
-            var s = Engine.CreateGame(d.ToDeckList("A"), d.ToDeckList("B"), seed + g * 7919);
+            var other = new DeckList { Name = "B", LeaderId = d.LeaderId, Cards = d.Cards };
+            var s = Engine.CreateGame(d, other, seed + g * 7919);
             int actions = 0;
             while (!s.IsOver && actions < 8000 && s.Turn < 400)
             {

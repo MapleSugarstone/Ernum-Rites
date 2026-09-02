@@ -1,6 +1,7 @@
 import { card, registerGenerated, setGeneratedRebuilder, tryCard } from './registry';
 import type {
   CardColour,
+  StrengthBonusArgs,
   Cost,
   EffectFn,
   Faction,
@@ -269,7 +270,7 @@ export function graftedCopy(
   const lentTriggers = src.type === 'spell' ? undefined : src.triggers;
   const lines = [host.text, lentTriggers ? src.text : undefined]
     .filter((t): t is string => !!t && !!t.trim());
-  const merged = mergeTriggers(host.triggers, lentTriggers, genId);
+  const merged = mergeTriggers(host.triggers, lentTriggers, hostId, sourceId);
   return registerGenerated({
     ...host,
     id: genId,
@@ -319,13 +320,44 @@ function sum<T>(x?: (a: T) => number, y?: (a: T) => number): ((a: T) => number) 
 }
 
 /**
+ * A parent's strength trigger, judged as if the body were still that parent.
+ *
+ * Two opposite things are written as a strengthBonus and a merge has to keep
+ * both. An aura buffs every ally but itself and knows itself by card id, so a
+ * minted id breaks the test and it starts buffing the body it is riding on. A
+ * self-buff like "+1 attack for every 2 debt you carry" applies to nothing else,
+ * and knows itself by uid.
+ *
+ * The swap is made only while the body being measured is the one carrying the
+ * trigger, which is the single case the two disagree about. An aura then sees
+ * its own printed id and stands down; a self-buff sees its own uid, which the
+ * swap leaves alone, and pays out. Every other body is passed through untouched,
+ * so an aura still reaches the allies it is for.
+ */
+function asParent(
+  id: string,
+  fn?: (a: StrengthBonusArgs) => number,
+): ((a: StrengthBonusArgs) => number) | undefined {
+  if (!fn) return undefined;
+  return (args) =>
+    args.source && args.summon.uid === args.source.uid
+      ? fn({ ...args, summon: { ...args.summon, cardId: id } })
+      : fn(args);
+}
+
+/**
  * Both parents' triggers on one body, each slot firing the first card's half
  * before the second's. Without this a fusion silently dropped every
  * Deathrattle, Battlecry and aura it was built from.
  */
-function mergeTriggers(a: Triggers | undefined, b: Triggers | undefined, selfId: string): Triggers | undefined {
+function mergeTriggers(
+  a: Triggers | undefined,
+  b: Triggers | undefined,
+  aId: string,
+  bId: string,
+): Triggers | undefined {
   if (!a && !b) return undefined;
-  const bonus = sum(a?.strengthBonus, b?.strengthBonus);
+  const bonus = sum(asParent(aId, a?.strengthBonus), asParent(bId, b?.strengthBonus));
   if (!a || !b) {
     const only = (a ?? b)!;
     if (!only.strengthBonus) return only;
@@ -343,9 +375,7 @@ function mergeTriggers(a: Triggers | undefined, b: Triggers | undefined, selfId:
     onSpellCast: chain(a.onSpellCast, b.onSpellCast),
     onEnemySpellCast: chain(a.onEnemySpellCast, b.onEnemySpellCast),
     onSummonPlayed: chain(a.onSummonPlayed, b.onSummonPlayed),
-    // An aura names itself by id to stay off its own buff. The fusion carries
-    // a different id, so it has to be excluded by hand.
-    strengthBonus: bonus ? (args) => (args.summon.cardId === selfId ? 0 : bonus(args)) : undefined,
+    strengthBonus: bonus,
     effectDamageBonus: sum(a.effectDamageBonus, b.effectDamageBonus),
   };
 }
@@ -403,8 +433,8 @@ export function fusedRecomp(
     ...(a.muffleFlips || b.muffleFlips ? { muffleFlips: true } : {}),
     ...(a.stationary || b.stationary ? { stationary: true } : {}),
     ...(powers.length ? { powers } : {}),
-    ...(mergeTriggers(a.triggers, b.triggers, genId)
-      ? { triggers: mergeTriggers(a.triggers, b.triggers, genId)! }
+    ...(mergeTriggers(a.triggers, b.triggers, aId, bId)
+      ? { triggers: mergeTriggers(a.triggers, b.triggers, aId, bId)! }
       : {}),
     ...(a.targets ? { targets: a.targets } : {}),
     ...(a.flip ? { flip: a.flip } : {}),

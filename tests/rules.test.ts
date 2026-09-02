@@ -816,11 +816,14 @@ describe('minted cards', () => {
     // The King's anthem names itself by id so it does not buff itself. The
     // fusion carries a different id, so the exclusion has to be re-applied.
     const g = card(fusedRecomp('m-rp-theking', 'p3-Pod', 4, 7, 3));
-    const self = { cardId: g.id, owner: 0 };
-    const other = { cardId: 'p3-Pod', owner: 0 };
+    // Source is the body radiating the bonus, and the engine always passes it:
+    // it is how a self-buff recognises itself once a mint has taken its printed
+    // id away. Leaving it out asks the merge a question the game never asks.
+    const carrier = { uid: 'u1', cardId: g.id, owner: 0 };
+    const other = { uid: 'u2', cardId: 'p3-Pod', owner: 0 };
     const args = (summon: unknown) =>
-      ({ state: {}, controller: 0, summon, def: g }) as never;
-    expect(g.triggers?.strengthBonus?.(args(self))).toBe(0);
+      ({ state: {}, controller: 0, summon, def: g, source: carrier }) as never;
+    expect(g.triggers?.strengthBonus?.(args(carrier))).toBe(0);
     expect(g.triggers?.strengthBonus?.(args(other))).toBeGreaterThan(0);
   });
 

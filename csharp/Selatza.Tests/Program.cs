@@ -1336,10 +1336,15 @@ public static class Program
                 "p3-Pod", "m-rp-theking", host.Strength, Color.P, 3,
                 host.Powers ?? Array.Empty<Power>()));
             var bonus = g.Triggers!.StrengthBonus!;
+            // Source is the body radiating the bonus, and the engine always
+            // passes it: it is how a self-buff recognises itself once a mint has
+            // taken its printed id away. Leaving it out here asks the merge a
+            // question the game never asks.
+            var carrier = new SummonInstance { Uid = "u1", CardId = g.Id, Owner = 0 };
             Harness.Eq(0, bonus(new StrengthBonusArgs
             {
                 State = Game(), Controller = 0,
-                Summon = new SummonInstance { Uid = "u1", CardId = g.Id, Owner = 0 }, Def = g,
+                Summon = carrier, Def = g, Source = carrier,
             }), "it does not buff itself");
             // The King buffs Mortals only, and the Pod is Living, so the ally
             // side of the check needs a body the aura actually applies to.
@@ -1348,7 +1353,7 @@ public static class Program
             {
                 State = Game(), Controller = 0,
                 Summon = new SummonInstance { Uid = "u2", CardId = "p3-classe", Owner = 0 },
-                Def = mortal,
+                Def = mortal, Source = carrier,
             }), "but does buff an ally Mortal");
             Harness.Eq(0, bonus(new StrengthBonusArgs
             {

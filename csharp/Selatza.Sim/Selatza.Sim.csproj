@@ -17,5 +17,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Selatza.Engine\Selatza.Engine.csproj" />
+    <!-- For DeckGen: the tuner plays over decks drawn from every leader, which
+         is where the deck builder lives. -->
+    <ProjectReference Include="..\Selatza.Learn\Selatza.Learn.csproj" />
   </ItemGroup>
 </Project>
