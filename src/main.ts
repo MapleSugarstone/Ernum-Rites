@@ -4,7 +4,15 @@ import './ui/bootguard';
 import { chooseAction } from './ai/bot';
 import { NetClient } from './net/client';
 import { nameProblem } from '../worker/protocol';
-import { CLOCK_SECONDS, asDisplayed, isRoping, secondsLeft, type Clock } from './engine/timing';
+import type { RoomKind } from '../worker/protocol';
+import {
+  AWAY_GRACE_SECONDS,
+  CLOCK_SECONDS,
+  asDisplayed,
+  isRoping,
+  secondsLeft,
+  type Clock,
+} from './engine/timing';
 import {
   MILL_DEBT,
   RESHUFFLE_DEBT,
@@ -4372,6 +4380,8 @@ function render(): void {
   }
   // Every screen, not just the table: the setup list has to fit too.
   syncLayout();
+  // Drawn on every screen, because a connection can die on any of them.
+  renderReconnect();
   document.body.classList.toggle('party', !!ui.state && isParty(ui.state));
   // The board is rebuilt from scratch on every action, and a fresh element
   // starts its animation over. Handing the marks the time as a negative delay
@@ -4770,6 +4780,12 @@ function renderOnline(): string {
         <input class="lobbyinput" data-act="ocode" value="${esc(o.code)}" maxlength="8"
           placeholder="ABCD1234"></label>
       <button class="lobbybtn" data-act="btn" data-cmd="o-join" ${blocked ? 'disabled' : ''}>Join a private game</button>
+      ${
+        resumable && !busy
+          ? `<hr class="lobbyrule"><p class="lobbynote">A seat is still being held for you.</p>
+             <button class="lobbybtn" data-act="btn" data-cmd="o-resume">Rejoin your match</button>`
+          : ''
+      }
 
       <hr class="lobbyrule">
 
@@ -5858,13 +5874,33 @@ function stopRopeWatch(): void {
 function netClient(): NetClient {
   if (net) return net;
   net = new NetClient(serverBase(), {
-    onSeated(seat, _kind, code) {
+    onSeated(seat, kind, code, token) {
       note(`seated as seat ${seat}${code ? ` in room ${code}` : ''}`);
       ui.online.seat = seat;
       ui.online.roomCode = code ?? ui.online.roomCode;
       desyncStrikes = 0;
       rejoinTried = false;
+      // Being seated is the proof the connection came back, whichever attempt
+      // it was, so the overlay goes and the countdown stops.
+      endReconnect();
+      if (token && pendingRoom) {
+        keepResumable({
+          roomId: pendingRoom.roomId,
+          kind,
+          code: code ?? pendingRoom.code,
+          token,
+          deckKey: ui.online.deckKey,
+          name: ui.online.name.trim(),
+        });
+      }
       render();
+    },
+    onPlayerAway(_seat, name, until) {
+      const left = Math.max(0, Math.ceil((until - Date.now()) / 1000));
+      popNotice(name, `Lost connection, ${left}s to return`, 'bad');
+    },
+    onPlayerBack(_seat, name) {
+      popNotice(name, 'Back', '');
     },
     onWaiting(players, code, needed, names) {
       ui.online.phase = 'waiting';
@@ -6019,6 +6055,12 @@ function netClient(): NetClient {
       // waiting walks back in on their own. One quiet try; a second failure in
       // a row reads as a real outage and falls through to the lobby screen.
       const o = ui.online;
+      // A seat that is being held is a seat worth going back to. The room keeps
+      // it for a grace period, so the match is not over until that runs out.
+      if (resumable && (o.phase === 'playing' || o.phase === 'drafting')) {
+        beginReconnect();
+        return;
+      }
       if (!rejoinTried && o.roomCode && (o.phase === 'waiting' || o.phase === 'connecting')) {
         rejoinTried = true;
         o.code = o.roomCode;
@@ -6042,6 +6084,124 @@ function netClient(): NetClient {
     },
   });
   return net;
+}
+
+/**
+ * The seat this client can walk back into, and everything needed to do it.
+ *
+ * A socket used to be the only thing that identified a player, so a connection
+ * that died took the chair with it. The room now holds the seat for a grace
+ * period and hands out a token that proves who is coming back. Kept in
+ * sessionStorage as well as in memory, so a reload is a way back in rather than
+ * the end of a match.
+ */
+interface Resumable {
+  roomId: string;
+  kind: RoomKind;
+  code?: string;
+  token: string;
+  deckKey: string;
+  name: string;
+}
+
+const RESUME_KEY = 'ernumrites.resume';
+let resumable: Resumable | null = readResumable();
+
+function readResumable(): Resumable | null {
+  try {
+    const raw = sessionStorage.getItem(RESUME_KEY);
+    return raw ? (JSON.parse(raw) as Resumable) : null;
+  } catch {
+    return null;
+  }
+}
+
+function keepResumable(r: Resumable | null): void {
+  resumable = r;
+  try {
+    if (r) sessionStorage.setItem(RESUME_KEY, JSON.stringify(r));
+    else sessionStorage.removeItem(RESUME_KEY);
+  } catch {
+    // A browser with storage switched off still gets the in-memory half.
+  }
+}
+
+/** The attempt in progress, or null when the connection is believed good. */
+let reconnecting: { attempt: number; until: number; timer: number | null } | null = null;
+
+/**
+ * Try to get back into the match rather than ending it.
+ *
+ * The room holds the seat for the same window this gives up after, so a client
+ * that keeps trying for that long has tried for exactly as long as there was
+ * something to come back to. Backed off so a server that is down is not hammered
+ * by every client that was talking to it.
+ */
+function beginReconnect(): void {
+  if (reconnecting || !resumable) return;
+  reconnecting = { attempt: 0, until: Date.now() + AWAY_GRACE_SECONDS * 1000, timer: null };
+  ui.error = null;
+  render();
+  tryReconnect();
+}
+
+function tryReconnect(): void {
+  const r = reconnecting;
+  const back = resumable;
+  if (!r || !back) return;
+  if (Date.now() >= r.until) {
+    endReconnect();
+    keepResumable(null);
+    failOnline('could not get back to the match');
+    return;
+  }
+  r.attempt++;
+  note(`reconnect attempt ${r.attempt}`);
+  render();
+  const saved = savedDecks().find((d) => d.key === back.deckKey);
+  netClient().connect(
+    back.roomId,
+    back.kind,
+    back.deckKey,
+    back.name,
+    back.code,
+    saved ? { leaderId: saved.leaderId, cards: saved.cards } : undefined,
+    back.token,
+  );
+  // Doubling, capped, so a long outage settles into one try every few seconds.
+  const wait = Math.min(1200 * 2 ** (r.attempt - 1), 5000);
+  r.timer = window.setTimeout(tryReconnect, wait);
+}
+
+function endReconnect(): void {
+  if (reconnecting?.timer !== null && reconnecting) window.clearTimeout(reconnecting.timer);
+  reconnecting = null;
+}
+
+/**
+ * The overlay while a client is trying to get back in. On the body rather than
+ * inside the shell, because #app carries a transform when the table is scaled
+ * and a transformed ancestor makes position:fixed behave like position:absolute.
+ */
+function renderReconnect(): void {
+  let host = document.getElementById('reconnect');
+  if (!reconnecting) {
+    host?.remove();
+    return;
+  }
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'reconnect';
+    host.className = 'reconnectlayer';
+    document.body.appendChild(host);
+  }
+  const left = Math.max(0, Math.ceil((reconnecting.until - Date.now()) / 1000));
+  host.innerHTML = `<div class="reconnectbox">
+    <h3>Reconnecting</h3>
+    <p>Your seat is being held. ${left}s left to get back in.</p>
+    <p class="blurb">Attempt ${reconnecting.attempt}</p>
+    <button data-act="btn" data-cmd="give-up">Leave the match</button>
+  </div>`;
 }
 
 /** Digest disagreements this match. One is survivable; a streak is a bug. */
@@ -6068,6 +6228,9 @@ function failOnline(reason: string): void {
   });
   stopRopeWatch();
   stopDraftWatch();
+  // Whatever brought us here, the seat is not being gone back to now.
+  endReconnect();
+  keepResumable(null);
   net?.close();
   pendingRoom = null;
   // A finished match cannot fail. The result is already on screen and the socket
@@ -6142,6 +6305,33 @@ async function startOnline(how: 'public' | 'host' | 'join'): Promise<void> {
   void warmArt(packArt);
 }
 
+/**
+ * Walk back into a seat the room is still holding.
+ *
+ * The same road the automatic attempt takes, reached by hand: a player who
+ * closed the tab, or whose reconnect gave up while they were away from the
+ * screen, still holds the token until the grace runs out.
+ */
+async function resumeMatch(): Promise<void> {
+  const back = resumable;
+  if (!back) return;
+  const o = ui.online;
+  o.error = null;
+  o.phase = 'connecting';
+  render();
+  pendingRoom = { roomId: back.roomId, code: back.code };
+  const saved = savedDecks().find((d) => d.key === back.deckKey);
+  netClient().connect(
+    back.roomId,
+    back.kind,
+    back.deckKey,
+    back.name,
+    back.code,
+    saved ? { leaderId: saved.leaderId, cards: saved.cards } : undefined,
+    back.token,
+  );
+}
+
 /** Leave cleanly, so a half-made room does not sit in the queue. */
 function leaveOnline(): void {
   if (pendingRoom && ui.online.phase !== 'playing') {
@@ -6150,6 +6340,10 @@ function leaveOnline(): void {
     // kill the lobby for every player still on their way.
     void net?.cancelQueue(pendingRoom.roomId, pendingRoom.hosted ? pendingRoom.code : undefined);
   }
+  // Leaving on purpose gives the seat up, so the room stops holding it and the
+  // other players are told now rather than after the grace runs out.
+  endReconnect();
+  keepResumable(null);
   net?.close();
   pendingRoom = null;
   stopDraftWatch();
@@ -6514,6 +6708,9 @@ function handleBuilderCommand(cmd: string): boolean {
       break;
     case 'o-draft':
       if (ui.online.phase === 'idle') ui.online.draft = arg === '1';
+      break;
+    case 'o-resume':
+      void resumeMatch();
       break;
     case 'o-seek':
       void startOnline('public');
@@ -6904,7 +7101,16 @@ function handleCommand(cmd: string): void {
     ui.online.spectating = true;
     return render();
   }
+  if (cmd === 'give-up') {
+    endReconnect();
+    keepResumable(null);
+    leaveOnline();
+    ui.screen = 'online';
+    ui.online.error = 'You left the match.';
+    return render();
+  }
   if (cmd === 'leave-match') {
+    keepResumable(null);
     leaveOnline();
     ui.screen = 'setup';
     ui.state = null;

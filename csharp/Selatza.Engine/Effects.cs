@@ -1779,7 +1779,7 @@ public static class Effects
             $"{Registry.Card(attacker.CardId).Name} ({atk}) clashes with {Registry.Card(defender.CardId).Name} ({def2}).");
 
         DealDamage(state, attackerRef, def2);
-        bool muffle = !defender.IsLeader && Registry.Card(attacker.CardId).MuffleFlips;
+        bool muffle = Registry.Card(attacker.CardId).MuffleFlips;
         int muted = DealDamage(state, defenderRef, atk, 0, muffle);
         if (muted > 0 && state.Find(attackerRef) is not null)
         {

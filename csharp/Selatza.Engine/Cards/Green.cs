@@ -7,15 +7,20 @@ public static class Green
 {
     private static readonly ColorKit K = new(Color.R, "r", "Green", "Green/spells");
 
-    /// <summary>Whether this player holds exactly one body on the board.</summary>
-    private static bool Alone(GameState state, int player)
+    /// <summary>
+    /// Whether the body asking is the only summon its controller keeps in a slot.
+    /// The leader seat is left out on purpose: a leader is always on the board, so
+    /// counting it would make "no other summons" a condition nobody could ever meet.
+    /// Asked from up there the question is only whether the slots are empty, which
+    /// is what counting exactly one slot body got backwards.
+    /// </summary>
+    private static bool Alone(GameState state, int player, SummonInstance? self)
     {
-        int n = 0;
         foreach (var s in state.Players[player].Slots)
         {
-            if (s is not null && ++n > 1) return false;
+            if (s is not null && s.Uid != self?.Uid) return false;
         }
-        return n == 1;
+        return true;
     }
 
     public static CardDef[] Build() => new[]
@@ -27,7 +32,7 @@ public static class Green
             {
                 OnEnter = c =>
                 {
-                    if (c.Self is not { } me || !Alone(c.State, c.Me)) return;
+                    if (c.Self is not { } me || !Alone(c.State, c.Me, c.Source)) return;
                     c.Shield(me, 1);
                     c.BuffStrength(me, 4, ModDuration.Permanent);
                 },
@@ -297,7 +302,7 @@ public static class Green
 
         K.Summon(2, "nommer", "Nommer", F(Faction.Machine, Faction.Beast, Faction.Hedron), str: 3, hp: 2,
             muffleFlips: true,
-            text: "FLIP effects of its combat damage are muted, and it heals 1 HP for each.",
+            text: "FLIP effects of its combat damage are muted on any character, and it heals 1 HP for each.",
             powers: Powers(new Power
             {
                 Name = "Chew",

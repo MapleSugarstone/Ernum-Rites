@@ -77,7 +77,10 @@ export const tripleCards: CardDef[] = [
     triggers: {
       effectDamageBonus: ({ state, controller }) => {
         let n = 0;
-        for (const s of state.players[controller].slots) {
+        // The leader seat counts: an ally is an ally wherever it stands, and the
+        // caller already runs this hook for the leader as well as for slot bodies.
+        const p = state.players[controller];
+        for (const s of [...p.slots, p.leader]) {
           if (!s || s.cardId === 'm-bgr-screener') continue;
           if (!card(s.cardId).factions?.includes('Machine')) continue;
           if (remainingHp(s) === 1) n++;

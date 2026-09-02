@@ -1827,7 +1827,7 @@ export function resolveClash(
   );
 
   dealDamage(state, attackerRef, defPower);
-  const muffle = !defender.isLeader && !!card(attacker.cardId).muffleFlips;
+  const muffle = !!card(attacker.cardId).muffleFlips;
   const muted = dealDamage(state, defenderRef, atkPower, 0, muffle);
   if (muted > 0 && findSummon(state, attackerRef)) {
     unflipHp(state, attackerRef, muted);

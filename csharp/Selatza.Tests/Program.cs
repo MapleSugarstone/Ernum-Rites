@@ -517,6 +517,77 @@ public static class Program
                 "the echoed cast answers twice");
         });
 
+        Harness.Test("Screener counts an ally Machine leader on its last HP card", () =>
+        {
+            // An ally is an ally wherever it stands. The caller already ran the
+            // hook for the leader; the card's own loop was what dropped it.
+            var s = Engine.CreateGame(Deck(60, D1, "m-bg-robotfish"), Deck(60, D1), 7);
+            s = PassTo(s, 0);
+            s = Place(s, 0, "m-bgr-screener", 0);
+            var lead = s.Players[0].Leader!;
+            for (int i = 0; i < lead.Hp.Count - 1; i++) lead.Hp[i].Flipped = true;
+            Harness.Eq(1, Effects.EffectDamageOf(s, 0), "an ally Machine on its last card");
+            lead.Hp[0].Flipped = false;
+            Harness.Eq(0, Effects.EffectDamageOf(s, 0), "and not before that");
+        });
+
+        Harness.Test("Nommer mutes the flips of a leader it hits", () =>
+        {
+            var s = Game();
+            s = PassTo(s, 0);
+            s = Place(s, 0, "r2-nommer", 0);
+            s = PassTo(s, 0);
+            // Every HP card the enemy leader wears would hand it +2 attack.
+            var foe = s.Players[1].Leader!;
+            foreach (var h in foe.Hp) h.CardId = "f1-swordfish";
+            int before = Effects.EffectiveStrength(s, foe);
+            s = Must(s, 0, GameAction.DeclareAttack(Src(0, 0), TargetRef.Leader(1)));
+            Harness.Eq(before, Effects.EffectiveStrength(s, s.Players[1].Leader!),
+                "no Swordfish fired");
+        });
+
+        Harness.Test("Player One's battlecry pays out from the leader seat", () =>
+        {
+            // "If you control no other summons" counted exactly one body in the
+            // slots. A leading Player One is not among them, so an empty board
+            // read as a failure and one other summon read as a pass.
+            var s = Engine.CreateGame(Deck(60, D1, "rh-player1"), Deck(60, D1), 7);
+            s = PassTo(s, 0);
+            var lead = s.Players[0].Leader!;
+            Harness.Eq("rh-player1", lead.CardId, "it leads");
+            Harness.Eq(1, lead.Shields, "a Power Shield");
+            Harness.Eq(Registry.Card("rh-player1").Strength + 4,
+                Effects.EffectiveStrength(s, lead), "and +4 attack");
+        });
+
+        Harness.Test("Player One stays quiet in a slot beside another summon", () =>
+        {
+            var s = Game();
+            s = Place(s, 0, "n1-Wallguy", 1);
+            s = Place(s, 0, "rh-player1", 0);
+            Harness.Eq(0, s.Players[0].Slots[0]!.Shields, "it is not alone");
+        });
+
+        Harness.Test("an echo source works from the leader seat", () =>
+        {
+            // Any summon with HP can be chosen to lead, and a leader is a body
+            // like any other. Read out of the three slots alone, Scoobert
+            // Singularity said "Your spells cast twice" from the one seat where
+            // it did nothing.
+            var s = Engine.CreateGame(
+                Deck(60, D1, "r3-scoobertsingularity"), Deck(60, D1), 7);
+            s = PassTo(s, 0);
+            Harness.Eq("r3-scoobertsingularity", s.Players[0].Leader!.CardId, "it leads");
+            // The target has to be put down on its owner's own turn.
+            s = PassTo(s, 1);
+            s = Place(s, 1, "n1-Wallguy", 0);
+            s = PassTo(s, 0);
+            foreach (Color c in Enum.GetValues<Color>()) s.Players[0].Mana[(int)c] = 9;
+            int before = s.Players[1].Slots[0]!.RemainingHp;
+            s = Must(s, 0, GameAction.CastSpell(Give(s, 0, "nx-RockThrow"), Src(1, 0)));
+            Harness.Eq(4, before - s.Players[1].Slots[0]!.RemainingHp, "2 dealt twice");
+        });
+
         Harness.Test("moves HP cards, felling a donor stripped to zero", () =>
         {
             var s = Game();

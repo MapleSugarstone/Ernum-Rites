@@ -17,6 +17,15 @@ import { canBeLeader, colorsOf, deckIdentity } from '../src/engine/identity';
 import { allCards, card } from '../src/engine/registry';
 import { COPY_LIMIT } from '../src/engine/types';
 import { connectionLost } from '../src/net/client';
+import {
+  AWAY_GRACE_SECONDS,
+  CLOCK_SECONDS,
+  MIN_TURN_SECONDS,
+  NETWORK_GRACE_SECONDS,
+  SKIP_PENALTY_SECONDS,
+  enforcedTurnMs,
+  turnSecondsFor,
+} from '../src/engine/timing';
 import { windowOverflow } from '../src/ui/draft';
 import { draftFor, isPartyName, roomName, seatCountFor, timersOffFor } from '../worker/roomname';
 
@@ -322,5 +331,44 @@ describe('giving up on a connection that went quiet', () => {
 
   it('reports the same silence once', () => {
     expect(connectionLost({ ...live, quietMs: 300_000, alreadyGaveUp: true })).toBe(false);
+  });
+});
+
+describe('a turn that shortens for the player who is not using it', () => {
+  it('runs its full length for somebody who is playing', () => {
+    expect(turnSecondsFor(0)).toBe(CLOCK_SECONDS.turn);
+  });
+
+  it('loses fifteen seconds for every turn let pass', () => {
+    expect(turnSecondsFor(1)).toBe(CLOCK_SECONDS.turn - SKIP_PENALTY_SECONDS);
+    expect(turnSecondsFor(2)).toBe(CLOCK_SECONDS.turn - 2 * SKIP_PENALTY_SECONDS);
+    expect(turnSecondsFor(3)).toBe(CLOCK_SECONDS.turn - 3 * SKIP_PENALTY_SECONDS);
+  });
+
+  it('stops shortening before it reaches nothing', () => {
+    // A clock of zero fires its alarm in the instant it is set, which is a loop
+    // rather than a fast turn.
+    expect(turnSecondsFor(99)).toBe(MIN_TURN_SECONDS);
+    expect(turnSecondsFor(99)).toBeGreaterThan(0);
+  });
+
+  it('never shortens below the floor however odd the count', () => {
+    for (const n of [-5, -1, 0.4, 7.9, 1000]) {
+      expect(turnSecondsFor(n)).toBeGreaterThanOrEqual(MIN_TURN_SECONDS);
+      expect(turnSecondsFor(n)).toBeLessThanOrEqual(CLOCK_SECONDS.turn);
+    }
+  });
+
+  it('adds the room margin on top of the window a player sees', () => {
+    expect(enforcedTurnMs(0)).toBe((CLOCK_SECONDS.turn + NETWORK_GRACE_SECONDS) * 1000);
+    expect(enforcedTurnMs(2)).toBe(
+      (CLOCK_SECONDS.turn - 2 * SKIP_PENALTY_SECONDS + NETWORK_GRACE_SECONDS) * 1000,
+    );
+  });
+
+  it('holds a seat long enough for a network to come back', () => {
+    // Long enough for a handover or a reload, short enough not to hold a table.
+    expect(AWAY_GRACE_SECONDS).toBeGreaterThanOrEqual(60);
+    expect(AWAY_GRACE_SECONDS).toBeLessThanOrEqual(180);
   });
 });

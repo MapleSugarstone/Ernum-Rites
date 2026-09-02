@@ -3644,6 +3644,69 @@ body.mobile .modes .mixer {
   .deckscroll { min-height: 26vh; max-height: 38vh; }
 }
 
+/* --- reconnecting -----------------------------------------------------------
+   Over everything, on the body rather than inside the shell, because #app
+   carries a transform when the table is scaled and a transformed ancestor makes
+   position:fixed behave like position:absolute. The board stays visible behind
+   it: the match is still there, which is the whole point of the screen. */
+.reconnectlayer {
+  position: fixed;
+  inset: 0;
+  z-index: 950;
+  display: grid;
+  place-items: center;
+  background: var(--scrim);
+  animation: reconnectin 200ms ease-out both;
+}
+.reconnectbox {
+  background: var(--glass-dark);
+  border: var(--stroke-thick) solid var(--ink);
+  border-radius: var(--radius);
+  box-shadow: var(--sheen), var(--shadow-lift);
+  padding: 20px 26px;
+  text-align: center;
+  max-width: 340px;
+  display: grid;
+  gap: 8px;
+}
+.reconnectbox h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 19px;
+  color: var(--chrome-text);
+}
+/* The pulse says it is still trying, which a still box does not. */
+.reconnectbox h3::after {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 8px;
+  border-radius: 50%;
+  background: var(--warn);
+  animation: ropepulse 1.1s ease-in-out infinite;
+}
+.reconnectbox p {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--chrome-text);
+}
+.reconnectbox .blurb {
+  font-size: 11.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.reconnectbox button {
+  margin-top: 6px;
+  justify-self: center;
+  font-size: 13px;
+}
+@keyframes reconnectin {
+  from {
+    opacity: 0;
+  }
+}
+
 /* --- draft ------------------------------------------------------------------
    Two screens on one shell. Packs come first, opened by holding the pointer on
    them, and the deck is cut from what they held on the deckbuilder's own layout.

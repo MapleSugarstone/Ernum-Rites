@@ -572,10 +572,17 @@ public static class Engine
     private static void ResolveSpell(GameState state, int caster, string id, TargetRef[] targets)
     {
         var def = Registry.Card(id);
+        // The leader seat counts. Any summon with HP can be chosen to lead, so a
+        // card whose text is a standing board effect has to keep working from up
+        // there, the way FreeSpellsFor already reads it.
         bool echo = false;
         foreach (var s in state.Players[caster].Slots)
         {
             if (s is not null && Registry.Card(s.CardId).SpellEcho) echo = true;
+        }
+        if (state.Players[caster].Leader is { } lead && Registry.Card(lead.CardId).SpellEcho)
+        {
+            echo = true;
         }
         int times = echo ? 2 : 1;
         // A held bonus is spent by whichever spell resolves next, echo included.

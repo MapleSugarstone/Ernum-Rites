@@ -67,7 +67,11 @@ public static class Triple
                 EffectDamageBonus = a =>
                 {
                     int n = 0;
-                    foreach (var s in a.State.Players[a.Controller].Slots)
+                    // The leader seat counts: an ally is an ally wherever it
+                    // stands, and the caller already runs this hook for the
+                    // leader as well as for slot bodies.
+                    var p = a.State.Players[a.Controller];
+                    foreach (var s in p.Slots.Append(p.Leader))
                     {
                         if (s is null || s.CardId == "m-bgr-screener") continue;
                         if (!Registry.Card(s.CardId).HasFaction(Faction.Machine)) continue;

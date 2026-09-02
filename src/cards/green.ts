@@ -4,19 +4,24 @@ import { registerChoiceResolver } from '../engine/choices';
 import { putSummonDirect, toHand } from '../engine/effects';
 import { battleAttacker, battleDefender } from '../engine/state';
 import type { CardDef, PlayerIdx } from '../engine/types';
-import type { GameState } from '../engine/state';
+import type { GameState, SummonInstance } from '../engine/state';
 import { T, colorKit, holderRef, selfRef } from './build';
 
 // Green is Robot: Machines, armour plating, and damage that skips the clash.
 const k = colorKit('R', 'r', 'Green', 'Green/spells');
 
-/** Whether this player holds exactly one body on the board. */
-function alone(state: GameState, player: PlayerIdx): boolean {
-  let n = 0;
-  for (const s of state.players[player].slots) {
-    if (s && ++n > 1) return false;
-  }
-  return n === 1;
+/**
+ * Whether the body asking is the only summon its controller keeps in a slot.
+ *
+ * The leader seat is left out on purpose: a leader is always on the board, so
+ * counting it would make "no other summons" a condition nobody could ever meet.
+ * Asked from up there the question is only whether the slots are empty, which is
+ * what counting exactly one slot body got backwards. A leading Player One is not
+ * among the slot bodies, so the old count read an empty board as a failure and a
+ * board with one other summon as a pass.
+ */
+function alone(state: GameState, player: PlayerIdx, self: SummonInstance | null): boolean {
+  return state.players[player].slots.every((s) => !s || s.uid === self?.uid);
 }
 
 export const greenCards: CardDef[] = [
@@ -29,7 +34,7 @@ export const greenCards: CardDef[] = [
     triggers: {
       onEnter: (c) => {
         const me = selfRef(c);
-        if (!me || !alone(c.state, c.me)) return;
+        if (!me || !alone(c.state, c.me, c.source)) return;
         c.shield(me, 1);
         c.buffStrength(me, 4, 'permanent');
       },
@@ -325,7 +330,7 @@ export const greenCards: CardDef[] = [
     str: 3,
     hp: 2,
     muffleFlips: true,
-    text: 'FLIP effects of its combat damage are muted, and it heals 1 HP for each.',
+    text: 'FLIP effects of its combat damage are muted on any character, and it heals 1 HP for each.',
     powers: [
       {
         name: 'Chew',

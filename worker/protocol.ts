@@ -18,12 +18,19 @@ export type ClientMessage =
    * browser, so the cards come with the join and the room checks them against
    * the same rules the builder does before seating anyone.
    */
+  /**
+   * `resume` is the token the room handed out with the seat. A socket is the
+   * only thing that ever identified a player, so a connection that dies takes
+   * the seat with it; the token is what lets the same player walk back into the
+   * same chair. It is random and never shown, so holding it is the proof.
+   */
   | {
       type: 'join';
       deckKey: string;
       name: string;
       version: string;
       deck?: { leaderId: string; cards: string[] };
+      resume?: string;
     }
   | { type: 'action'; action: Action; version: number }
   | { type: 'resync' }
@@ -54,7 +61,18 @@ export type ClientMessage =
 
 /** Sent by the room. */
 export type ServerMessage =
-  | { type: 'seated'; seat: PlayerIdx; roomId: string; kind: RoomKind; code?: string }
+  | {
+      type: 'seated';
+      seat: PlayerIdx;
+      roomId: string;
+      kind: RoomKind;
+      code?: string;
+      /** Hand it back on a later join to reclaim this seat. Absent before a match. */
+      token?: string;
+    }
+  /** A seat whose connection went. Held until `until`, then it is given up on. */
+  | { type: 'playerAway'; seat: PlayerIdx; name: string; until: number }
+  | { type: 'playerBack'; seat: PlayerIdx; name: string }
   /** `needed`/`names` fill the party lobby roster; a 2-player room sends them too. */
   | { type: 'waiting'; players: number; needed?: number; names?: string[]; code?: string }
   /**

@@ -586,9 +586,11 @@ function resolveSpell(
     toDiscard(state, caster, id);
     return;
   }
-  const times = state.players[caster].slots.some(
-    (s) => s && card(s.cardId).spellEcho,
-  )
+  // The leader seat counts. Any summon with HP can be chosen to lead, so a card
+  // whose text is a standing board effect has to keep working from up there, the
+  // way freeSpellsFor already reads it.
+  const board = state.players[caster];
+  const times = [...board.slots, board.leader].some((s) => s && card(s.cardId).spellEcho)
     ? 2
     : 1;
   // A held bonus is spent by whichever spell resolves next, echo included.

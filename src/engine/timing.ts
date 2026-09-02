@@ -67,6 +67,45 @@ export function displayedMs(kind: ClockKind): number {
 }
 
 /**
+ * Seconds a turn loses for each turn its player let pass without acting.
+ *
+ * A player who is not there should not cost everyone else a full minute of
+ * staring at their timer, and the loss compounds so a table with an absent seat
+ * speeds up rather than crawling. It is spent the moment they act again, since
+ * the point is to move past somebody who is gone rather than to punish somebody
+ * who is thinking.
+ */
+export const SKIP_PENALTY_SECONDS = 15;
+
+/**
+ * The shortest a turn can shrink to. A clock of nothing would fire its alarm in
+ * the same instant it was set, which is a loop rather than a fast turn, and a
+ * player coming back to the table needs long enough to notice it is their move.
+ */
+export const MIN_TURN_SECONDS = 10;
+
+/**
+ * How long a seat is held for a player whose connection went.
+ *
+ * Long enough for a phone to change network, a router to come back, or a page
+ * to be reloaded; short enough that a player who really has gone does not hold
+ * the table. Their turns keep timing out while they are away, so the match is
+ * not paused, it just goes on without them.
+ */
+export const AWAY_GRACE_SECONDS = 90;
+
+/** Seconds a turn runs for, given how many turns its player has let pass. */
+export function turnSecondsFor(skips: number): number {
+  const n = Math.max(0, Math.floor(skips));
+  return Math.max(MIN_TURN_SECONDS, CLOCK_SECONDS.turn - n * SKIP_PENALTY_SECONDS);
+}
+
+/** The same, as the room enforces it: the player's window plus the room's margin. */
+export function enforcedTurnMs(skips: number): number {
+  return (turnSecondsFor(skips) + NETWORK_GRACE_SECONDS) * 1000;
+}
+
+/**
  * Seconds added to the turn timer for the first card a player plays on their
  * own turn. Playing cards costs time that stalling does not, so the timer pays
  * some of it back. The amount decreases with each play, which stops a player

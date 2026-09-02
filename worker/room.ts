@@ -17,8 +17,10 @@ import { publicView, redactFor } from '../src/engine/redact';
 import { currentActor, isOver, type GameState } from '../src/engine/state';
 import { timeoutAction } from '../src/engine/timeout';
 import {
+  AWAY_GRACE_SECONDS,
   clockKindFor,
   enforcedMs,
+  enforcedTurnMs,
   isCardPlay,
   NETWORK_GRACE_SECONDS,
   playBonusMs,
@@ -31,10 +33,18 @@ import type { ClientMessage, RoomKind, ServerMessage } from './protocol';
 import { draftFor, seatCountFor, timersOffFor } from './roomname';
 
 interface Seat {
-  /** Null once a party player drops mid-match: the seat stays, the socket goes. */
+  /** Null while the player is away: the seat stays, the socket goes. */
   socket: WebSocket | null;
   name: string;
   deckKey: string;
+  /**
+   * What proves a returning player is the one who left. A socket used to be the
+   * only identity a seat had, so a connection that died took the chair with it.
+   * Random, never shown, and only ever sent to the player it belongs to.
+   */
+  token: string;
+  /** When their connection went, or null while they are here. */
+  awayAt: number | null;
   /** Set only for a deck the room cannot look up, already checked as legal. */
   deck?: { leaderId: string; cards: string[] };
   /** Set only in a draft room: the eighty cards this seat opened, and its build. */
@@ -79,6 +89,16 @@ export class MatchRoom extends DurableObject {
   private turnKey = '';
   /** Cards the active player has played this turn, which the bonus decreases on. */
   private turnPlays = 0;
+  /**
+   * Turns each seat has let pass without acting, which is what shortens their
+   * next one. Kept here rather than on the state: it is a fact about the
+   * connection rather than about the position, and every field the state gains
+   * is a field the digest and the mirror have to agree about.
+   */
+  private skips: number[] = this.seats.map(() => 0);
+  /** Whose turn the current budget belongs to, and whether they have acted in it. */
+  private turnActor: PlayerIdx | null = null;
+  private turnActed = false;
   /** True when the host asked for a room without timers. */
   private readonly timersOff = timersOffFor(this.ctx.id.name);
   /** True when the host asked for a draft, which runs before the match. */
@@ -159,32 +179,74 @@ export class MatchRoom extends DurableObject {
         how,
       }),
     );
-    if (this.seats.length === 2) {
+    const seat = idx as PlayerIdx;
+    const gone = this.seats[idx]!;
+    gone.socket = null;
+
+    // Before a match exists, a drop still just frees the seat: there is nothing
+    // to come back to, and the chair should go to whoever arrives next.
+    if (this.state === null) {
+      if (this.draftEndsAt !== null) {
+        // A drop mid-draft leaves the rest to their packs rather than sending
+        // them back to the lobby, and the pool stays with the seat so a player
+        // who gets back in finds the cards they opened still there.
+        gone.awayAt = Date.now();
+        this.broadcastDraftStatus();
+        await this.armAlarm();
+        return;
+      }
       this.seats[idx] = null;
-      this.clock = null;
-      this.draftEndsAt = null;
-      await this.ctx.storage.deleteAlarm();
-      this.broadcast({ type: 'opponentLeft' });
+      if (this.seats.length === 2) this.broadcast({ type: 'opponentLeft' });
+      else this.broadcastWaiting();
       return;
     }
-    // A party room. Before the match starts a drop just frees the seat.
-    const seat = idx as PlayerIdx;
+
+    if (isOver(this.state)) return;
+    if (this.state.players[seat].eliminated) return;
+
+    // Mid-match the seat is held rather than given up on. A connection that
+    // dies is usually a connection that comes back, and ending the match over
+    // it is what every one of these reports has been about. Their turns still
+    // time out while they are away, each one shorter than the last, so the
+    // match carries on without them instead of waiting on them.
+    gone.awayAt = Date.now();
+    this.broadcast({
+      type: 'playerAway',
+      seat,
+      name: gone.name,
+      until: gone.awayAt + AWAY_GRACE_SECONDS * 1000,
+    });
+    await this.armAlarm();
+  }
+
+  /**
+   * Give up on a seat whose player never came back, which is where the old
+   * behaviour lives now: the match ends head to head, and a party game concedes
+   * the seat and plays on.
+   */
+  private async giveUpOn(idx: number): Promise<void> {
+    const gone = this.seats[idx];
+    if (!gone) return;
+    gone.awayAt = null;
+    console.log(
+      'seat given up',
+      JSON.stringify({ room: this.ctx.id.name ?? '', seat: idx, name: gone.name }),
+    );
     if (this.state === null) {
       this.seats[idx] = null;
-      // A drop mid-draft leaves the rest to their packs rather than sending
-      // them back to the lobby: the clock is still running and their pools are
-      // still theirs. The seats close up when the draft ends.
       if (this.draftEndsAt !== null) this.broadcastDraftStatus();
       else this.broadcastWaiting();
       return;
     }
-    // Mid-match the seat stays so the roster keeps its shape; the socket goes,
-    // and a player still in the game concedes, which eliminates them and
-    // leaves everyone else playing.
-    const gone = this.seats[idx]!;
-    gone.socket = null;
-    if (this.state.winner !== null || this.state.drawn) return;
-    if (this.state.players[seat].eliminated) return;
+    const seat = idx as PlayerIdx;
+    if (isOver(this.state) || this.state.players[seat].eliminated) return;
+    if (this.seats.length === 2) {
+      this.seats[idx] = null;
+      this.clock = null;
+      this.broadcast({ type: 'opponentLeft' });
+      await this.armAlarm();
+      return;
+    }
     this.broadcast({ type: 'playerLeft', seat, name: gone.name });
     try {
       const result = applyAction(this.state, seat, { type: 'CONCEDE' });
@@ -269,6 +331,43 @@ export class MatchRoom extends DurableObject {
           reason: 'Your copy of the game is a different version. Reload the page and try again.',
         });
       }
+      // A player coming back to a seat they already hold. The token is the only
+      // thing that says so, since the socket that proved it is the one that
+      // died. Checked before the seat search, or they would be handed a fresh
+      // chair beside the one still holding their board.
+      if (typeof msg.resume === 'string' && msg.resume.length > 0) {
+        const back = this.seats.findIndex((s) => s?.token === msg.resume);
+        if (back >= 0) {
+          const s = this.seats[back]!;
+          // One player, one socket. A stale connection still attached under the
+          // same token is let go rather than left to answer for the seat.
+          if (s.socket && s.socket !== socket) {
+            try {
+              s.socket.close();
+            } catch {
+              // Already gone, which is the usual case.
+            }
+          }
+          s.socket = socket;
+          s.awayAt = null;
+          this.send(socket, {
+            type: 'seated',
+            seat: back as PlayerIdx,
+            roomId: this.ctx.id.toString(),
+            kind: this.kind,
+            token: s.token,
+            ...(this.code ? { code: this.code } : {}),
+          });
+          this.broadcast({ type: 'playerBack', seat: back as PlayerIdx, name: s.name });
+          if (this.state) this.pushState();
+          else if (this.draftEndsAt !== null) this.pushDraft();
+          else this.broadcastWaiting();
+          await this.armAlarm();
+          return;
+        }
+        // A token this room has never issued: fall through and let them take a
+        // seat the ordinary way rather than refusing them outright.
+      }
       // A second join from a socket that already holds a seat is that player
       // changing their deck while they wait, not a second player arriving.
       // Handing it a fresh seat would sit one person on both sides of the room,
@@ -283,7 +382,13 @@ export class MatchRoom extends DurableObject {
         // A draft seat plays what it opened, so the deck that came with the join
         // is nothing to swap and the seat is left exactly as the draft left it.
         if (this.draftEndsAt !== null) return;
-        this.seats[held] = { socket, name: msg.name.trim(), deckKey: msg.deckKey, deck: msg.deck };
+        this.seats[held] = {
+          ...this.seats[held]!,
+          socket,
+          name: msg.name.trim(),
+          deckKey: msg.deckKey,
+          deck: msg.deck,
+        };
         this.broadcastWaiting();
         return;
       }
@@ -302,12 +407,20 @@ export class MatchRoom extends DurableObject {
       }
       const seat = this.seats.findIndex((s) => s === null);
       if (seat < 0) return this.send(socket, { type: 'error', reason: 'room is full' });
-      this.seats[seat] = { socket, name: msg.name.trim(), deckKey: msg.deckKey, deck: msg.deck };
+      this.seats[seat] = {
+        socket,
+        name: msg.name.trim(),
+        deckKey: msg.deckKey,
+        deck: msg.deck,
+        token: crypto.randomUUID(),
+        awayAt: null,
+      };
       this.send(socket, {
         type: 'seated',
         seat: seat as PlayerIdx,
         roomId: this.ctx.id.toString(),
         kind: this.kind,
+        token: this.seats[seat]!.token,
         ...(this.code ? { code: this.code } : {}),
       });
       if (this.seats.every((s) => s !== null)) {
@@ -365,6 +478,11 @@ export class MatchRoom extends DurableObject {
           version: this.state.version,
         });
       }
+      // Anything they do proves they are there, so the shortening stops and the
+      // next turn is a full one again. Read before the state moves on, because
+      // the action itself may be the one that hands the turn over.
+      if (this.state.active === seat) this.turnActed = true;
+      this.skips[seat] = 0;
       this.state = result.state;
       // Only the active player earns time back, so a trap played during an
       // opponent's turn earns nothing.
@@ -395,7 +513,7 @@ export class MatchRoom extends DurableObject {
     this.broadcastDraftStatus();
     // The room's own margin, the same one every other deadline here carries, so
     // a build sent in the last second is not lost to its flight time.
-    await this.ctx.storage.setAlarm(this.draftEndsAt + NETWORK_GRACE_SECONDS * 1000);
+    await this.armAlarm();
   }
 
   /** Each seat its own packs, which nobody else has any business seeing. */
@@ -486,7 +604,7 @@ export class MatchRoom extends DurableObject {
   private async finishDraft(): Promise<void> {
     if (this.draftEndsAt === null) return;
     this.draftEndsAt = null;
-    await this.ctx.storage.deleteAlarm();
+    await this.armAlarm();
     const rng = { state: Math.floor(Math.random() * 0x7fffffff) };
 
     const booted: Seat[] = [];
@@ -544,6 +662,8 @@ export class MatchRoom extends DurableObject {
     // is given. Each survivor is told the chair it ended up in before the first
     // push arrives written from it.
     this.seats = playing;
+    // The skip counters are indexed by seat, so they close up with them.
+    this.skips = playing.map(() => 0);
     playing.forEach((seat, i) => {
       if (!seat.socket) return;
       this.send(seat.socket, {
@@ -573,6 +693,34 @@ export class MatchRoom extends DurableObject {
     this.pushState();
   }
 
+  /** When a held seat is given up on, or null while nobody is away. */
+  private awayDeadline(): number | null {
+    const at = this.seats
+      .filter((s): s is Seat => !!s?.awayAt)
+      .map((s) => s.awayAt! + AWAY_GRACE_SECONDS * 1000);
+    return at.length ? Math.min(...at) : null;
+  }
+
+  /**
+   * One alarm for every deadline the room keeps.
+   *
+   * A Durable Object holds exactly one alarm time and every set overwrites the
+   * last, so the clock, the draft deadline and a held seat cannot each arm their
+   * own. The earliest wins and `alarm` works out which one actually arrived.
+   */
+  private async armAlarm(): Promise<void> {
+    const at: number[] = [];
+    if (this.draftEndsAt !== null) at.push(this.draftEndsAt + NETWORK_GRACE_SECONDS * 1000);
+    if (this.clock) at.push(this.clock.endsAt);
+    const away = this.awayDeadline();
+    if (away !== null) at.push(away);
+    if (at.length === 0) {
+      await this.ctx.storage.deleteAlarm();
+      return;
+    }
+    await this.ctx.storage.setAlarm(Math.min(...at));
+  }
+
   /**
    * Put whoever must act next on the appropriate clock and set the alarm that
    * enforces it. Called after every accepted action, because an action can hand
@@ -584,7 +732,7 @@ export class MatchRoom extends DurableObject {
     // the finished state to both seats over and over.
     if (!this.state || isOver(this.state) || this.timersOff) {
       this.clock = null;
-      await this.ctx.storage.deleteAlarm();
+      await this.armAlarm();
       return;
     }
     const now = Date.now();
@@ -596,9 +744,18 @@ export class MatchRoom extends DurableObject {
     const key = `${this.state.turn}/${this.state.active}`;
 
     if (key !== this.turnKey) {
+      // The turn that just ended is settled here, because this is the one place
+      // that can tell one turn from the next. A turn its player never acted in
+      // costs them time off the next one, and it keeps costing until they act.
+      if (this.turnActor !== null && this.turnKey !== '') {
+        this.skips[this.turnActor] = this.turnActed ? 0 : this.skips[this.turnActor] + 1;
+      }
       this.turnKey = key;
-      this.turnLeftMs = enforcedMs('turn');
-      this.turnTotalMs = enforcedMs('turn');
+      this.turnActor = this.state.active;
+      this.turnActed = false;
+      const budget = enforcedTurnMs(this.skips[this.state.active] ?? 0);
+      this.turnLeftMs = budget;
+      this.turnTotalMs = budget;
       this.turnPlays = 0;
     } else if (this.clock?.kind === 'turn') {
       // Still the same turn and still in the main phase, so what it has left is
@@ -624,7 +781,7 @@ export class MatchRoom extends DurableObject {
       const total = enforcedMs(kind);
       this.clock = { kind, player, endsAt: now + total, totalMs: total };
     }
-    await this.ctx.storage.setAlarm(this.clock.endsAt);
+    await this.armAlarm();
   }
 
   /**
@@ -632,12 +789,31 @@ export class MatchRoom extends DurableObject {
    * a timeout is a missed decision, not a forfeit.
    */
   async alarm(): Promise<void> {
-    // The draft clock is the only deadline in flight while it runs, so it is
-    // answered before anything looks for a game that has not been dealt yet.
+    // Its own entry point, so its own guard: a throw here is attached to no
+    // socket at all and would take the whole room with it. The alarm is re-armed
+    // whatever happened, or one bad tick stops every clock in the room.
+    try {
+      await this.tick();
+    } catch (err) {
+      console.error('alarm threw', err);
+    }
+    await this.armAlarm();
+  }
+
+  private async tick(): Promise<void> {
+    const now = Date.now();
+
+    // Seats nobody came back to. Checked first and on every tick, because the
+    // grace shares its alarm with the clocks and may not be what woke this one.
+    for (const [i, s] of this.seats.entries()) {
+      if (!s?.awayAt) continue;
+      if (now < s.awayAt + AWAY_GRACE_SECONDS * 1000) continue;
+      await this.giveUpOn(i);
+    }
+
+    // The draft clock, which runs before there is any game clock to run.
     if (this.draftEndsAt !== null) {
-      if (Date.now() < this.draftEndsAt) return;
-      // Its own entry point, so its own guard: a throw here is not attached to
-      // any one socket and would take the whole room with it.
+      if (now < this.draftEndsAt) return;
       try {
         return await this.finishDraft();
       } catch (err) {

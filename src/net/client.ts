@@ -24,7 +24,10 @@ import type { PlayerIdx } from '../engine/types';
 import type { ClientMessage, QueueReply, RoomKind, ServerMessage } from '../../worker/protocol';
 
 export interface NetHandlers {
-  onSeated(seat: PlayerIdx, kind: RoomKind, code?: string): void;
+  onSeated(seat: PlayerIdx, kind: RoomKind, code?: string, token?: string): void;
+  /** A seat whose connection went, held until `until` rather than given up on. */
+  onPlayerAway(seat: PlayerIdx, name: string, until: number): void;
+  onPlayerBack(seat: PlayerIdx, name: string): void;
   onWaiting(players: number, code?: string, needed?: number, names?: string[]): void;
   onState(
     state: GameState,
@@ -218,6 +221,8 @@ export class NetClient {
     name: string,
     code?: string,
     deck?: { leaderId: string; cards: string[] },
+    /** The token a held seat is reclaimed with, when coming back to one. */
+    resume?: string,
   ): void {
     this.close();
     const ws = this.base.replace(/^http/, 'ws');
@@ -240,7 +245,7 @@ export class NetClient {
         this.status.connected = true;
         this.lastHeard = Date.now();
         this.gaveUp = false;
-        this.send({ type: 'join', deckKey, name, version: BUILD_VERSION, deck });
+        this.send({ type: 'join', deckKey, name, version: BUILD_VERSION, deck, resume });
         this.measureSkew();
         this.pingTimer = window.setInterval(() => this.measureSkew(), PING_EVERY_MS);
         this.watchTimer = window.setInterval(() => this.checkAlive(), WATCH_EVERY_MS);
@@ -399,7 +404,13 @@ export class NetClient {
     switch (msg.type) {
       case 'seated':
         this.status.seat = msg.seat;
-        return this.handlers.onSeated(msg.seat, msg.kind, msg.code);
+        return this.handlers.onSeated(msg.seat, msg.kind, msg.code, msg.token);
+
+      case 'playerAway':
+        return this.handlers.onPlayerAway(msg.seat, msg.name, msg.until);
+
+      case 'playerBack':
+        return this.handlers.onPlayerBack(msg.seat, msg.name);
 
       case 'waiting':
         return this.handlers.onWaiting(msg.players, msg.code, msg.needed, msg.names);
