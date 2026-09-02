@@ -18,6 +18,24 @@ public enum LeaderPool
     /// them a deck built around it and a rating of its own.
     /// </summary>
     NonFlip,
+    /// <summary>
+    /// Everything except the archetypes built to sit at the bottom.
+    ///
+    /// A Redirection leader pulls every attack onto itself and a Neutral one
+    /// brings no colour to the deck behind it, so both are meant to lose. Left
+    /// in, they widen the spread without saying anything about balance, which
+    /// makes a field look less healthy than it is.
+    /// </summary>
+    Contested,
+    /// <summary>
+    /// Contested, and level 2 or better.
+    /// 
+    /// A level 1 leader is a 6 HP body once the doubling is applied, and the
+    /// deck behind it rarely gets to do anything. Dropping them cuts the field
+    /// by a quarter, which buys rounds, and rounds are what turn a random legal
+    /// deck into one that knows what its own combo is.
+    /// </summary>
+    ContestedSturdy,
 }
 
 /// <summary>How a generated deck is shaped before the tournament starts pulling it apart.</summary>
@@ -65,6 +83,11 @@ public static class DeckGen
                 // hold writes them out in Identity instead.
                 LeaderPool.Dual => d.Color2 is not null || (d.Identity?.Length ?? 0) > 1,
                 LeaderPool.NonFlip => d.Type == CardType.Summon && d.Flip is null,
+                // Neutral is spelled two ways, as a colour and as a flag, and a
+                // card may use either.
+                LeaderPool.Contested => !d.Neutral && d.Color != Color.N && !d.Redirect,
+                LeaderPool.ContestedSturdy =>
+                    !d.Neutral && d.Color != Color.N && !d.Redirect && d.Level >= 2,
                 _ => true,
             };
             if (ok) outList.Add(d.Id);

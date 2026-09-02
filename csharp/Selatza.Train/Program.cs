@@ -193,6 +193,8 @@ public static class Program
                 "sturdy" => LeaderPool.Sturdy,
                 "dual" => LeaderPool.Dual,
                 "nonflip" => LeaderPool.NonFlip,
+                "contested" => LeaderPool.Contested,
+                "contested-sturdy" => LeaderPool.ContestedSturdy,
                 _ => LeaderPool.All,
             },
             Deck = new DeckShape
