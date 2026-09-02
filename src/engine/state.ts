@@ -391,6 +391,18 @@ export function choiceIsLive(state: GameState): boolean {
   return state.choiceQueue.length > 0 && !state.pending;
 }
 
+/**
+ * Whether a ref names a body that has left the board, as opposed to one that
+ * has not arrived yet. A leader enters at the start of its controller's first
+ * turn, so a seat that has yet to take one still names a leader that is coming,
+ * and an effect may legitimately offer that seat as a pick.
+ */
+export function refIsGone(state: GameState, ref: TargetRef): boolean {
+  if (ref.kind !== 'summon' && ref.kind !== 'leader') return false;
+  if (findSummon(state, ref)) return false;
+  return ref.kind !== 'leader' || state.players[ref.player].leaderPlayed;
+}
+
 /** Whoever the game is currently waiting on, which is not always the active player. */
 export function currentActor(state: GameState): PlayerIdx {
   if (state.pending) return state.pending.player;

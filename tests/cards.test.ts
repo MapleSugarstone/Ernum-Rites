@@ -67,6 +67,9 @@ const NOT_A_CARD = new Set([
   'Cardgame/Extras/ErnumPip.png',
   // The face-down card, worn by every card the board draws back up.
   'Cardgame/Extras/Cardback.png',
+  // The sealed pack a draft is opened out of. It holds cards rather than being
+  // one, so it belongs here beside the card back.
+  'Cardgame/CardPack.png',
   // Rarity gems.
   'Cardgame/Extras/Common.png',
   'Cardgame/Extras/Rare.png',

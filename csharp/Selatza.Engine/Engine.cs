@@ -1058,11 +1058,7 @@ public static class Engine
                     bool anyLeft = false;
                     foreach (var r in ch.Refs ?? Array.Empty<TargetRef>())
                     {
-                        if (r.Kind is TargetKind.Summon or TargetKind.Leader)
-                        {
-                            if (state.Find(r) is not null) { anyLeft = true; break; }
-                        }
-                        else { anyLeft = true; break; }
+                        if (!state.RefIsGone(r)) { anyLeft = true; break; }
                     }
                     if (!ch.Optional && anyLeft) return "Pick a target.";
                     state.ChoiceQueue.RemoveAt(0);
@@ -1075,10 +1071,7 @@ public static class Engine
                     if (r == pick) { offered = true; break; }
                 }
                 if (!offered) return "Not one of the offered targets.";
-                if (pick.Kind is TargetKind.Summon or TargetKind.Leader && state.Find(pick) is null)
-                {
-                    return "That target is gone.";
-                }
+                if (state.RefIsGone(pick)) return "That target is gone.";
                 state.ChoiceQueue.RemoveAt(0);
                 Choices.Run(state, ch, new ChoicePick(Ref: pick));
                 return null;

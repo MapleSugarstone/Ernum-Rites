@@ -45,6 +45,8 @@ export function clearJournal(): void {
 export interface CloseContext {
   /** Why the match stopped, in the words the player was shown. */
   reason: string;
+  /** What the socket looked like at the end, when there was one. */
+  health?: { quietMs: number; readyState: number; lastClose: string };
   state: GameState | null;
   seat: number | null;
   roomCode?: string | null;
@@ -92,6 +94,16 @@ export function closeReport(ctx: CloseContext): string {
   ];
   if (ctx.online && ctx.roomCode) head.push(`room:          ${ctx.roomCode}`);
   head.push(`closed:        ${ctx.reason}`);
+  if (ctx.health) {
+    const READY = ['connecting', 'open', 'closing', 'closed'];
+    head.push(
+      `socket:        ${READY[ctx.health.readyState] ?? ctx.health.readyState}` +
+        `${ctx.health.lastClose ? `, last close ${ctx.health.lastClose}` : ''}`,
+      `room silent:   ${
+        ctx.health.quietMs < 0 ? 'never heard from' : `${(ctx.health.quietMs / 1000).toFixed(1)}s`
+      }`,
+    );
+  }
 
   const tail = journal.length === 0
     ? ['(nothing recorded)']

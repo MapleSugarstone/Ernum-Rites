@@ -46,6 +46,7 @@ import {
   otherPlayer,
   PARTY_HAND_BONUS,
   powersOf,
+  refIsGone,
   SUMMON_SLOTS,
   type GameState,
   type PendingSpell,
@@ -1002,9 +1003,7 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
         return null;
       }
       if (!action.pick) {
-        const anyLeft = (ch.refs ?? []).some((r) =>
-          r.kind === 'summon' || r.kind === 'leader' ? !!findSummon(state, r) : true,
-        );
+        const anyLeft = (ch.refs ?? []).some((r) => !refIsGone(state, r));
         if (!ch.optional && anyLeft) return 'Pick a target.';
         state.choiceQueue.shift();
         runChoiceResolver(state, ch, {});
@@ -1014,9 +1013,7 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
       if (!(ch.refs ?? []).some((r) => sameRef(r, pick))) {
         return 'Not one of the offered targets.';
       }
-      if ((pick.kind === 'summon' || pick.kind === 'leader') && !findSummon(state, pick)) {
-        return 'That target is gone.';
-      }
+      if (refIsGone(state, pick)) return 'That target is gone.';
       state.choiceQueue.shift();
       runChoiceResolver(state, ch, { ref: pick });
       return null;

@@ -34,24 +34,15 @@ public static class Purple
                 })),
 
         K.Summon(1, "Kapigras", "Kapigras", null, str: 1, hp: 1,
-            text: "Leader: Become an Oil copy of the enemy leader.",
+            text: "Leader: Become an Oil copy of an enemy leader of your choice.",
             triggers: new Triggers
             {
-                OnEnter = LeaderOnly(c =>
-                {
-                    // The enemy leader may not have taken the field yet, so copy
-                    // the card the deck names rather than the body on the board.
-                    var enemyId = c.State.Players[c.Opp].LeaderCardId;
-                    if (c.Self is not { } me || c.SummonAt(me) is not { } body) return;
-                    var copyId = Generated.OilCopy(enemyId);
-                    body.CardId = copyId;
-                    int want = Registry.Card(copyId).Hp * 2 + 2;
-                    if (body.Hp.Count < want)
-                    {
-                        Effects.AssignHp(c.State, body, want - body.Hp.Count);
-                    }
-                    c.Log($"Kapigras shakes apart and reforms as {Registry.Card(copyId).Name}.");
-                }),
+                // Every enemy seat is offered, whether or not its leader has
+                // taken the field: a deck names its leader from the start, so a
+                // seat still waiting on its first turn can be copied too. This
+                // engine seats two, so the one enemy is picked on the spot.
+                OnEnter = LeaderOnly(c => c.Choose("kapigras",
+                    new[] { TargetRef.Leader(c.Opp) }, "Become a copy of which leader?")),
             },
             powers: Powers(new Power
             {

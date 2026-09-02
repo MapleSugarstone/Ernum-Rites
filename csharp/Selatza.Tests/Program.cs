@@ -219,6 +219,17 @@ public static class Program
             Harness.Eq(Registry.Card("p3-heavenknows").Hp * 2 + 2, leader.Hp.Count, "a leader's HP");
         });
 
+        Harness.Test("Kapigras asks nobody when there is one enemy", () =>
+        {
+            // The pick only exists in a party game, which this engine never
+            // seats. With one enemy the copy has to happen inside the trigger
+            // or the two engines part company on the very first turn.
+            var s = Engine.CreateGame(Deck(60, D1, "o1-Kapigras"), Deck(60, D1, "p3-heavenknows"), 7);
+            s = PassTo(s, 0);
+            Harness.Eq(0, s.ChoiceQueue.Count, "nothing left waiting to be answered");
+            Harness.True(s.Players[0].Leader!.CardId != "o1-Kapigras", "already reformed");
+        });
+
         Harness.Test("an Oil copy reprices the powers it carries, not just the card", () =>
         {
             // Aetus Vox pays Solar for Comprehension. Copied into a mono-Oil

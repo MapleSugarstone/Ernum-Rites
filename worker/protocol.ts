@@ -28,6 +28,18 @@ export type ClientMessage =
   | { type: 'action'; action: Action; version: number }
   | { type: 'resync' }
   /**
+   * A draft player has finished with a pack. The room counts these because a
+   * player who never opened their packs is booted when the clock runs out, and
+   * only the client knows when the tenth card has been looked at.
+   */
+  | { type: 'draftOpened'; opened: number }
+  /**
+   * The deck a draft player is building. Sent as it changes and again with
+   * `done` when they call it finished, so a clock that runs out has the latest
+   * build to fill in rather than an empty one.
+   */
+  | { type: 'draftDeck'; leaderId: string; cards: string[]; done: boolean }
+  /**
    * Round trip for clock skew. The client stamps `sent`, the room echoes it back
    * beside its own clock, and the client works out the offset from the two.
    */
@@ -64,6 +76,15 @@ export type ServerMessage =
       action?: Action;
       actor?: PlayerIdx;
     }
+  /**
+   * The packs one player opens, sent once the room is full and the draft clock
+   * has started. The room rolls them, because a client that rolled its own would
+   * be rolling until it liked the answer, and it keeps them so a player who
+   * reloads gets the same eighty cards back.
+   */
+  | { type: 'draft'; packs: string[][]; endsAt: number; totalMs: number }
+  /** Who has finished their deck, so a player who is waiting knows what for. */
+  | { type: 'draftStatus'; done: number; needed: number; waiting: string[] }
   | { type: 'rejected'; reason: string; version: number }
   /** A clock ran out and the room played the passive move for that player. */
   | { type: 'timedOut'; player: PlayerIdx; action: Action['type'] }

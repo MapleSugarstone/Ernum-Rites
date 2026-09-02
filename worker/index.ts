@@ -65,7 +65,8 @@ export default {
       const party = partyRaw === null ? undefined : ((Number(partyRaw) as 3 | 4));
       // Opt in, so a client that sends nothing gets the default timers.
       const noTimers = url.searchParams.get('timers') === 'off';
-      const hosted = await lobby(env).hostPrivate(party, noTimers);
+      const draft = url.searchParams.get('draft') === 'on';
+      const hosted = await lobby(env).hostPrivate(party, noTimers, draft);
       if (!hosted) return reply({ ok: false, reason: 'Too many lobbies open right now. Try again in a minute.' }, 503);
       return reply({ ok: true, roomId: hosted.roomId, kind: 'private', code: hosted.code });
     }

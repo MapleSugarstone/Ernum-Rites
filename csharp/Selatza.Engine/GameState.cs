@@ -369,6 +369,19 @@ public sealed class GameState
         _ => null,
     };
 
+    /// <summary>
+    /// Whether a ref names a body that has left the board, as opposed to one
+    /// that has not arrived yet. A leader enters at the start of its
+    /// controller's first turn, so a seat that has yet to take one still names
+    /// a leader that is coming, and an effect may offer that seat as a pick.
+    /// </summary>
+    public bool RefIsGone(TargetRef r)
+    {
+        if (!r.IsBody) return false;
+        if (Find(r) is not null) return false;
+        return r.Kind != TargetKind.Leader || Players[r.Player].LeaderPlayed;
+    }
+
     /// <summary>Whoever the game is waiting on, which is not always the active player.</summary>
     public int CurrentActor
     {

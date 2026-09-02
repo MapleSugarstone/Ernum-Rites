@@ -1,15 +1,15 @@
 import { card } from '../engine/registry';
-import { assignHp } from '../engine/effects';
-import { graftedCopy, oilCopy, oilRaise } from '../engine/generated';
+import { graftedCopy, oilRaise } from '../engine/generated';
 import {
   battleAttacker,
   battleDefender,
   colorOf,
   findSummon,
   levelOf,
+  livingOpponents,
   powersOf,
 } from '../engine/state';
-import type { CardDef } from '../engine/types';
+import type { CardDef, TargetRef } from '../engine/types';
 import { T, colorKit, leaderOnly, selfRef } from './build';
 
 // Purple is Oil: Spirits, wounds, and moving debt around rather than avoiding it.
@@ -44,20 +44,17 @@ export const purpleCards: CardDef[] = [
   k.summon(1, 'Kapigras', 'Kapigras', [], {
     str: 1,
     hp: 1,
-    text: 'Leader: Become an Oil copy of the enemy leader.',
+    text: 'Leader: Become an Oil copy of an enemy leader of your choice.',
     triggers: {
+      // Every enemy seat is offered, whether or not its leader has taken the
+      // field: a deck names its leader from the start, so a seat still waiting
+      // on its first turn can be copied too. With one enemy there is nothing to
+      // ask and the pick is made on the spot.
       onEnter: leaderOnly((c) => {
-        // The enemy leader may not have taken the field yet, so copy the card
-        // the deck names rather than the body on the board.
-        const enemyId = c.state.players[c.opp].leaderCardId;
-        const me = selfRef(c);
-        const body = me ? c.summonAt(me) : null;
-        if (!body) return;
-        const copyId = oilCopy(enemyId);
-        body.cardId = copyId;
-        const want = (card(copyId).hp ?? 0) * 2 + 2;
-        if (body.hp.length < want) assignHp(c.state, body, want - body.hp.length);
-        c.log(`Kapigras shakes apart and reforms as ${card(copyId).name}.`);
+        const refs = livingOpponents(c.state, c.me).map(
+          (p): TargetRef => ({ kind: 'leader', player: p }),
+        );
+        c.choose('kapigras', refs, 'Become a copy of which leader?');
       }),
     },
     powers: [

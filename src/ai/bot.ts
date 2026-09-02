@@ -22,6 +22,7 @@ import {
   levelOf,
   livingOpponents,
   powersOf,
+  refIsGone,
   remainingHp,
   type GameState,
 } from '../engine/state';
@@ -373,9 +374,7 @@ export function candidateActions(state: GameState, me: PlayerIdx): Action[] {
       for (const index of ch.legal ?? []) acts.push({ type: 'RESOLVE_CHOICE', index });
     } else {
       for (const pick of ch.refs ?? []) {
-        if ((pick.kind === 'summon' || pick.kind === 'leader') && !findSummon(state, pick)) {
-          continue;
-        }
+        if (refIsGone(state, pick)) continue;
         acts.push({ type: 'RESOLVE_CHOICE', pick });
       }
     }
@@ -464,9 +463,7 @@ function passAction(state: GameState): Action {
     const ch = state.choiceQueue[0];
     if (ch.optional) return { type: 'RESOLVE_CHOICE' };
     if (ch.cards) return { type: 'RESOLVE_CHOICE', index: ch.legal?.[0] };
-    const alive = (ch.refs ?? []).find((r) =>
-      r.kind === 'summon' || r.kind === 'leader' ? !!findSummon(state, r) : true,
-    );
+    const alive = (ch.refs ?? []).find((r) => !refIsGone(state, r));
     return alive ? { type: 'RESOLVE_CHOICE', pick: alive } : { type: 'RESOLVE_CHOICE' };
   }
   if (state.flipQueue.length > 0) return { type: 'DECLINE_FLIP' };

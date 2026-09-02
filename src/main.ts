@@ -65,6 +65,28 @@ import {
   type DeckList,
 } from './engine/engine';
 import { canBeLeader, colorsOf, deckIdentity } from './engine/identity';
+import {
+  DRAFT_SECONDS,
+  DRAFT_WARN_MS,
+  PACK_COUNT,
+  PACK_SIZE,
+  draftProblems,
+} from './engine/draft';
+import {
+  PACK_FLASH_MS,
+  PACK_HOLD_MS,
+  clockText,
+  canTake,
+  deckCopies,
+  deckRows as draftDeckRows,
+  draftLeaders,
+  draftSections,
+  leftOf,
+  newDraft,
+  packsAllOpen,
+  windowOverflow,
+  type DraftState,
+} from './ui/draft';
 import { allCards, card, tryCard } from './engine/registry';
 import {
   choiceIsLive,
@@ -86,6 +108,7 @@ import {
   levelOf,
   otherPlayer,
   powersOf,
+  refIsGone,
   remainingHp,
   type GameState,
   type SummonInstance,
@@ -167,8 +190,10 @@ interface DragState {
 }
 
 interface Ui {
-  screen: 'setup' | 'game' | 'build' | 'rules' | 'online';
+  screen: 'setup' | 'game' | 'build' | 'rules' | 'online' | 'draft';
   builder: BuilderState;
+  /** The packs, the pool and the deck being cut from it. Empty outside a draft. */
+  draft: DraftState;
   setupMode: SetupMode;
   /** Flips the copy button's label for a moment after a successful copy. */
   copied: boolean;
@@ -178,8 +203,11 @@ interface Ui {
     name: string;
     deckKey: string;
     code: string;
-    /** What the lobby is doing right now, which is what the buttons key off. */
-    phase: 'idle' | 'seeking' | 'waiting' | 'connecting' | 'playing';
+    /**
+     * What the lobby is doing right now, which is what the buttons key off.
+     * `drafting` sits between a full room and a dealt match.
+     */
+    phase: 'idle' | 'seeking' | 'waiting' | 'connecting' | 'drafting' | 'playing';
     /** Shown to the player once a private room has a code to share. */
     roomCode: string | null;
     seat: PlayerIdx | null;
@@ -188,6 +216,8 @@ interface Ui {
     party: 2 | 3 | 4;
     /** Whether a hosted game runs clocks. Off means nobody is ever on one. */
     timers: boolean;
+    /** Whether a hosted game opens packs and drafts a deck before it deals. */
+    draft: boolean;
     /** Who is in the room while it fills, from the room's waiting pushes. */
     roster: { players: number; needed: number; names: string[] } | null;
     /** The local player chose to keep watching after being eliminated. */
@@ -225,6 +255,7 @@ interface Ui {
 const ui: Ui = {
   screen: 'setup',
   builder: newBuilder(),
+  draft: newDraft(),
   setupMode: 'ai',
   copied: false,
   reportCopied: false,
@@ -238,6 +269,7 @@ const ui: Ui = {
     error: null,
     party: 2,
     timers: true,
+    draft: false,
     roster: null,
     spectating: false,
   },
@@ -395,9 +427,10 @@ function liveTraps(state: GameState, me: PlayerIdx): number {
 
 /** Whether any target a board choice offered is still standing. */
 function choiceHasTarget(state: GameState, ch: { refs?: TargetRef[] }): boolean {
-  return (ch.refs ?? []).some((r) =>
-    r.kind === 'summon' || r.kind === 'leader' ? !!findSummon(state, r) : true,
-  );
+  // The engine's own test, so the Skip button and the auto-answer below cannot
+  // offer a resolution the engine then refuses. A leader that has not entered
+  // yet is a seat worth pointing at rather than a body that is gone.
+  return (ch.refs ?? []).some((r) => !refIsGone(state, r));
 }
 
 /** Version already answered, so an auto-answer never fires twice for one state. */
@@ -1856,12 +1889,19 @@ const DRAW_STEP = 300;
  * the space it will occupy in the fan, which stays empty until it arrives. Cards
  * go one at a time: two arriving together read as one event rather than two.
  */
-function flyDraw(from: DOMRect, to: DOMRect, hold: string | null, delay: number, id?: string): void {
+function flyDraw(
+  from: DOMRect,
+  to: DOMRect,
+  hold: string | null,
+  delay: number,
+  id?: string,
+  live?: CardOpts['live'],
+): void {
   const el = document.createElement('div');
   el.className = 'drawfly';
   const def = id ? tryCard(id) : null;
   const face = def
-    ? `<span class="fface">${renderCard(def, { classes: ['flatcard'] })}</span>`
+    ? `<span class="fface">${renderCard(def, { classes: ['flatcard'], live })}</span>`
     : '';
   el.innerHTML = `<span class="flin"><span class="fback"></span>${face}</span>`;
   // Laid out at the pile's size and grown into place by the flight, so the text
@@ -2023,7 +2063,13 @@ function playHandPlays(): void {
         return new DOMRect(r.left + r.width / 2 - from.width, r.top + r.height / 2 - from.height,
           from.width * 2, from.height * 2);
       })();
-  flyDraw(from, to, fx.to ? corpseKey(fx.to) : null, 0, fx.cardId);
+  // The board card is hidden while this one is in the air, so it has to read
+  // the way the body will read once it lands. Drawn from the card alone it shows
+  // printed attack, and an aura on the table is missing for the whole flight.
+  const landed = fx.to && ui.state ? findSummon(ui.state, fx.to) : null;
+  const live =
+    landed && ui.state && landed.cardId === fx.cardId ? liveStats(ui.state, landed) : undefined;
+  flyDraw(from, to, fx.to ? corpseKey(fx.to) : null, 0, fx.cardId, live);
 }
 
 function playDraws(): void {
@@ -2383,14 +2429,13 @@ function unitHtml(state: GameState, ref: TargetRef, caption: string): string {
     // A body that just died here stays visible while its death plays out.
     const corpse = corpseFx.find((c) => c.key === corpseKey(ref))?.html ?? '';
     // A leader cell before the leader lands takes no drops and no clicks,
-    // except while an enemy pick is asking: the seat can be named before its
-    // leader has taken the field.
+    // except while something is asking for a seat: an enemy pick, or a board
+    // choice offering leaders that have not taken the field yet.
     if (ref.kind !== 'summon') {
       const pickable =
-        !!ui.enemyPick &&
         ref.kind === 'leader' &&
-        ref.player !== me &&
-        !state.players[ref.player].eliminated;
+        (candidateKeys().has(key) ||
+          (!!ui.enemyPick && ref.player !== me && !state.players[ref.player].eliminated));
       return `<div class="unit">
         <div class="caption">${esc(caption)}</div>
         <div class="slot-empty${pickable ? ' droppable targetable' : ''}"${
@@ -4344,6 +4389,18 @@ function render(): void {
     });
     return;
   }
+  if (ui.screen === 'draft') {
+    showGuy(false);
+    keepScroll(['.bookscroll', '.deckscroll', OPEN_DDLIST], () => {
+      root.innerHTML = renderDraft();
+      syncDropdowns();
+    });
+    // The bar is written with the time the string was built, which is a frame
+    // out of date by the time it lands; the watch puts it back on the clock.
+    syncDraftTimer();
+    startDraftWatch();
+    return;
+  }
   const onSetup = ui.screen === 'setup' || !ui.state;
   showGuy(onSetup && ui.screen !== 'build');
   if (ui.screen === 'build') {
@@ -4666,11 +4723,33 @@ function renderOnline(): string {
         )
         .join('')}</div></div>
 
+      <div class="lobbyrow"><span>Draft</span><div class="seats">${(
+        [
+          [0, 'Off'],
+          [1, 'On'],
+        ] as const
+      )
+        .map(
+          ([on, label]) =>
+            `<button data-act="btn" data-cmd="o-draft:${on}" class="seattile${
+              o.draft === !!on ? ' on' : ''
+            }" ${busy ? 'disabled' : ''}>${label}</button>`,
+        )
+        .join('')}</div></div>
+
       <p class="lobbynote">${
         o.timers
           ? `Turns last ${CLOCK_SECONDS.turn} seconds, responses last ${CLOCK_SECONDS.response} seconds. Playing a card gives a little turn time back.`
           : 'No timers. Everyone gets as long as they want. This only works in a game you host.'
-      }${o.party > 2 ? ' Party games are hosted: share the code with everyone joining.' : ''}</p>
+      }${o.party > 2 ? ' Party games are hosted: share the code with everyone joining.' : ''}${
+        o.draft
+          ? ` Draft: everyone opens ${PACK_COUNT} card packs and cuts a ${DECK_SIZE}-card deck out of the ${
+              PACK_COUNT * PACK_SIZE
+            } cards inside, on one ${
+              DRAFT_SECONDS / 60
+            }-minute clock. Your deck above is not used, copies are not capped, and colors need not match your leader.`
+          : ''
+      }</p>
 
       ${status}
 
@@ -5052,6 +5131,564 @@ function renderBuilder(): string {
   </div>`;
 }
 
+// --- draft ------------------------------------------------------------------
+
+/** The sealed pack, opened by holding it down. */
+const PACK_ART = 'Cardgame/CardPack.png';
+
+/** Milliseconds the draft clock still has, on the room's clock rather than this one. */
+function draftLeftMs(): number {
+  const d = ui.draft;
+  if (!d.endsAt) return 0;
+  return Math.max(0, d.endsAt - (Date.now() + (net?.status.skewMs ?? 0)));
+}
+
+/**
+ * The one clock the whole draft runs on, drawn as a bar over a count. Opening
+ * packs and building the deck spend the same eight minutes, so there is one bar
+ * across both screens rather than one for each.
+ */
+function draftTimerHtml(): string {
+  const d = ui.draft;
+  const left = draftLeftMs();
+  const frac = d.totalMs > 0 ? Math.max(0, Math.min(1, left / d.totalMs)) : 0;
+  const roping = left <= DRAFT_WARN_MS;
+  return `<div class="drafttimer${roping ? ' rope' : ''}" role="timer"
+    aria-label="draft, ${Math.ceil(left / 1000)} seconds left">
+    <span class="dtlabel">Draft</span>
+    <span class="dttrack"><span class="dtfill" style="width:${(frac * 100).toFixed(2)}%"></span></span>
+    <span class="dtcount">${clockText(left)}</span>
+  </div>`;
+}
+
+/** Put the bar and the count where the clock has actually reached. */
+function syncDraftTimer(): void {
+  const bar = document.querySelector<HTMLElement>('.drafttimer');
+  if (!bar) return;
+  const d = ui.draft;
+  const left = draftLeftMs();
+  const frac = d.totalMs > 0 ? Math.max(0, Math.min(1, left / d.totalMs)) : 0;
+  const fill = bar.querySelector<HTMLElement>('.dtfill');
+  if (fill) fill.style.width = `${(frac * 100).toFixed(2)}%`;
+  const count = bar.querySelector<HTMLElement>('.dtcount');
+  if (count) count.textContent = clockText(left);
+  bar.classList.toggle('rope', left <= DRAFT_WARN_MS);
+}
+
+let draftWatch: number | null = null;
+/** Whether the warning has sounded for this draft, so it rings once. */
+let draftRang = false;
+
+function startDraftWatch(): void {
+  if (draftWatch === null) draftWatch = window.setInterval(draftTick, 250);
+}
+
+function stopDraftWatch(): void {
+  if (draftWatch !== null) window.clearInterval(draftWatch);
+  draftWatch = null;
+  draftRang = false;
+  stopLast10();
+}
+
+/**
+ * Drive the bar, and ring the last stretch. The same warning the turn clock
+ * uses, because it means the same thing here: what is left is now worth
+ * counting. It runs off its own timer rather than the render loop, since a
+ * player reading their pool repaints nothing for minutes at a time.
+ */
+function draftTick(): void {
+  if (ui.screen !== 'draft') {
+    stopDraftWatch();
+    return;
+  }
+  syncDraftTimer();
+  const left = draftLeftMs();
+  if (!draftRang && left > 0 && left <= DRAFT_WARN_MS) {
+    if (startLast10()) draftRang = true;
+  }
+}
+
+/**
+ * The deck as it stands, sent up to the room. It goes on every change rather
+ * than only at the end, because a clock that runs out fills in the build the
+ * room is holding: a player who spent the whole draft on forty cards keeps all
+ * forty. Batched, so a run of clicks is one message.
+ */
+let draftSend: number | null = null;
+
+function pushDraftDeck(done = false): void {
+  if (draftSend !== null) window.clearTimeout(draftSend);
+  draftSend = null;
+  const d = ui.draft;
+  if (done) {
+    net?.sendDraftDeck(d.leaderId, d.cards, true);
+    return;
+  }
+  draftSend = window.setTimeout(() => {
+    draftSend = null;
+    net?.sendDraftDeck(ui.draft.leaderId, ui.draft.cards, false);
+  }, 600);
+}
+
+// --- opening a pack ---------------------------------------------------------
+
+let packHold: number | null = null;
+
+/**
+ * The pack while it is being carried. It moves by how far the pointer has come
+ * rather than to where the pointer is, so grabbing it by a corner does not snap
+ * its middle under the cursor, and it leans into the movement and rights itself
+ * the way a dragged card does.
+ */
+interface PackDrag {
+  from: { x: number; y: number };
+  to: { x: number; y: number };
+  /** The offset actually drawn, easing towards the one asked for. */
+  x: number;
+  y: number;
+  tilt: number;
+  lastX: number;
+  raf: number;
+}
+let packDrag: PackDrag | null = null;
+
+/** Eased towards the pointer at the rate a dragged card follows one. */
+const PACK_CHASE = 0.32;
+
+function packDragStep(): void {
+  const d = packDrag;
+  if (!d) return;
+  d.x += (d.to.x - d.from.x - d.x) * PACK_CHASE;
+  d.y += (d.to.y - d.from.y - d.y) * PACK_CHASE;
+  d.tilt *= 0.94;
+  const el = document.querySelector<HTMLElement>('.packdrag');
+  const art = document.querySelector<HTMLElement>('.packart');
+  if (el && art) {
+    el.style.transform = `translate(${d.x}px, ${d.y}px) rotate(${d.tilt.toFixed(2)}deg)`;
+    // Measured after the write, so the pack is pushed back by however far it
+    // actually left the window rather than by where it was aimed. A pack that
+    // is growing changes size under the same offset, so this is read every
+    // frame instead of worked out once.
+    const over = windowOverflow(art.getBoundingClientRect(), {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    });
+    if (over.x || over.y) {
+      d.x -= over.x;
+      d.y -= over.y;
+      el.style.transform = `translate(${d.x}px, ${d.y}px) rotate(${d.tilt.toFixed(2)}deg)`;
+    }
+  }
+  d.raf = requestAnimationFrame(packDragStep);
+}
+
+/** Aim the carried pack at the pointer, leaning into the movement. */
+function packDragTo(x: number, y: number): void {
+  const d = packDrag;
+  if (!d) return;
+  const dx = x - d.lastX;
+  d.lastX = x;
+  d.tilt = Math.max(-13, Math.min(13, d.tilt * 0.8 + dx * 0.5));
+  d.to = { x, y };
+}
+
+/** Let the pack fall back into place, easing rather than snapping. */
+function endPackDrag(): void {
+  if (!packDrag) return;
+  cancelAnimationFrame(packDrag.raf);
+  packDrag = null;
+  const el = document.querySelector<HTMLElement>('.packdrag');
+  // Cleared rather than zeroed, so the stylesheet's own transition carries it
+  // home from wherever it had got to.
+  if (el) el.style.transform = '';
+}
+
+/**
+ * The pack answers a held pointer rather than a click. Growing, shaking and
+ * whitening are all CSS off one class, so the class is toggled on the element
+ * instead of rendered: a rebuilt element snaps back where this eases back.
+ */
+function beginPackHold(ev: PointerEvent): void {
+  const d = ui.draft;
+  if (d.revealed !== null || d.holding || d.pack >= d.packs.length) return;
+  d.holding = true;
+  document.querySelector('.packstage')?.classList.add('holding');
+  startHold();
+  packHold = window.setTimeout(openPack, PACK_HOLD_MS);
+  const at = { x: ev.clientX, y: ev.clientY };
+  packDrag = { from: at, to: at, x: 0, y: 0, tilt: 0, lastX: ev.clientX, raf: 0 };
+  packDrag.raf = requestAnimationFrame(packDragStep);
+}
+
+function cancelPackHold(): void {
+  if (packHold !== null) window.clearTimeout(packHold);
+  packHold = null;
+  endPackDrag();
+  if (!ui.draft.holding) return;
+  ui.draft.holding = false;
+  document.querySelector('.packstage')?.classList.remove('holding');
+  stopHold();
+}
+
+function openPack(): void {
+  packHold = null;
+  const d = ui.draft;
+  d.holding = false;
+  endPackDrag();
+  stopHold();
+  const pack = d.packs[d.pack] ?? [];
+  d.revealed = pack;
+  d.pool = [...d.pool, ...pack];
+  playSfx('debtDown');
+  render();
+  flashScreen();
+}
+
+/**
+ * The white wash the cards arrive through. On the body rather than inside the
+ * shell, because #app carries a transform when the table is scaled and a
+ * transformed ancestor makes position:fixed behave like position:absolute.
+ */
+function flashScreen(): void {
+  document.getElementById('packflash')?.remove();
+  const wash = document.createElement('div');
+  wash.id = 'packflash';
+  wash.className = 'packflash';
+  document.body.appendChild(wash);
+  window.setTimeout(() => wash.remove(), PACK_FLASH_MS);
+}
+
+/** Done with this pack: on to the next, or on to building the deck. */
+function nextPack(): void {
+  const d = ui.draft;
+  if (d.revealed === null) return;
+  d.revealed = null;
+  d.pack = Math.min(d.packs.length, d.pack + 1);
+  // The room counts these, and a player still holding a sealed pack when the
+  // clock empties loses their seat, so it goes up as soon as one is finished.
+  net?.sendDraftOpened(d.pack);
+  render();
+}
+
+// --- the draft screen -------------------------------------------------------
+
+/** One card out of a freshly opened pack, lit from behind by its own gem. */
+function packCardHtml(id: string): string {
+  const def = tryCard(id);
+  if (!def) return '';
+  const rarity = def.rarity ?? 'C';
+  return `<div class="bcell packcell g-${rarity}">
+    <div class="copystack">${renderCard(def, {
+      classes: ['browse'],
+      data: { act: 'btn', cmd: `d-inspect:${def.id}` },
+    })}</div>
+    <div class="bcap"><span class="bcount">${esc(RARITY_NAME[rarity])}</span></div>
+  </div>`;
+}
+
+function packViewHtml(): string {
+  const d = ui.draft;
+  const total = d.packs.length;
+  if (d.revealed !== null) {
+    const last = d.pack + 1 >= total;
+    return `<div class="packreveal">
+      <div class="bookgrid packgrid">${d.revealed.map(packCardHtml).join('')}</div>
+      <div class="packfoot">
+        <button class="primary" data-act="btn" data-cmd="d-next">${
+          last ? 'Build your deck' : 'Next pack'
+        }</button>
+      </div>
+    </div>`;
+  }
+  return `<div class="packstage" data-act="pack">
+    <div class="packdrag"><div class="packshake"><div class="packgrow">
+      <img class="packart" src="${BASE}${PACK_ART}" alt="A sealed card pack" draggable="false">
+    </div></div></div>
+    <p class="packhint">Click and drag</p>
+  </div>`;
+}
+
+/** One card in the pool, over what the pool has left of it. */
+function draftCellHtml(def: CardDef): string {
+  const d = ui.draft;
+  const left = leftOf(d, def.id);
+  const takeable = canTake(d, def.id, DECK_SIZE);
+  const lead =
+    canBeLeader(def.id) && d.leaderId !== def.id
+      ? `<button class="tiny" data-act="btn" data-cmd="d-leader:${def.id}"
+          title="Stand this one up as your leader">lead</button>`
+      : '';
+  return `<div class="bcell">
+    <div class="copystack s${Math.min(3, left)}">
+    ${renderCard(def, {
+      classes: ['browse', ...(takeable ? [] : ['full'])],
+      // Draggable even when the pool has none left, because a summon with no
+      // copies to spare can still be pulled onto the leader slot.
+      data: takeable
+        ? { act: 'btn', cmd: `d-add:${def.id}`, bdrag: def.id }
+        : { cardid: def.id, bdrag: def.id },
+    })}
+    </div>
+    <div class="bcap">
+      <span class="bcount${left === 0 ? ' spent' : ''}">×${left}</span>
+      <span class="bcapbtns"><button class="tiny" data-act="btn"
+        data-cmd="d-inspect:${def.id}">?</button>${lead}</span>
+    </div>
+  </div>`;
+}
+
+/**
+ * One copy of one card in the deck, the way the deckbuilder's deck view draws
+ * it: no stack of spares behind it, because every card here is already in.
+ */
+function draftDeckCellHtml(def: CardDef): string {
+  const chip = def.type === 'summon' ? `L${def.level ?? 1}` : pipHtml(def.cost) || '·';
+  return `<div class="bcell dcell" title="Click the card to take this copy out">
+    <div class="copystack">
+    ${renderCard(def, { classes: ['browse'], data: { act: 'btn', cmd: `d-drop:${def.id}` } })}
+    </div>
+    <div class="bcap">
+      <span class="bcount">${chip}</span>
+      <span class="bcapbtns"><button class="tiny" data-act="btn"
+        data-cmd="d-inspect:${def.id}">?</button></span>
+    </div>
+  </div>`;
+}
+
+function draftBookHtml(): string {
+  const d = ui.draft;
+  const hit = (def: CardDef) => matchesSearch(def, d.search, d.rarities);
+  if (d.viewingDeck) {
+    const shown = deckCopies(d.cards).filter(hit);
+    if (shown.length === 0) {
+      return `<p class="hint">${
+        d.cards.length > 0 ? 'No matches in this deck.' : 'This deck is empty.'
+      }</p>`;
+    }
+    return `<div class="bookgrid deckgrid">${shown.map(draftDeckCellHtml).join('')}</div>`;
+  }
+  const html = draftSections(d.pool)
+    .map((sec) => ({ ...sec, cards: sec.cards.filter(hit) }))
+    .filter((sec) => sec.cards.length > 0)
+    .map(
+      (sec) => `<h4 class="bookhead"><span>${esc(sec.title)}</span></h4>
+      <div class="bookgrid">${sec.cards.map(draftCellHtml).join('')}</div>`,
+    )
+    .join('');
+  return html || '<p class="hint">No matches in your pool.</p>';
+}
+
+function draftBuildHtml(): string {
+  const d = ui.draft;
+  const issues = draftProblems(d.leaderId || null, d.cards, d.pool);
+  const leader = d.leaderId ? tryCard(d.leaderId) : null;
+  const rarityChips = RARITY_FILTERS.map((r) => {
+    const on = d.rarities.includes(r);
+    return `<button data-act="btn" data-cmd="d-rarity:${r}" class="rchip r-${r}${on ? ' on' : ''}"
+      title="${esc(RARITY_NAME[r])} only">${esc(RARITY_NAME[r])}</button>`;
+  }).join('');
+
+  const rows = draftDeckRows(d.cards)
+    .map((r) => {
+      const chip = r.def.type === 'summon' ? `L${r.def.level ?? 1}` : pipHtml(r.def.cost) || '·';
+      const art = r.def.art ? `, url('${artFile(r.def)}')` : '';
+      return `<button class="deckrow" data-act="btn" data-cmd="d-drop:${r.def.id}"
+        title="Click to take one out"
+        style="background-image: linear-gradient(90deg, rgba(24, 34, 65, 0.97) 0%, rgba(24, 34, 65, 0.86) 52%, rgba(24, 34, 65, 0.3) 100%)${art}">
+        <span class="rowchip">${chip}</span>
+        <span class="rowname">${esc(r.def.name)}</span>
+        <span class="rowcount">x${r.n}</span>
+      </button>`;
+    })
+    .join('');
+
+  return `<div class="bmain">
+    <section class="book">
+      <div class="bookscroll">${draftBookHtml()}</div>
+      <div class="bookbar">
+        <input id="dsearch" type="text" placeholder="Search name, text or rarity"
+          value="${esc(d.search)}" data-act="dsearch" autocomplete="off" spellcheck="false">
+        <div class="rchips">${rarityChips}</div>
+      </div>
+    </section>
+    <aside class="deckpanel">
+      <div class="leaderbox">
+        ${
+          leader
+            ? `${renderCard(leader, { data: { act: 'btn', cmd: `d-inspect:${leader.id}` } })}
+        <div class="leaderfacts">
+          <strong>${esc(leader.name)}</strong>
+          <span class="hstat">${leader.strength ?? 0} strength · ${leader.hp ?? 0} HP</span>
+          <span class="hint">A drafted deck ignores its leader's colors, so anything you
+            opened may stand beside it. Drag the card out to swap leaders.</span>
+          <button class="tiny" data-act="btn" data-cmd="d-unlead">Put it back</button>
+        </div>`
+            : '<div class="leaderslot">No leader yet. Press <b>lead</b> under any summon in your pool.</div>'
+        }
+      </div>
+      <div class="leaderrow ddfield"><span>Leader</span>${dropdownHtml({
+        name: 'ddraftleader',
+        value: d.leaderId,
+        placeholder: 'pick or drag one in…',
+        groups: draftLeaders(d.pool, (id) => {
+          const colours = colorsOf(card(id));
+          return colours.length ? colours.map((c) => COLOR_NAME[c]).join(' and ') : 'Neutral';
+        }).map((g) => ({
+          label: g.label,
+          options: g.cards.map((x) => ({ value: x.id, label: x.name })),
+        })),
+        search: 'Search leaders…',
+      })}</div>
+      ${issues.length ? `<ul class="issues">${issues.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : ''}
+      <div class="deckscroll">
+        <div class="deckrows">${
+          rows || '<p class="blurb">Empty. Click cards in your pool to take them.</p>'
+        }</div>
+      </div>
+      <div class="deckfoot">
+        <span class="countpill ${issues.length ? 'bad' : 'good'}"
+          ${issues.length ? `title="${esc(issues.join(' '))}"` : ''}>${d.cards.length}/${DECK_SIZE}</span>
+        <button class="primary" data-act="btn" data-cmd="d-done" ${
+          issues.length ? 'disabled' : ''
+        }>Deck is ready</button>
+        <button class="danger" data-act="btn" data-cmd="d-clear">Empty it</button>
+      </div>
+    </aside>
+  </div>`;
+}
+
+/** The wait after a deck goes up, while everyone else finishes theirs. */
+function draftWaitHtml(): string {
+  const st = ui.draft.status;
+  const who =
+    st && st.waiting.length > 0
+      ? `<p class="lobbynote roster">${st.waiting.map(esc).join(' &middot; ')}</p>`
+      : '';
+  return `<div class="promptlayer draftwait"><div class="prompt">
+    <h3>Deck sent</h3>
+    <p class="blurb">${
+      st ? `${st.done}/${st.needed} decks in.` : 'Waiting for the room.'
+    } The match deals once everyone is finished, or when the clock runs out.</p>
+    ${who}
+    <div class="row"><button data-act="btn" data-cmd="d-edit">Keep editing</button></div>
+  </div></div>`;
+}
+
+function renderDraft(): string {
+  const d = ui.draft;
+  const building = packsAllOpen(d);
+  const inspected = d.inspect ? tryCard(d.inspect) : null;
+  const inspectBox = inspected
+    ? `<div class="promptlayer binspectlayer"><div class="prompt binspect">
+        ${renderCard(inspected)}
+        <div class="row"><button data-act="btn" data-cmd="d-inspect:">Close</button></div>
+      </div></div>`
+    : '';
+  const step = building
+    ? `Building · ${d.pool.length} cards opened`
+    : `Pack ${Math.min(d.pack + 1, d.packs.length)} of ${d.packs.length}`;
+  return `<div class="buildwrap builder draftwrap">
+    <header class="bheader">
+      <span class="wordmark">Draft</span>
+      ${
+        building
+          ? `<button class="viewtoggle${d.viewingDeck ? ' on' : ''}" data-act="btn"
+              data-cmd="d-view">${d.viewingDeck ? 'View cards' : 'View deck'}</button>`
+          : ''
+      }
+      <span class="draftstep">${esc(step)}</span>
+      ${draftTimerHtml()}
+    </header>
+    ${building ? draftBuildHtml() : `<div class="bmain packmain">${packViewHtml()}</div>`}
+    ${d.done ? draftWaitHtml() : ''}
+    ${inspectBox}
+  </div>`;
+}
+
+/** Every command the draft screen sends, kept out of handleCommand's own run. */
+function handleDraftCommand(cmd: string): boolean {
+  if (ui.screen !== 'draft') return false;
+  const d = ui.draft;
+  if (cmd === 'd-next') {
+    nextPack();
+    return true;
+  }
+  if (cmd.startsWith('d-inspect:')) {
+    d.inspect = cmd.slice(10) || null;
+    render();
+    return true;
+  }
+  if (cmd.startsWith('d-add:')) {
+    const id = cmd.slice(6);
+    if (canTake(d, id, DECK_SIZE)) {
+      d.cards.push(id);
+      pushDraftDeck();
+    }
+    render();
+    return true;
+  }
+  if (cmd.startsWith('d-drop:')) {
+    const at = d.cards.lastIndexOf(cmd.slice(7));
+    if (at >= 0) {
+      d.cards.splice(at, 1);
+      pushDraftDeck();
+    }
+    render();
+    return true;
+  }
+  if (cmd.startsWith('d-leader:')) {
+    const id = cmd.slice(9);
+    // The leader spends a copy of its own, so a card the deck has used up has
+    // to give one back before it can stand up.
+    if (leftOf(d, id) === 0) {
+      const at = d.cards.lastIndexOf(id);
+      if (at >= 0) d.cards.splice(at, 1);
+    }
+    if (leftOf(d, id) > 0) {
+      d.leaderId = id;
+      pushDraftDeck();
+    }
+    render();
+    return true;
+  }
+  if (cmd === 'd-view') {
+    d.viewingDeck = !d.viewingDeck;
+    render();
+    return true;
+  }
+  if (cmd === 'd-unlead') {
+    d.leaderId = '';
+    pushDraftDeck();
+    render();
+    return true;
+  }
+  if (cmd === 'd-clear') {
+    d.cards = [];
+    pushDraftDeck();
+    render();
+    return true;
+  }
+  if (cmd.startsWith('d-rarity:')) {
+    const r = cmd.slice(9) as Rarity;
+    d.rarities = d.rarities.includes(r) ? d.rarities.filter((x) => x !== r) : [...d.rarities, r];
+    render();
+    return true;
+  }
+  if (cmd === 'd-done') {
+    if (draftProblems(d.leaderId || null, d.cards, d.pool).length > 0) return true;
+    d.done = true;
+    pushDraftDeck(true);
+    render();
+    return true;
+  }
+  if (cmd === 'd-edit') {
+    d.done = false;
+    render();
+    return true;
+  }
+  return false;
+}
+
 // --- online ------------------------------------------------------------------
 
 /**
@@ -5249,7 +5886,18 @@ function netClient(): NetClient {
       // in detail, which costs a wound count rather than a wrong board.
       if (!opening && prev && move) {
         captureWounds();
-        const replay = applyAction(replaySource(prev, state, move), move.actor, move.action);
+        // The only applyAction left without a guard. It runs on this side's
+        // redacted copy purely to fill a wound log for the animation, so a
+        // throw here must cost the animation and nothing else: unguarded it
+        // skips the assignment below and freezes the board on a live socket,
+        // which is indistinguishable from a connection that died.
+        let replay: ReturnType<typeof applyAction>;
+        try {
+          replay = applyAction(replaySource(prev, state, move), move.actor, move.action);
+        } catch (err) {
+          console.error('replay for animation threw', move.action.type, err);
+          replay = { ok: false, error: 'replay threw' };
+        }
         if (replay.ok) {
           // Against the replay rather than the room's copy, because the two
           // sides of every comparison then come from the same redaction: a card
@@ -5270,6 +5918,7 @@ function netClient(): NetClient {
       ui.state = state;
       ui.online.seat = seat;
       ui.online.phase = 'playing';
+      stopDraftWatch();
       onlineClock = clock;
       startRopeWatch();
       ui.botSeat = null;
@@ -5301,8 +5950,33 @@ function netClient(): NetClient {
       // plays it a second time.
       clearActionFx();
     },
+    onDraft(packs, endsAt, totalMs) {
+      note(`drafting ${packs.length} packs`);
+      // Dealt once, when the room fills. A second deal would be the room saying
+      // the draft restarted, which it never does, so the pool is taken whole.
+      ui.draft = { ...newDraft(), packs, endsAt, totalMs };
+      ui.online.phase = 'drafting';
+      ui.screen = 'draft';
+      ui.error = null;
+      playSfx('lobby');
+      render();
+      // The wait for everyone else to open their packs is dead air, so anything
+      // the boot warm missed downloads now rather than racing the first pack.
+      void warmArt(packArt);
+    },
+    onDraftStatus(done, needed, waiting) {
+      ui.draft.status = { done, needed, waiting };
+      if (ui.screen === 'draft') render();
+    },
     onRejected(reason) {
       note(`room refused the move: ${reason}`);
+      // A refused draft deck is this client and the room disagreeing about the
+      // pool, which is a bug rather than a move to take back, so it is said on
+      // the draft screen instead of the action bar the board has.
+      if (ui.screen === 'draft') {
+        popNotice('Draft', reason, 'bad');
+        return;
+      }
       ui.error = reason;
       render();
     },
@@ -5361,6 +6035,7 @@ let rejoinTried = false;
 /** Drop back to the lobby with something to read. */
 function failOnline(reason: string): void {
   stopRopeWatch();
+  stopDraftWatch();
   net?.close();
   pendingRoom = null;
   // A finished match cannot fail. The result is already on screen and the socket
@@ -5383,6 +6058,7 @@ function failOnline(reason: string): void {
   ui.online.roster = null;
   ui.online.spectating = false;
   ui.enemyPick = null;
+  ui.draft = newDraft();
   ui.online.error = reason;
   ui.screen = 'online';
   render();
@@ -5411,7 +6087,7 @@ async function startOnline(how: 'public' | 'host' | 'join'): Promise<void> {
     how === 'public'
       ? await client.findPublicGame()
       : how === 'host'
-        ? await client.hostPrivateGame(o.party === 2 ? undefined : o.party, !o.timers)
+        ? await client.hostPrivateGame(o.party === 2 ? undefined : o.party, !o.timers, o.draft)
         : await client.joinPrivateGame(o.code);
 
   if (!reply.ok) {
@@ -5441,12 +6117,14 @@ function leaveOnline(): void {
   }
   net?.close();
   pendingRoom = null;
+  stopDraftWatch();
   ui.online.phase = 'idle';
   ui.online.roomCode = null;
   ui.online.seat = null;
   ui.online.roster = null;
   ui.online.spectating = false;
   ui.enemyPick = null;
+  ui.draft = newDraft();
   ui.online.error = null;
 }
 
@@ -5799,6 +6477,9 @@ function handleBuilderCommand(cmd: string): boolean {
     case 'o-timers':
       if (ui.online.phase === 'idle') ui.online.timers = arg === '1';
       break;
+    case 'o-draft':
+      if (ui.online.phase === 'idle') ui.online.draft = arg === '1';
+      break;
     case 'o-seek':
       void startOnline('public');
       break;
@@ -5825,6 +6506,7 @@ function handleBuilderCommand(cmd: string): boolean {
         seat: ui.online.seat,
         roomCode: ui.online.roomCode,
         online: ui.online.phase === 'playing',
+        health: net?.health(),
       });
       // Selecting nothing to fall back on, so the text goes to the console as
       // well: without a secure context the clipboard is simply refused, and a
@@ -6113,6 +6795,7 @@ function handleCommand(cmd: string): void {
     ui.zoom = cmd.slice(5) || null;
     return render();
   }
+  if (handleDraftCommand(cmd)) return;
   if (handleBuilderCommand(cmd)) return;
   if (cmd === 'start') {
     if (ui.preloading) return;
@@ -6512,8 +7195,15 @@ function startBuildDrag(ev: PointerEvent): void {
     return;
   }
   const row = t.closest<HTMLElement>('.deckrow');
-  if (row?.dataset.cmd?.startsWith('bdrop:')) {
-    buildPending = { x: ev.clientX, y: ev.clientY, id: row.dataset.cmd.slice(6), mode: 'remove', el: row };
+  const drop = buildDragCommands().drop;
+  if (row?.dataset.cmd?.startsWith(drop)) {
+    buildPending = {
+      x: ev.clientX,
+      y: ev.clientY,
+      id: row.dataset.cmd.slice(drop.length),
+      mode: 'remove',
+      el: row,
+    };
   }
 }
 
@@ -6532,6 +7222,17 @@ function moveBuildDrag(ev: PointerEvent): void {
   moveGhost(ev.clientX, ev.clientY);
 }
 
+/**
+ * The commands a drag sends, which differ only in which builder is on screen.
+ * The gesture is the same in both, so the machinery is shared and only the
+ * names it calls change.
+ */
+function buildDragCommands(): { add: string; drop: string; leader: string; unlead: string } {
+  return ui.screen === 'draft'
+    ? { add: 'd-add:', drop: 'd-drop:', leader: 'd-leader:', unlead: 'd-unlead' }
+    : { add: 'badd:', drop: 'bdrop:', leader: 'bleader:', unlead: 'bleader:' };
+}
+
 function endBuildDrag(ev: PointerEvent): void {
   buildPending = null;
   const d = buildDrag;
@@ -6544,14 +7245,15 @@ function endBuildDrag(ev: PointerEvent): void {
   const at = document.elementFromPoint(ev.clientX, ev.clientY);
   const inLeader = !!at?.closest('.leaderbox');
   const inPanel = !!at?.closest('.deckpanel');
+  const cmd = buildDragCommands();
   if (d.mode === 'add') {
     // The leader slot takes whatever can stand as a leader; everywhere else on
     // the panel adds to the 48, leader cards included.
-    if (inLeader && canBeLeader(d.id)) handleCommand(`bleader:${d.id}`);
-    else if (inPanel) handleCommand(`badd:${d.id}`);
+    if (inLeader && canBeLeader(d.id)) handleCommand(`${cmd.leader}${d.id}`);
+    else if (inPanel) handleCommand(`${cmd.add}${d.id}`);
   }
-  if (d.mode === 'remove' && !inPanel) handleCommand(`bdrop:${d.id}`);
-  if (d.mode === 'leader' && !inLeader) handleCommand('bleader:');
+  if (d.mode === 'remove' && !inPanel) handleCommand(`${cmd.drop}${d.id}`);
+  if (d.mode === 'leader' && !inLeader) handleCommand(cmd.unlead);
 }
 
 /** Legal drops for dragging a hand card out: slots, spell targets, the supporter row. */
@@ -6627,6 +7329,15 @@ root.addEventListener('pointerdown', (ev) => {
   if (ev.button !== 0) return;
   suppressClick = false;
   armHold(ev);
+  if (ui.screen === 'draft') {
+    if ((ev.target as HTMLElement).closest('[data-act="pack"]')) {
+      ev.preventDefault();
+      beginPackHold(ev);
+      return;
+    }
+    // Past the packs the screen is the deckbuilder, and so is the gesture.
+    return startBuildDrag(ev);
+  }
   if (ui.screen === 'build') return startBuildDrag(ev);
   if (!ui.state || !canAct() || ui.targeting) return;
   const el = (ev.target as HTMLElement).closest<HTMLElement>('[data-act="slot"],[data-act="leader"]');
@@ -6696,7 +7407,11 @@ window.addEventListener('resize', () => {
 
 window.addEventListener('pointermove', (ev) => {
   holdMoved(ev);
-  if (ui.screen === 'build') return moveBuildDrag(ev);
+  if (packDrag) {
+    packDragTo(ev.clientX, ev.clientY);
+    return;
+  }
+  if (ui.screen === 'build' || ui.screen === 'draft') return moveBuildDrag(ev);
   if (ui.screen === 'game' && document.querySelector('.stage')) {
     pointerAt = toStage(ev.clientX, ev.clientY);
   }
@@ -6775,6 +7490,10 @@ window.addEventListener('pointercancel', (ev) => {
 
 window.addEventListener('pointerup', (ev) => {
   cancelHold();
+  if (ui.screen === 'draft') {
+    cancelPackHold();
+    return endBuildDrag(ev);
+  }
   if (ui.screen === 'build') return endBuildDrag(ev);
   killGhost();
   if (pendingDrag && !ui.drag) {
@@ -6853,6 +7572,14 @@ root.addEventListener('input', (ev) => {
   // These three fields update a label or a button beside themselves. A full
   // render would replace the field mid-keystroke and flash, so each patches the
   // one thing it changes and leaves the rest of the page alone.
+  if (el.dataset.act === 'dsearch') {
+    ui.draft.search = (el as HTMLInputElement).value;
+    // Only the book is rebuilt: a full render would replace the field the
+    // player is typing in, which costs the caret and every decoded card face.
+    const scroll = document.querySelector<HTMLElement>('.draftwrap .bookscroll');
+    if (scroll) scroll.innerHTML = draftBookHtml();
+    return;
+  }
   if (el.dataset.act === 'dname') {
     ui.builder.name = (el as HTMLInputElement).value;
     const bad = deckNameProblem(ui.builder.name);
@@ -6904,6 +7631,7 @@ mountDropdowns({
       ui.builder.leaderId = value;
       return render();
     }
+    if (name === 'ddraftleader') return handleCommand(`d-leader:${value}`);
     if (name === 'odeck') {
       ui.online.deckKey = value;
       // The lobby opens on player one's deck downstairs, so a pick made up here

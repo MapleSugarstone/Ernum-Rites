@@ -1,4 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
+import { isPartyName, roomName } from './roomname';
 
 /**
  * The front desk. One instance for the whole deployment, so it is the single
@@ -112,6 +113,7 @@ export class Lobby extends DurableObject {
   async hostPrivate(
     size?: 3 | 4,
     noTimers = false,
+    draft = false,
   ): Promise<{ roomId: string; code: string } | null> {
     await this.load();
     this.sweep();
@@ -122,7 +124,7 @@ export class Lobby extends DurableObject {
     let code = makeCode();
     // Vanishingly unlikely, but a collision would put two matches in one room.
     while (this.codes.has(code)) code = makeCode();
-    const roomId = `${size ? `prv${size}` : 'prv'}-${noTimers ? 'nt-' : ''}${crypto.randomUUID()}`;
+    const roomId = roomName({ size, noTimers, draft }, crypto.randomUUID());
     this.codes.set(code, { roomId, expiresAt: Date.now() + (size ? PARTY_CODE_MS : CODE_MS) });
     await this.save();
     return { roomId, code };
@@ -141,7 +143,7 @@ export class Lobby extends DurableObject {
     // third player knock on a room that is already full. A party code has to
     // seat several guests, so it lives out its clock and the room's own
     // "room is full" answer turns away anyone extra.
-    if (!/^prv[34]-/.test(entry.roomId)) {
+    if (!isPartyName(entry.roomId)) {
       this.codes.delete(code.toUpperCase());
     } else {
       entry.expiresAt = Date.now() + PARTY_CODE_MS;

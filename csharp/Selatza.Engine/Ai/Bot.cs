@@ -276,8 +276,7 @@ public static class Bot
             {
                 foreach (var pick in ch.Refs ?? Array.Empty<TargetRef>())
                 {
-                    if (pick.Kind is TargetKind.Summon or TargetKind.Leader
-                        && state.Find(pick) is null)
+                    if (state.RefIsGone(pick))
                     {
                         continue;
                     }
@@ -392,10 +391,7 @@ public static class Bot
             }
             foreach (var r in ch.Refs ?? Array.Empty<TargetRef>())
             {
-                if (r.Kind is TargetKind.Summon or TargetKind.Leader && state.Find(r) is null)
-                {
-                    continue;
-                }
+                if (state.RefIsGone(r)) continue;
                 return GameAction.ResolveChoice(r);
             }
             return GameAction.ResolveChoice();

@@ -2,17 +2,33 @@ import { DurableObject } from 'cloudflare:workers';
 import '../src/cards';
 import { deckByKey, hasDeck } from '../src/cards';
 import { deckProblems } from '../src/engine/decklist';
+import {
+  autofill,
+  draftDeckLegal,
+  DRAFT_SECONDS,
+  PACK_COUNT,
+  rollPacks,
+  withinPool,
+} from '../src/engine/draft';
 import type { Action } from '../src/engine/actions';
 import { applyAction, createGame } from '../src/engine/engine';
 import { digestShort } from '../src/engine/digest';
 import { publicView, redactFor } from '../src/engine/redact';
-import { currentActor, type GameState } from '../src/engine/state';
+import { currentActor, isOver, type GameState } from '../src/engine/state';
 import { timeoutAction } from '../src/engine/timeout';
-import { clockKindFor, enforcedMs, isCardPlay, playBonusMs, type Clock } from '../src/engine/timing';
+import {
+  clockKindFor,
+  enforcedMs,
+  isCardPlay,
+  NETWORK_GRACE_SECONDS,
+  playBonusMs,
+  type Clock,
+} from '../src/engine/timing';
 import type { PlayerIdx } from '../src/engine/types';
 import { BUILD_VERSION } from '../src/version';
 import { nameProblem } from './protocol';
 import type { ClientMessage, RoomKind, ServerMessage } from './protocol';
+import { draftFor, seatCountFor, timersOffFor } from './roomname';
 
 interface Seat {
   /** Null once a party player drops mid-match: the seat stays, the socket goes. */
@@ -21,25 +37,20 @@ interface Seat {
   deckKey: string;
   /** Set only for a deck the room cannot look up, already checked as legal. */
   deck?: { leaderId: string; cards: string[] };
+  /** Set only in a draft room: the eighty cards this seat opened, and its build. */
+  draft?: DraftSeat;
 }
 
-/**
- * How many players this room seats, read off its own name. The lobby mints
- * `prv3-`/`prv4-` names for party rooms and plain `prv-`/`pub-` for the rest.
- */
-function seatCountFor(name: string | undefined): number {
-  if (name?.startsWith('prv3-')) return 3;
-  if (name?.startsWith('prv4-')) return 4;
-  return 2;
-}
-
-/**
- * Reports whether this room runs without timers, reading the room's own name the
- * same way seatCountFor does. The lobby adds an `nt-` segment when the host
- * turns timers off, and only the lobby routes guests to a room.
- */
-function timersOffFor(name: string | undefined): boolean {
-  return /^prv[34]?-nt-/.test(name ?? '');
+/** What one player is doing with their packs while the draft clock runs. */
+interface DraftSeat {
+  packs: string[][];
+  /** Packs the client says it has looked at. A short count is what boots. */
+  opened: number;
+  /** The build as it last stood, kept so a clock that runs out can finish it. */
+  leaderId: string;
+  cards: string[];
+  /** True once they called it finished, which is what the room waits for. */
+  done: boolean;
 }
 
 /**
@@ -70,6 +81,10 @@ export class MatchRoom extends DurableObject {
   private turnPlays = 0;
   /** True when the host asked for a room without timers. */
   private readonly timersOff = timersOffFor(this.ctx.id.name);
+  /** True when the host asked for a draft, which runs before the match. */
+  private readonly drafting = draftFor(this.ctx.id.name);
+  /** When the draft clock empties, as the players see it. Null outside a draft. */
+  private draftEndsAt: number | null = null;
   private kind: RoomKind = 'public';
   private code: string | undefined;
 
@@ -97,17 +112,39 @@ export class MatchRoom extends DurableObject {
       }
       void this.handle(socket, msg);
     });
-    socket.addEventListener('close', () => {
-      void this.handleClose(socket);
+    socket.addEventListener('close', (ev) => {
+      void this.handleClose(socket, `code ${ev.code}${ev.wasClean ? ' clean' : ''}`);
     });
   }
 
-  private async handleClose(socket: WebSocket): Promise<void> {
+  private async handleClose(socket: WebSocket, how = 'unknown'): Promise<void> {
     const idx = this.seats.findIndex((s) => s?.socket === socket);
     if (idx < 0) return;
+    // Left in the log for `wrangler tail ernum-rites-server`, because the player
+    // this happens to is the one who cannot see it: their opponent is told the
+    // seat was vacated while their own end may never learn its socket went. The
+    // turn is here because a drop at a turn boundary and a drop mid-turn are
+    // different faults.
+    console.log(
+      'seat closed',
+      JSON.stringify({
+        room: this.ctx.id.name ?? this.ctx.id.toString(),
+        seat: idx,
+        name: this.seats[idx]?.name ?? '',
+        seats: this.seats.length,
+        started: this.state !== null,
+        turn: this.state?.turn ?? null,
+        active: this.state?.active ?? null,
+        drafting: this.draftEndsAt !== null,
+        // 1006 is a connection that died with nothing said, which is the one
+        // the player on the other end never learns about.
+        how,
+      }),
+    );
     if (this.seats.length === 2) {
       this.seats[idx] = null;
       this.clock = null;
+      this.draftEndsAt = null;
       await this.ctx.storage.deleteAlarm();
       this.broadcast({ type: 'opponentLeft' });
       return;
@@ -116,7 +153,11 @@ export class MatchRoom extends DurableObject {
     const seat = idx as PlayerIdx;
     if (this.state === null) {
       this.seats[idx] = null;
-      this.broadcastWaiting();
+      // A drop mid-draft leaves the rest to their packs rather than sending
+      // them back to the lobby: the clock is still running and their pools are
+      // still theirs. The seats close up when the draft ends.
+      if (this.draftEndsAt !== null) this.broadcastDraftStatus();
+      else this.broadcastWaiting();
       return;
     }
     // Mid-match the seat stays so the roster keeps its shape; the socket goes,
@@ -181,7 +222,12 @@ export class MatchRoom extends DurableObject {
       // and is checked here against the same rules the builder enforces. The
       // check is the point: the cards come from the client and nothing else in
       // the room ever looks at them again.
-      if (!hasDeck(msg.deckKey)) {
+      // A draft room deals every card itself, so the deck a player arrives
+      // with is not the deck they will play and there is nothing to check. It
+      // is left unchecked rather than merely ignored: refusing a seat over a
+      // deck the room is about to throw away would turn a half-built deck into
+      // a locked door.
+      if (!this.drafting && !hasDeck(msg.deckKey)) {
         if (!msg.deck) {
           return this.send(socket, {
             type: 'error',
@@ -216,9 +262,25 @@ export class MatchRoom extends DurableObject {
         if (this.state !== null) {
           return this.send(socket, { type: 'error', reason: 'The match has already started.' });
         }
+        // A draft seat plays what it opened, so the deck that came with the join
+        // is nothing to swap and the seat is left exactly as the draft left it.
+        if (this.draftEndsAt !== null) return;
         this.seats[held] = { socket, name: msg.name.trim(), deckKey: msg.deckKey, deck: msg.deck };
         this.broadcastWaiting();
         return;
+      }
+      // The draft deals packs to everyone at once, so a seat freed after that is
+      // not one a latecomer can take: they would arrive with no cards and no
+      // clock left to open any.
+      if (this.draftEndsAt !== null) {
+        return this.send(socket, { type: 'error', reason: 'The draft has already started.' });
+      }
+      // Nor is a seat freed mid-match. A head-to-head drop empties its seat and
+      // leaves the game standing, so without this the next socket through the
+      // door fills the room, every seat reads as taken, and startMatch deals a
+      // second game over the one already being played.
+      if (this.state !== null) {
+        return this.send(socket, { type: 'error', reason: 'The match has already started.' });
       }
       const seat = this.seats.findIndex((s) => s === null);
       if (seat < 0) return this.send(socket, { type: 'error', reason: 'room is full' });
@@ -230,9 +292,15 @@ export class MatchRoom extends DurableObject {
         kind: this.kind,
         ...(this.code ? { code: this.code } : {}),
       });
-      if (this.seats.every((s) => s !== null)) await this.startMatch();
-      else this.broadcastWaiting();
+      if (this.seats.every((s) => s !== null)) {
+        if (this.drafting) await this.startDraft();
+        else await this.startMatch();
+      } else this.broadcastWaiting();
       return;
+    }
+
+    if (msg.type === 'draftOpened' || msg.type === 'draftDeck') {
+      return this.handleDraft(socket, msg);
     }
 
     const seatIndex = this.seats.findIndex((s) => s?.socket === socket);
@@ -273,6 +341,188 @@ export class MatchRoom extends DurableObject {
     }
   }
 
+  // --- the draft ------------------------------------------------------------
+
+  /**
+   * Deal every seat its packs and start the one clock the whole draft runs on.
+   *
+   * The room rolls the packs rather than the clients, for the same reason it
+   * runs the clocks: a client rolling its own would roll until it liked the
+   * answer. They are dealt in full up front rather than one at a time, so a
+   * player who reloads mid-draft is handed the same eighty cards back instead of
+   * a fresh pool, and the opening of each pack stays a thing the client draws.
+   */
+  private async startDraft(): Promise<void> {
+    const rng = { state: Math.floor(Math.random() * 0x7fffffff) };
+    this.draftEndsAt = Date.now() + DRAFT_SECONDS * 1000;
+    for (const seat of this.seats) {
+      if (!seat) continue;
+      seat.draft = { packs: rollPacks(rng), opened: 0, leaderId: '', cards: [], done: false };
+    }
+    this.pushDraft();
+    this.broadcastDraftStatus();
+    // The room's own margin, the same one every other deadline here carries, so
+    // a build sent in the last second is not lost to its flight time.
+    await this.ctx.storage.setAlarm(this.draftEndsAt + NETWORK_GRACE_SECONDS * 1000);
+  }
+
+  /** Each seat its own packs, which nobody else has any business seeing. */
+  private pushDraft(): void {
+    if (this.draftEndsAt === null) return;
+    for (const seat of this.seats) {
+      if (!seat?.socket || !seat.draft) continue;
+      this.send(seat.socket, {
+        type: 'draft',
+        packs: seat.draft.packs,
+        endsAt: this.draftEndsAt,
+        totalMs: DRAFT_SECONDS * 1000,
+      });
+    }
+  }
+
+  /** Who is still building, so a player who finished early knows what for. */
+  private broadcastDraftStatus(): void {
+    const seated = this.seats.filter((s): s is Seat => s !== null && s.draft !== undefined);
+    this.broadcast({
+      type: 'draftStatus',
+      done: seated.filter((s) => s.draft!.done).length,
+      needed: seated.length,
+      waiting: seated.filter((s) => !s.draft!.done).map((s) => s.name),
+    });
+  }
+
+  private async handleDraft(socket: WebSocket, msg: ClientMessage): Promise<void> {
+    const seatIndex = this.seats.findIndex((s) => s?.socket === socket);
+    const draft = seatIndex < 0 ? undefined : this.seats[seatIndex]?.draft;
+    if (!draft || this.draftEndsAt === null) {
+      return this.send(socket, { type: 'error', reason: 'not drafting' });
+    }
+
+    if (msg.type === 'draftOpened') {
+      // Only ever forwards, and never past the packs that were dealt: the count
+      // decides who is booted, so a client cannot walk it back after the fact.
+      if (typeof msg.opened !== 'number' || !Number.isFinite(msg.opened)) return;
+      draft.opened = Math.max(draft.opened, Math.min(PACK_COUNT, Math.floor(msg.opened)));
+      return;
+    }
+
+    if (msg.type !== 'draftDeck') return;
+    if (
+      typeof msg.leaderId !== 'string' ||
+      !Array.isArray(msg.cards) ||
+      msg.cards.some((id) => typeof id !== 'string')
+    ) {
+      return this.send(socket, { type: 'error', reason: 'malformed draft deck' });
+    }
+    const pool = draft.packs.flat();
+    // Checked on every message, not only on the last one: a build the room
+    // banks has to be one the player could have made from what they opened, or
+    // the clock running out would hand a modified client whatever it asked for.
+    if (!withinPool(msg.leaderId, msg.cards, pool)) {
+      return this.send(socket, {
+        type: 'rejected',
+        reason: 'That deck holds cards you did not open.',
+        version: 0,
+      });
+    }
+    draft.leaderId = msg.leaderId;
+    draft.cards = [...msg.cards];
+    if (!msg.done) return;
+    if (!draftDeckLegal(msg.leaderId, msg.cards, pool)) {
+      return this.send(socket, {
+        type: 'rejected',
+        reason: 'That deck is not finished yet.',
+        version: 0,
+      });
+    }
+    draft.done = true;
+    this.broadcastDraftStatus();
+    const seated = this.seats.filter((s): s is Seat => s !== null && s.draft !== undefined);
+    if (seated.every((s) => s.draft!.done)) await this.finishDraft();
+  }
+
+  /**
+   * Close the draft and deal the match.
+   *
+   * A player who never opened all their packs is out: eight packs is the format,
+   * and someone sitting on unopened ones has not drafted. A player who opened
+   * them and ran out of building time keeps every card they had chosen and the
+   * rest is filled from what they opened and did not use.
+   */
+  private async finishDraft(): Promise<void> {
+    if (this.draftEndsAt === null) return;
+    this.draftEndsAt = null;
+    await this.ctx.storage.deleteAlarm();
+    const rng = { state: Math.floor(Math.random() * 0x7fffffff) };
+
+    const booted: Seat[] = [];
+    const ready: Seat[] = [];
+    for (const seat of this.seats) {
+      if (!seat?.draft) continue;
+      if (seat.draft.opened < PACK_COUNT) {
+        booted.push(seat);
+        continue;
+      }
+      const pool = seat.draft.packs.flat();
+      const filled = seat.draft.done
+        ? { leaderId: seat.draft.leaderId, cards: seat.draft.cards }
+        : autofill(rng, pool, seat.draft.leaderId, seat.draft.cards);
+      // A pool that somehow cannot make a legal deck is a bug in the fill, not
+      // something to seat: better one player told than four in a broken match.
+      if (!draftDeckLegal(filled.leaderId, filled.cards, pool)) {
+        booted.push(seat);
+        continue;
+      }
+      seat.deck = filled;
+      ready.push(seat);
+    }
+
+    for (const seat of booted) {
+      if (!seat.socket) continue;
+      this.send(seat.socket, {
+        type: 'error',
+        reason: 'The draft ended with packs you had not opened, so your seat went with it.',
+      });
+      try {
+        seat.socket.close();
+      } catch {
+        // Already gone; the close handler has nothing left to clear.
+      }
+      seat.socket = null;
+    }
+
+    const playing = ready.filter((s) => s.socket !== null);
+    if (playing.length < 2) {
+      for (const seat of playing) {
+        if (seat.socket) {
+          this.send(seat.socket, {
+            type: 'error',
+            reason: 'Not enough players finished the draft.',
+          });
+        }
+      }
+      this.seats = this.seats.map(() => null);
+      return;
+    }
+
+    // The seats close up over anyone who dropped out, because a seat index is
+    // a player index once the match starts and the engine seats every player it
+    // is given. Each survivor is told the chair it ended up in before the first
+    // push arrives written from it.
+    this.seats = playing;
+    playing.forEach((seat, i) => {
+      if (!seat.socket) return;
+      this.send(seat.socket, {
+        type: 'seated',
+        seat: i as PlayerIdx,
+        roomId: this.ctx.id.toString(),
+        kind: this.kind,
+        ...(this.code ? { code: this.code } : {}),
+      });
+    });
+    await this.startMatch();
+  }
+
   private async startMatch(): Promise<void> {
     const decks = this.seats.map((s, i) => {
       // A custom deck came in with the join and was checked then; anything else
@@ -295,7 +545,10 @@ export class MatchRoom extends DurableObject {
    * the turn over, open a response window, or close one.
    */
   private async restartClock(played = false): Promise<void> {
-    if (!this.state || this.state.winner !== null || this.timersOff) {
+    // isOver rather than a winner: a draw ends the match with no winner set, and
+    // a clock started past the end re-arms an alarm that fires at once, pushing
+    // the finished state to both seats over and over.
+    if (!this.state || isOver(this.state) || this.timersOff) {
       this.clock = null;
       await this.ctx.storage.deleteAlarm();
       return;
@@ -345,6 +598,12 @@ export class MatchRoom extends DurableObject {
    * a timeout is a missed decision, not a forfeit.
    */
   async alarm(): Promise<void> {
+    // The draft clock is the only deadline in flight while it runs, so it is
+    // answered before anything looks for a game that has not been dealt yet.
+    if (this.draftEndsAt !== null) {
+      if (Date.now() < this.draftEndsAt) return;
+      return this.finishDraft();
+    }
     if (!this.state || !this.clock) return;
     // The alarm can outlive the clock it was set for if an action landed in the
     // same instant. Anything still to run means this alarm is stale.
@@ -393,8 +652,11 @@ export class MatchRoom extends DurableObject {
   private send(socket: WebSocket, msg: ServerMessage): void {
     try {
       socket.send(JSON.stringify(msg));
-    } catch {
-      // The socket closed mid-flight; the close handler clears the seat.
+    } catch (err) {
+      // The socket closed mid-flight; the close handler clears the seat. Said
+      // out loud all the same: a write that fails is the room's first sign that
+      // a connection is gone, and swallowing it left no trace of the moment.
+      console.log('send failed', msg.type, err instanceof Error ? err.message : String(err));
     }
   }
 

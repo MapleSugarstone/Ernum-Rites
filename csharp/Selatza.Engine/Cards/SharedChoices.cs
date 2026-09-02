@@ -17,6 +17,21 @@ public static class SharedChoices
             _done = true;
         }
 
+        // Kapigras takes the seat it was pointed at and wears that leader's
+        // card. The seat is read rather than the body, so a leader that has not
+        // entered yet is copied from the card its deck names.
+        Choices.Register("kapigras", (state, choice, pick) =>
+        {
+            if (pick.Ref is not { Kind: TargetKind.Leader } r) return;
+            if (choice.At is not { } at || state.Find(at) is not { } body) return;
+            var copyId = Generated.OilCopy(state.Players[r.Player].LeaderCardId);
+            body.CardId = copyId;
+            int want = Registry.Card(copyId).Hp * 2 + 2;
+            if (body.Hp.Count < want) Effects.AssignHp(state, body, want - body.Hp.Count);
+            Effects.Log(state, choice.Player,
+                $"Kapigras shakes apart and reforms as {Registry.Card(copyId).Name}.");
+        });
+
         Choices.Register("deal-1", (state, choice, pick) =>
         {
             if (pick.Ref is { } r)

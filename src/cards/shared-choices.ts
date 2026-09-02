@@ -11,7 +11,7 @@ import {
   toHand,
   unflipHp,
 } from '../engine/effects';
-import { robotCopy } from '../engine/generated';
+import { oilCopy, robotCopy } from '../engine/generated';
 import { card } from '../engine/registry';
 import { findSummon, type GameState } from '../engine/state';
 import type { TargetRef } from '../engine/types';
@@ -35,6 +35,22 @@ function buffPermanent(
  * The small vocabulary of deferred board picks the set shares. Each key is
  * registered under the same name in the C# engine; a card only stores the key.
  */
+
+/**
+ * Kapigras takes the seat it was pointed at and wears that leader's card. The
+ * seat is read rather than the body, so a leader that has not entered yet is
+ * copied from the card its deck names.
+ */
+registerChoiceResolver('kapigras', (state, choice, pick) => {
+  if (pick.ref?.kind !== 'leader' || !choice.at) return;
+  const body = findSummon(state, choice.at);
+  if (!body) return;
+  const copyId = oilCopy(state.players[pick.ref.player].leaderCardId);
+  body.cardId = copyId;
+  const want = (card(copyId).hp ?? 0) * 2 + 2;
+  if (body.hp.length < want) assignHp(state, body, want - body.hp.length);
+  log(state, choice.player, `Kapigras shakes apart and reforms as ${card(copyId).name}.`);
+});
 
 registerChoiceResolver('deal-1', (state, choice, pick) => {
   if (pick.ref) dealDamage(state, pick.ref, 1 + effectDamageOf(state, choice.player));
