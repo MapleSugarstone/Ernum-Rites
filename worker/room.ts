@@ -110,10 +110,28 @@ export class MatchRoom extends DurableObject {
       } catch {
         return this.send(socket, { type: 'error', reason: 'malformed message' });
       }
-      void this.handle(socket, msg);
+      // Guarded here rather than path by path. An unhandled rejection out of a
+      // socket handler is what the runtime turns into a dead connection, and
+      // the player who sent the message is the one who loses it with no idea
+      // why: their opponents see nothing at all. Guarding the dispatch covers
+      // every path under it, including the ones nobody has written yet.
+      void this.handle(socket, msg).catch((err) => {
+        console.error('handle threw', msg?.type, err);
+        // Rejected rather than error: a bug in the room is not a reason to end
+        // somebody's session, and the client shows this without leaving.
+        this.send(socket, {
+          type: 'rejected',
+          reason: `The server hit a bug handling that: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+          version: this.state?.version ?? 0,
+        });
+      });
     });
     socket.addEventListener('close', (ev) => {
-      void this.handleClose(socket, `code ${ev.code}${ev.wasClean ? ' clean' : ''}`);
+      void this.handleClose(socket, `code ${ev.code}${ev.wasClean ? ' clean' : ''}`).catch((err) => {
+        console.error('handleClose threw', err);
+      });
     });
   }
 
@@ -304,13 +322,27 @@ export class MatchRoom extends DurableObject {
     }
 
     const seatIndex = this.seats.findIndex((s) => s?.socket === socket);
-    if (seatIndex < 0 || !this.state) {
+    if (seatIndex < 0) {
       return this.send(socket, { type: 'error', reason: 'not seated in a running match' });
     }
     const seat = seatIndex as PlayerIdx;
 
     // A client that no longer trusts what it holds gets the whole thing again.
-    if (msg.type === 'resync' || msg.type === 'desync') return this.pushState();
+    // Answered before the match is checked for, because a resync is a question
+    // about what this client should be holding and the answer before a match
+    // exists is the draft. Answering it with an error ended the session of
+    // anyone whose draft deck was ever refused: every `rejected` makes the
+    // client resync, and a resync mid-draft used to fall through to the line
+    // below and eject them.
+    if (msg.type === 'resync' || msg.type === 'desync') {
+      if (this.state) return this.pushState();
+      if (this.draftEndsAt !== null) return this.pushDraft();
+      return;
+    }
+
+    if (!this.state) {
+      return this.send(socket, { type: 'error', reason: 'not seated in a running match' });
+    }
 
     if (msg.type === 'action') {
       // An engine exception must not take the room down with it: the reducer
@@ -394,9 +426,11 @@ export class MatchRoom extends DurableObject {
   private async handleDraft(socket: WebSocket, msg: ClientMessage): Promise<void> {
     const seatIndex = this.seats.findIndex((s) => s?.socket === socket);
     const draft = seatIndex < 0 ? undefined : this.seats[seatIndex]?.draft;
-    if (!draft || this.draftEndsAt === null) {
-      return this.send(socket, { type: 'error', reason: 'not drafting' });
-    }
+    // Dropped rather than answered. The client batches its build, so a deck can
+    // still be in flight when the clock runs out or the last player finishes,
+    // and the sender is by then in a match that is starting. Telling them off
+    // for it ended the session of a player who did nothing wrong.
+    if (!draft || this.draftEndsAt === null) return;
 
     if (msg.type === 'draftOpened') {
       // Only ever forwards, and never past the packs that were dealt: the count
@@ -602,7 +636,16 @@ export class MatchRoom extends DurableObject {
     // answered before anything looks for a game that has not been dealt yet.
     if (this.draftEndsAt !== null) {
       if (Date.now() < this.draftEndsAt) return;
-      return this.finishDraft();
+      // Its own entry point, so its own guard: a throw here is not attached to
+      // any one socket and would take the whole room with it.
+      try {
+        return await this.finishDraft();
+      } catch (err) {
+        console.error('finishDraft threw', err);
+        this.draftEndsAt = null;
+        this.broadcast({ type: 'error', reason: 'The draft could not be finished.' });
+        return;
+      }
     }
     if (!this.state || !this.clock) return;
     // The alarm can outlive the clock it was set for if an action landed in the

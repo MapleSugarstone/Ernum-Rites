@@ -16,6 +16,7 @@ import type { Action } from '../engine/actions';
 import { digestShort } from '../engine/digest';
 import { applyAction } from '../engine/engine';
 import { publicView } from '../engine/redact';
+import { note } from '../ui/diagnostics';
 import { BUILD_VERSION } from '../version';
 import type { GameState } from '../engine/state';
 import type { Clock } from '../engine/timing';
@@ -128,6 +129,8 @@ export class NetClient {
   private gaveUp = false;
   /** How the last socket ended, for the report. Empty until one has. */
   private lastClose = '';
+  /** What the socket called itself when this side let go of it. */
+  private lastReadyState: number | null = null;
   /** This client's own copy, kept in step so pushes can be checked against it. */
   private mirror: GameState | null = null;
 
@@ -136,7 +139,7 @@ export class NetClient {
   health(): NetHealth {
     return {
       quietMs: this.lastHeard ? Date.now() - this.lastHeard : -1,
-      readyState: this.socket?.readyState ?? WebSocket.CLOSED,
+      readyState: this.socket?.readyState ?? this.lastReadyState ?? WebSocket.CLOSED,
       lastClose: this.lastClose,
     };
   }
@@ -268,21 +271,36 @@ export class NetClient {
         // is a connection that died with nothing said, while 1000 or 1001 is an
         // end that announced itself.
         this.lastClose = `code ${ev.code}${ev.wasClean ? ' clean' : ''}`;
-        // Named in the reason, so the journal and the report agree on which
-        // kind of ending this was without the player having to know the codes.
-        if (wasLive) {
-          this.handlers.onError(
-            ev.code === 1006 ? 'the connection died without closing' : 'the connection closed',
-          );
-          return;
-        }
-        // A quiet close carries no error event: the network went away or the
-        // server hung up. Left unreported, the board keeps taking clicks that
-        // go nowhere; surfaced, the player learns the moment it happens.
+        // The one place an ending is reported, and it names which ending it was
+        // rather than saying only that there was one. A close that never opened
+        // is a room that could not be reached; 1006 is a connection that died
+        // with nothing said; anything else announced itself.
+        //
+        // Nothing is lost by leaving it all to this listener. A socket that
+        // fails always fires 'error' and then 'close', and reporting on the
+        // error meant the handler had already torn these listeners down and
+        // walked to the lobby by the time the code arrived, so every one of
+        // these faults reached the player as the same four words.
+        this.handlers.onError(
+          !wasLive
+            ? 'the room could not be reached'
+            : ev.code === 1006
+              ? 'the connection died without closing'
+              : 'the connection closed',
+        );
       },
       on,
     );
-    socket.addEventListener('error', () => this.handlers.onError('the connection dropped'), on);
+    // Left deliberately silent. The close that always follows is what reports.
+    socket.addEventListener('error', () => note('socket error'), on);
+    // Deliberately not on the abort signal. An abnormal close fires 'error'
+    // first, the handler tears the listeners down on its way to the lobby, and
+    // the close code that says which fault this was arrives after that. Left on
+    // the signal it is never recorded, and the report cannot tell a socket that
+    // died mid-match from one the room closed cleanly.
+    socket.addEventListener('close', (ev) => {
+      this.lastClose = `code ${ev.code}${ev.wasClean ? ' clean' : ''}`;
+    });
   }
 
   private stopTimers(): void {
@@ -316,6 +334,9 @@ export class NetClient {
   }
 
   close(): void {
+    // What the socket last called itself, since the field is about to be gone
+    // and health() would otherwise report every ending as a plain close.
+    this.lastReadyState = this.socket?.readyState ?? null;
     // Before the close itself, so nothing the teardown raises comes back.
     this.live?.abort();
     this.live = null;

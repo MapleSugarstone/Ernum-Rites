@@ -24,7 +24,7 @@ import './cards';
  * check and then fall out of step mid-match, which is the thing the check exists
  * to prevent, so behaviour changes are counted here instead.
  */
-const RULES_REVISION = 8;
+const RULES_REVISION = 9;
 
 function computeVersion(): string {
   const parts = allCards()

@@ -594,11 +594,6 @@ public static class Engine
         Effects.ToDiscard(state, caster, id);
         if (state.Winner >= 0) return;
         var p = state.Players[caster];
-        foreach (var s in p.Slots)
-        {
-            if (s is not null) Effects.FireTrigger(state, s, TriggerName.OnSpellCast);
-        }
-        if (p.Leader is not null) Effects.FireTrigger(state, p.Leader, TriggerName.OnSpellCast);
         // The spell is already in the discard pile, so its index there is how the
         // other side's triggers get told which one was cast.
         var foe = state.Players[GameState.Other(caster)];
@@ -609,12 +604,23 @@ public static class Engine
             Index = p.Discard.Count - 1,
         };
         var one = new[] { castRef };
-        foreach (var s in foe.Slots)
+        // One round of answers per cast. An echo is a second cast rather than a
+        // louder first one, so a card that answers a cast answers both, and the
+        // rounds run after the discard because that is what names the spell.
+        for (int i = 0; i < times && state.Winner < 0; i++)
         {
-            if (s is not null) Effects.FireTrigger(state, s, TriggerName.OnEnemySpellCast, one);
+            foreach (var s in p.Slots)
+            {
+                if (s is not null) Effects.FireTrigger(state, s, TriggerName.OnSpellCast);
+            }
+            if (p.Leader is not null) Effects.FireTrigger(state, p.Leader, TriggerName.OnSpellCast);
+            foreach (var s in foe.Slots)
+            {
+                if (s is not null) Effects.FireTrigger(state, s, TriggerName.OnEnemySpellCast, one);
+            }
+            if (foe.Leader is not null)
+                Effects.FireTrigger(state, foe.Leader, TriggerName.OnEnemySpellCast, one);
         }
-        if (foe.Leader is not null)
-            Effects.FireTrigger(state, foe.Leader, TriggerName.OnEnemySpellCast, one);
     }
 
     /// <summary>

@@ -120,17 +120,11 @@ public static class Purple
         K.Summon(1, "skeleton", "Skeleton", F(Faction.Spirit),
             str: 1,
             hp: 3,
-            text: "Deathrattle: Adds its level plus 1 to your debt, then returns to your hand.",
-            // The engine bills a death for the body's level after this fires, so
-            // the extra point is added here and the two land together.
-            triggers: new Triggers
-            {
-                OnDeath = c =>
-                {
-                    c.AddDebt(c.Me, 1, "The bones are owed for twice over.");
-                    c.ReturnToHand();
-                },
-            },
+            text: "Deathrattle: Adds its level to your debt, then returns to your hand.",
+            // The debt is the engine billing every death for the body's level,
+            // which happens after this fires. Printed because the loop is the
+            // card, and what a lap costs is the only thing keeping it honest.
+            triggers: new Triggers { OnDeath = c => c.ReturnToHand() },
             flipText: "Shuffle a Rot into the enemy's deck.",
             flip: c => c.Curse(c.Opp, "o-curse-rot", 1)),
 

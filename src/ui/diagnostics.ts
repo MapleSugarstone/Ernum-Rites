@@ -1,6 +1,7 @@
 import { digestShort } from '../engine/digest';
 import { publicView } from '../engine/redact';
 import { currentActor, isOver, type GameState } from '../engine/state';
+import type { NetHealth } from '../net/client';
 import { BUILD_VERSION } from '../version';
 
 /**
@@ -40,6 +41,39 @@ export function note(what: string): void {
 
 export function clearJournal(): void {
   journal.length = 0;
+}
+
+/**
+ * What a failing match knew about itself at the moment it failed.
+ *
+ * Dropping back to the lobby clears the seat, the room code and the phase,
+ * because the lobby has to be drawn without them. A report written after that
+ * calls an online match local and cannot name the room, which is every fact a
+ * dropped connection is reported for. So the volatile half is taken here, while
+ * it is still true, and the half that only settles afterwards (how the socket
+ * ended, which the browser announces after the error that started all this) is
+ * read when the report is finally asked for.
+ */
+export type CloseSnapshot = Omit<CloseContext, 'health'> & {
+  health?: Omit<NetHealth, 'lastClose'>;
+};
+
+let snapshot: CloseSnapshot | null = null;
+
+export function recordClose(ctx: CloseSnapshot): void {
+  snapshot = ctx;
+}
+
+/** Forget the last failure, so a new session cannot hand over an old report. */
+export function clearClose(): void {
+  snapshot = null;
+}
+
+/** The captured failure, finished with whatever the socket has since admitted. */
+export function capturedClose(lastClose: string): CloseContext | null {
+  if (!snapshot) return null;
+  const health = snapshot.health ? { ...snapshot.health, lastClose } : undefined;
+  return { ...snapshot, health };
 }
 
 export interface CloseContext {

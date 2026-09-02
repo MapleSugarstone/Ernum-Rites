@@ -605,16 +605,21 @@ function resolveSpell(
   toDiscard(state, caster, id);
   if (state.winner !== null) return;
   const p = state.players[caster];
-  for (const s of [...p.slots, p.leader]) {
-    if (s) fireTrigger(state, s, 'onSpellCast');
-  }
   // The spell is already in the discard pile, so its index there is how the
   // other sides' triggers get told which one was cast.
   const cast: TargetRef = { kind: 'discard', player: caster, index: p.discard.length - 1 };
-  for (const foeIdx of livingOpponents(state, caster)) {
-    const foe = state.players[foeIdx];
-    for (const s of [...foe.slots, foe.leader]) {
-      if (s) fireTrigger(state, s, 'onEnemySpellCast', [cast]);
+  // One round of answers per cast. An echo is a second cast rather than a
+  // louder first one, so a card that answers a cast answers both, and the
+  // rounds run after the discard because that is what names the spell.
+  for (let i = 0; i < times && state.winner === null; i++) {
+    for (const s of [...p.slots, p.leader]) {
+      if (s) fireTrigger(state, s, 'onSpellCast');
+    }
+    for (const foeIdx of livingOpponents(state, caster)) {
+      const foe = state.players[foeIdx];
+      for (const s of [...foe.slots, foe.leader]) {
+        if (s) fireTrigger(state, s, 'onEnemySpellCast', [cast]);
+      }
     }
   }
 }

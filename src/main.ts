@@ -16,7 +16,7 @@ import {
 } from './engine/effects';
 import { everyDeck, starterDecks, type StarterDeck } from './cards';
 import { HIDDEN_ID } from './engine/redact';
-import { closeReport, note } from './ui/diagnostics';
+import { capturedClose, clearClose, closeReport, note, recordClose } from './ui/diagnostics';
 import {
   BROWSE_TABS,
   DECK_SIZE,
@@ -4652,11 +4652,17 @@ function renderOnline(): string {
     { label: 'Starter decks', options: starterDecks.map((d) => ({ value: d.key, label: d.name })) },
   ].filter((g) => g.options.length > 0);
   // A match that dropped leaves its report behind: the player is on this screen
-  // precisely because they cannot ask the board what happened any more.
+  // precisely because they cannot ask the board what happened any more. Only a
+  // match that dropped, though. An illegal deck or a bad room code is a message
+  // the player can act on by themselves, and a report offered beside it says
+  // nothing except that something went wrong.
+  const dropped = !!capturedClose('');
   const status = o.error
     ? `<p class="lobbyerr lobbystatus">${esc(o.error)}</p>`
-      + '<p class="lobbystatus"><button data-act="btn" data-cmd="copy-report">'
-      + `${ui.reportCopied ? 'Copied' : 'Copy match report'}</button></p>`
+      + (dropped
+        ? '<p class="lobbystatus"><button data-act="btn" data-cmd="copy-report">'
+          + `${ui.reportCopied ? 'Copied' : 'Copy match report'}</button></p>`
+        : '')
     : badName && o.name.trim().length > 0
       ? `<p class="lobbyerr lobbystatus">${esc(badName)}</p>`
     : o.phase === 'seeking'
@@ -5951,9 +5957,21 @@ function netClient(): NetClient {
       clearActionFx();
     },
     onDraft(packs, endsAt, totalMs) {
+      const held = ui.draft.packs;
+      // The room answers a resync mid-draft by dealing the same packs again, so
+      // the same cards arriving is the room repeating itself rather than a new
+      // draft. Taken whole it would throw away everything already opened and
+      // every card chosen, and put the player back on pack one.
+      const repeat =
+        held.length === packs.length &&
+        held.every((p, i) => p.length === packs[i].length && p.every((id, j) => id === packs[i][j]));
+      if (repeat) {
+        ui.draft.endsAt = endsAt;
+        ui.draft.totalMs = totalMs;
+        render();
+        return;
+      }
       note(`drafting ${packs.length} packs`);
-      // Dealt once, when the room fills. A second deal would be the room saying
-      // the draft restarted, which it never does, so the pool is taken whole.
       ui.draft = { ...newDraft(), packs, endsAt, totalMs };
       ui.online.phase = 'drafting';
       ui.screen = 'draft';
@@ -6034,6 +6052,20 @@ let rejoinTried = false;
 
 /** Drop back to the lobby with something to read. */
 function failOnline(reason: string): void {
+  // Before anything is torn down. The reset below drops the seat, the room code
+  // and the phase, so a report built after it calls an online match local and
+  // has no room to name, which is the whole of what a dropped connection has to
+  // say for itself. The quiet stretch is frozen here too: measured later it
+  // grows with however long the player took to reach for the button.
+  const health = net?.health();
+  recordClose({
+    reason,
+    state: ui.state,
+    seat: ui.online.seat,
+    roomCode: ui.online.roomCode,
+    online: ui.online.phase === 'playing' || ui.online.phase === 'waiting',
+    ...(health ? { health: { quietMs: health.quietMs, readyState: health.readyState } } : {}),
+  });
   stopRopeWatch();
   stopDraftWatch();
   net?.close();
@@ -6078,6 +6110,9 @@ async function startOnline(how: 'public' | 'host' | 'join'): Promise<void> {
     return;
   }
   o.error = null;
+  // A new attempt owns the report from here, so the last failure cannot be
+  // handed over as though it described this one.
+  clearClose();
   o.roomCode = null;
   o.phase = how === 'public' ? 'seeking' : 'connecting';
   render();
@@ -6498,16 +6533,21 @@ function handleBuilderCommand(cmd: string): boolean {
       // Built at the moment it is asked for, so it describes the board the
       // player is looking at rather than whatever it looked like when the
       // trouble started.
-      const text = closeReport({
-        reason: ui.state && isOver(ui.state)
-          ? (ui.state.winReason ?? 'the match ended')
-          : (ui.online.error ?? ui.error ?? 'the match stopped'),
-        state: ui.state,
-        seat: ui.online.seat,
-        roomCode: ui.online.roomCode,
-        online: ui.online.phase === 'playing',
-        health: net?.health(),
-      });
+      // The failure snapshot when there is one, finished with the close code,
+      // which the browser only announces after the error that starts the drop.
+      const text =
+        closeReport(
+          capturedClose(net?.health().lastClose ?? '') ?? {
+            reason: ui.state && isOver(ui.state)
+              ? (ui.state.winReason ?? 'the match ended')
+              : (ui.online.error ?? ui.error ?? 'the match stopped'),
+            state: ui.state,
+            seat: ui.online.seat,
+            roomCode: ui.online.roomCode,
+            online: ui.online.phase === 'playing',
+            health: net?.health(),
+          },
+        );
       // Selecting nothing to fall back on, so the text goes to the console as
       // well: without a secure context the clipboard is simply refused, and a
       // player who cannot copy it can still read it out of the log.
