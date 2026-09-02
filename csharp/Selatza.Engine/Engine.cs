@@ -1093,6 +1093,9 @@ public static class Engine
             case ActionType.PassResponse:
             {
                 if (state.Pending is null || state.Pending.Player != actor) return "No response window is open.";
+                // A window only opens for a player already holding a trap that
+                // answers it, so declining is a decision rather than an absence.
+                Effects.Log(state, actor, $"{state.Players[actor].Name} holds their trap.");
                 if (state.Pending.Spell is { } sp2)
                 {
                     state.Pending = null;

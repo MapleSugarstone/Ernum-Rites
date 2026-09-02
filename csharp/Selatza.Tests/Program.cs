@@ -517,6 +517,32 @@ public static class Program
                 "the echoed cast answers twice");
         });
 
+        Harness.Test("Digital Rabbits searches the whole deck, not the top of it", () =>
+        {
+            // "From your deck" names no number, so six cards was never a search.
+            var s = Game();
+            s = PassTo(s, 0);
+            var p = s.Players[0];
+            p.Deck.Clear();
+            for (int i = 0; i < 39; i++) p.Deck.Add(D1);
+            p.Deck.Add("r2-digitalrabbits");
+            s = Place(s, 0, "r2-digitalrabbits", 0);
+            Harness.Eq(1, s.ChoiceQueue.Count, "a choice is waiting");
+            Harness.Eq(1, s.ChoiceQueue[0].Cards!.Length, "only the match is shown");
+            Harness.Eq("r2-digitalrabbits", s.ChoiceQueue[0].Cards![0], "and it is the copy");
+        });
+
+        Harness.Test("a search with nothing to find asks nothing", () =>
+        {
+            var s = Game();
+            s = PassTo(s, 0);
+            var p = s.Players[0];
+            p.Deck.Clear();
+            for (int i = 0; i < 39; i++) p.Deck.Add(D1);
+            s = Place(s, 0, "r2-digitalrabbits", 0);
+            Harness.Eq(0, s.ChoiceQueue.Count, "no prompt with nothing to answer");
+        });
+
         Harness.Test("Screener counts an ally Machine leader on its last HP card", () =>
         {
             // An ally is an ally wherever it stands. The caller already ran the

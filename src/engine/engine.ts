@@ -1030,6 +1030,10 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
       if (!state.pending || state.pending.player !== actor) {
         return 'No response window is open.';
       }
+      // A window only opens for a player already holding a trap that answers it,
+      // so declining is a decision rather than an absence, and the retelling of
+      // the match is poorer without it.
+      log(state, actor, `${state.players[actor].name} holds their trap.`);
       if (state.pending.spell) {
         const sp = state.pending.spell;
         // Passing hands the window down the queue before the spell resolves.

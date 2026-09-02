@@ -26,6 +26,13 @@ import { everyDeck, starterDecks, type StarterDeck } from './cards';
 import { HIDDEN_ID } from './engine/redact';
 import { capturedClose, clearClose, closeReport, note, recordClose } from './ui/diagnostics';
 import {
+  forgetMatch,
+  matchRetelling,
+  rememberedMatch,
+  rememberMatch,
+  retellingFilename,
+} from './ui/retelling';
+import {
   BROWSE_TABS,
   DECK_SIZE,
   RARITY_FILTERS,
@@ -3000,13 +3007,22 @@ function promptHtml(state: GameState): string {
   const dead = (label: string) => `<button disabled>${esc(label)}</button>`;
 
   if (isOver(state)) {
+    // Kept now rather than when the button is pressed: leaving the table
+    // throws the board away, and the lobby still has to be able to tell it.
+    rememberMatch({
+      state,
+      seat: ui.online.seat,
+      roomCode: ui.online.roomCode,
+      online: ui.online.phase === 'playing' || !!ui.online.roomCode,
+      when: new Date().toISOString(),
+    });
     // A drawn match has no winner to name: the caps end one, and so does a blow
     // that takes both leaders.
     const title = state.winner === null ? 'Draw' : `${esc(state.players[state.winner].name)} wins`;
     return `<div class="banner">
       <h2>${title}</h2>
       <p>${esc(state.winReason ?? '')}</p>
-      <div class="row">${btn('new-game', 'New match', 'primary')}</div>
+      <div class="row">${btn('new-game', 'New match', 'primary')}${btn('export-retelling', 'Save replay')}</div>
     </div>`;
   }
 
@@ -4768,6 +4784,14 @@ function renderOnline(): string {
       }</p>
 
       ${status}
+      ${
+        // A finished match is still in hand after leaving the table, so the
+        // story of it can be saved from the lobby as well as from the banner.
+        rememberedMatch()
+          ? '<button class="lobbybtn" data-act="btn" data-cmd="export-retelling">' +
+            'Save replay</button>'
+          : ''
+      }
 
       <button class="lobbybtn" data-act="btn" data-cmd="o-seek" ${
         blocked || o.party > 2 ? 'disabled' : ''
@@ -5876,6 +5900,7 @@ function netClient(): NetClient {
   net = new NetClient(serverBase(), {
     onSeated(seat, kind, code, token) {
       note(`seated as seat ${seat}${code ? ` in room ${code}` : ''}`);
+      forgetMatch();
       ui.online.seat = seat;
       ui.online.roomCode = code ?? ui.online.roomCode;
       desyncStrikes = 0;
@@ -6726,6 +6751,24 @@ function handleBuilderCommand(cmd: string): boolean {
       leaveOnline();
       ui.screen = 'setup';
       break;
+    case 'export-retelling': {
+      // The board in hand when there is one, and otherwise the copy kept when
+      // the result landed, which is all the lobby has left of it.
+      if (ui.state) {
+        const now = {
+          state: ui.state,
+          seat: ui.online.seat,
+          roomCode: ui.online.roomCode,
+          online: ui.online.phase === 'playing' || !!ui.online.roomCode,
+          when: new Date().toISOString(),
+        };
+        download(retellingFilename(now), matchRetelling(now), 'text/plain');
+        break;
+      }
+      const kept = rememberedMatch();
+      if (kept) download(kept.filename, kept.text, 'text/plain');
+      break;
+    }
     case 'copy-report': {
       // Built at the moment it is asked for, so it describes the board the
       // player is looking at rather than whatever it looked like when the
@@ -6979,6 +7022,9 @@ function playOpeningDraw(seat: PlayerIdx): void {
 }
 
 function startMatch(decks: [DeckList, DeckList]): void {
+  // A new match owns the story from here, so the last one cannot be offered as
+  // though it were this one.
+  forgetMatch();
   const seed = Math.floor(Math.random() * 0x7fffffff);
   // Who opens is a coin toss, taken off the seed rather than a second roll so
   // the seed on its own still reproduces the whole match.

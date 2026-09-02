@@ -820,6 +820,12 @@ export interface EffectCtx {
     match: (c: CardDef) => boolean,
     opts?: { effect?: string; prompt?: string; at?: TargetRef },
   ): void;
+  /** Search a whole deck for matching cards and offer only those. */
+  search(
+    player: PlayerIdx,
+    match: (c: CardDef) => boolean,
+    opts?: { effect?: string; prompt?: string; at?: TargetRef },
+  ): void;
   /** Defer a board pick to this effect's controller, resolved by a registered key. */
   choose(
     effect: string,

@@ -237,7 +237,7 @@ public static class Mixed
             }),
 
         Bp.Spell("visitor", "The Visitor", new Cost(F: 1, O: 2),
-            "Take control of an enemy summon with 2 or less HP left.",
+            "Take control of an enemy summon with 2 or less HP left, and sap it.",
             Specs(new TargetSpec
             {
                 Kind = TargetKind.Summon,

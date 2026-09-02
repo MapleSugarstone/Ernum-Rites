@@ -177,6 +177,11 @@ public sealed class EffectCtx
         string effect = "scry", string prompt = "Take a card", TargetRef? at = null) =>
         Effects.DigForCard(State, player, count, match, Card.Id, effect, prompt, at);
 
+    /// <summary>Search a whole deck for matching cards and offer only those.</summary>
+    public void Search(int player, Func<CardDef, bool> match,
+        string effect = "scry", string prompt = "Take a card", TargetRef? at = null) =>
+        Effects.SearchDeckFor(State, player, match, Card.Id, effect, prompt, at);
+
     /// <summary>Defer a board pick to this effect's controller, resolved by a registered key.</summary>
     // Default the anchor to the body asking. The client draws the targeting
     // arrow from here, and without it the arrow springs from nowhere.
@@ -1225,6 +1230,48 @@ public static class Effects
     /// pending choice, and the player picks a legal one. The unpicked cards go
     /// to the bottom of the deck when the generic "scry" resolver runs.
     /// </summary>
+    /// <summary>
+    /// A search of the whole deck rather than a look at the top of it. Only the
+    /// matches are pulled out and shown: a card that says "from your deck"
+    /// promises the deck, and showing the rest would hand its owner the order of
+    /// every draw to come for nothing. Unpicked matches go back to the bottom the
+    /// way a scry's leftovers do. Nothing is queued when there is nothing to find.
+    /// </summary>
+    public static void SearchDeckFor(GameState state, int player,
+        Func<CardDef, bool> match, string source, string effect = "scry",
+        string prompt = "Take a card", TargetRef? at = null)
+    {
+        var p = state.Players[player];
+        var found = new List<string>();
+        for (int i = 0; i < p.Deck.Count; )
+        {
+            if (match(Registry.Card(p.Deck[i])))
+            {
+                found.Add(p.Deck[i]);
+                p.Deck.RemoveAt(i);
+            }
+            else i++;
+        }
+        if (found.Count == 0)
+        {
+            Log(state, player, "The search turns up nothing.");
+            return;
+        }
+        var legal = new int[found.Count];
+        for (int i = 0; i < found.Count; i++) legal[i] = i;
+        state.ChoiceQueue.Add(new PendingChoice
+        {
+            Player = player,
+            Source = source,
+            Effect = effect,
+            Prompt = prompt,
+            Cards = found.ToArray(),
+            Legal = legal,
+            Optional = true,
+            At = at,
+        });
+    }
+
     public static void DigForCard(GameState state, int player, int count,
         Func<CardDef, bool> match, string source, string effect = "scry",
         string prompt = "Take a card", TargetRef? at = null)

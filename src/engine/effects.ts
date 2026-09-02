@@ -800,6 +800,47 @@ export function digForCard(
 }
 
 /**
+ * A search of the whole deck rather than a look at the top of it.
+ *
+ * Only the matches are pulled out and shown. A card that says "from your deck"
+ * promises the deck, and showing the rest of it as well would hand its owner the
+ * order of every draw to come for nothing. Unpicked matches go back the way a
+ * scry's leftovers do, to the bottom, so the cards that were not found keep the
+ * order they were in.
+ *
+ * Nothing is queued when there is nothing to find. A prompt whose only answer is
+ * to acknowledge it is worse than a line in the log.
+ */
+export function searchDeckFor(
+  state: GameState,
+  player: PlayerIdx,
+  match: (c: CardDef) => boolean,
+  opts: { source?: string; effect?: string; prompt?: string; at?: TargetRef } = {},
+): void {
+  const p = state.players[player];
+  const found: string[] = [];
+  // No increment after a splice: the next card shifts down into this index.
+  for (let i = 0; i < p.deck.length; ) {
+    if (match(card(p.deck[i]))) found.push(...p.deck.splice(i, 1));
+    else i++;
+  }
+  if (found.length === 0) {
+    log(state, player, 'The search turns up nothing.');
+    return;
+  }
+  state.choiceQueue.push({
+    player,
+    source: opts.source ?? '',
+    effect: opts.effect ?? 'scry',
+    prompt: opts.prompt ?? 'Take a card',
+    cards: found,
+    legal: found.map((_, i) => i),
+    optional: true,
+    ...(opts.at ? { at: opts.at } : {}),
+  });
+}
+
+/**
  * A scry across the table: the cards come off the victim's deck but the other
  * player picks. Every resolver for one of these reads the victim back off the
  * choice as the player who is not choosing, so the leftovers go home.
@@ -1399,6 +1440,11 @@ export function makeEffectCtx(
       match: (c: CardDef) => boolean,
       opts: { effect?: string; prompt?: string; at?: TargetRef } = {},
     ) => digForCard(state, player, count, match, { source: def.id, ...opts }),
+    search: (
+      player: PlayerIdx,
+      match: (c: CardDef) => boolean,
+      opts: { effect?: string; prompt?: string; at?: TargetRef } = {},
+    ) => searchDeckFor(state, player, match, { source: def.id, ...opts }),
     choose: (
       effect: string,
       refs: TargetRef[],

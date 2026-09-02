@@ -233,7 +233,7 @@ public static class Green
                 OnEnter = c =>
                 {
                     if (c.EmptySlot(c.Me) is null) return;
-                    c.Dig(c.Me, 6, d => d.Id == "r2-digitalrabbits",
+                    c.Search(c.Me, d => d.Id == "r2-digitalrabbits",
                         effect: "rabbits", prompt: "Put a Digital Rabbits into an empty slot");
                 },
             }),

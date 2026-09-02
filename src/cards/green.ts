@@ -253,7 +253,7 @@ export const greenCards: CardDef[] = [
     triggers: {
       onEnter: (c) => {
         if (c.emptySlot(c.me) === null) return;
-        c.dig(c.me, 6, (d) => d.id === 'r2-digitalrabbits', {
+        c.search(c.me, (d) => d.id === 'r2-digitalrabbits', {
           effect: 'rabbits',
           prompt: 'Put a Digital Rabbits into an empty slot',
         });

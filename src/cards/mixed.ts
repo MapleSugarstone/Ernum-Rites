@@ -264,7 +264,7 @@ export const mixedCards: CardDef[] = [
     },
   }),
   bp.spell('visitor', 'The Visitor', { F: 1, O: 2 }, {
-    text: 'Take control of an enemy summon with 2 or less HP left.',
+    text: 'Take control of an enemy summon with 2 or less HP left, and sap it.',
     targets: [
       {
         kind: 'summon',
