@@ -2894,10 +2894,7 @@ function promptHtml(state: GameState): string {
     return `<div class="banner">
       <h2>${title}</h2>
       <p>${esc(state.winReason ?? '')}</p>
-      <div class="row">
-        ${btn('new-game', 'New match', 'primary')}
-        ${btn('copy-report', ui.reportCopied ? 'Copied' : 'Copy report')}
-      </div>
+      <div class="row">${btn('new-game', 'New match', 'primary')}</div>
     </div>`;
   }
 

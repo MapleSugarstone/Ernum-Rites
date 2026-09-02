@@ -31,6 +31,10 @@ export function robotCopy(sourceId: string): string {
     ...src,
     id: `gen-hack-${sourceId}`,
     color: 'R',
+    // Neutral is not a colour: colorsOf returns nothing for it, so a rebuilt
+    // card that keeps the flag brings no colour to a deck and still pays
+    // colourless, whatever its colour field now says.
+    neutral: undefined,
     artTint: 'robot',
     color2: undefined,
     color3: undefined,
@@ -60,6 +64,10 @@ export function oilRaise(sourceId: string): string {
   return registerGenerated({
     ...src,
     id: `gen-raise-${sourceId}`,
+    // Neutral is not a colour: colorsOf returns nothing for it, so a rebuilt
+    // card that keeps the flag brings no colour to a deck and still pays
+    // colourless, whatever its colour field now says.
+    neutral: undefined,
     color: 'O',
     artTint: 'oil',
     color2: undefined,
@@ -97,6 +105,10 @@ export function oilCopy(sourceId: string): string {
     ...src,
     id: `gen-oil-${sourceId}`,
     color: 'O',
+    // Neutral is not a colour: colorsOf returns nothing for it, so a rebuilt
+    // card that keeps the flag brings no colour to a deck and still pays
+    // colourless, whatever its colour field now says.
+    neutral: undefined,
     artTint: 'oil',
     color2: undefined,
     color3: undefined,
@@ -130,6 +142,10 @@ export function malwareCopy(sourceId: string): string {
     ...src,
     id: `gen-malware-${sourceId}`,
     color: 'O',
+    // Neutral is not a colour: colorsOf returns nothing for it, so a rebuilt
+    // card that keeps the flag brings no colour to a deck and still pays
+    // colourless, whatever its colour field now says.
+    neutral: undefined,
     color2: 'R',
     color3: 'P',
     artTint: 'malware',

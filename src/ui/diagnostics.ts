@@ -11,6 +11,10 @@ import { BUILD_VERSION } from '../version';
  * happened is, and the player should not have to reproduce the fault to give it:
  * the run is already over by the time they notice.
  *
+ * Offered on the online screen after a match drops, and nowhere else. A game
+ * that simply ended needs no report, and a button on that banner is one more
+ * thing between a player and the next match.
+ *
  * Everything here is public. The journal records what the room said and what
  * this client did, never a hand, a deck order or a face-down card, so a player
  * can paste it anywhere without giving away a position they are still playing.

@@ -29,7 +29,10 @@ public static class Generated
             Hp = src.Hp,
             Level = src.Level,
             Factions = src.Factions,
-            Neutral = src.Neutral,
+            // Neutral is not a colour: ColorsOf returns nothing for it, so a
+            // rebuilt card that keeps the flag brings no colour to a deck and
+            // still pays colourless, whatever its colour field now says.
+            Neutral = false,
             Redirect = src.Redirect,
             SpellImmune = src.SpellImmune,
             EffectDamage = src.EffectDamage,
@@ -99,7 +102,10 @@ public static class Generated
             Hp = src.Hp,
             Level = src.Level,
             Factions = src.Factions,
-            Neutral = src.Neutral,
+            // Neutral is not a colour: ColorsOf returns nothing for it, so a
+            // rebuilt card that keeps the flag brings no colour to a deck and
+            // still pays colourless, whatever its colour field now says.
+            Neutral = false,
             Redirect = src.Redirect,
             SpellImmune = src.SpellImmune,
             EffectDamage = src.EffectDamage,
@@ -176,7 +182,10 @@ public static class Generated
             Hp = src.Hp,
             Level = src.Level,
             Factions = src.Factions,
-            Neutral = src.Neutral,
+            // Neutral is not a colour: ColorsOf returns nothing for it, so a
+            // rebuilt card that keeps the flag brings no colour to a deck and
+            // still pays colourless, whatever its colour field now says.
+            Neutral = false,
             Redirect = src.Redirect,
             SpellImmune = src.SpellImmune,
             EffectDamage = src.EffectDamage,
@@ -251,7 +260,10 @@ public static class Generated
             Hp = src.Hp + 2,
             Level = src.Level,
             Factions = factions.ToArray(),
-            Neutral = src.Neutral,
+            // Neutral is not a colour: ColorsOf returns nothing for it, so a
+            // rebuilt card that keeps the flag brings no colour to a deck and
+            // still pays colourless, whatever its colour field now says.
+            Neutral = false,
             Redirect = src.Redirect,
             SpellImmune = src.SpellImmune,
             EffectDamage = src.EffectDamage,
