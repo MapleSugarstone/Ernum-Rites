@@ -605,6 +605,14 @@ export const blueCards: CardDef[] = [
   }),
   k.trap('scooba', 'Trap: Scooba', { F: 1 }, {
     text: "Shuffle the attacking summon into its owner's deck.",
+    // A leader has no slot to leave and never goes back to a deck, so an attack
+    // led by one is not a window this can answer. Without saying so it offered
+    // itself against a leader and did nothing when sprung.
+    trapUseful: (c) => {
+      const a = battleAttacker(c.state);
+      const s = a ? c.summonAt(a) : null;
+      return !!s && !s.isLeader;
+    },
     effect: (c) => {
       const a = battleAttacker(c.state);
       if (a) c.shuffleIntoDeck(a);

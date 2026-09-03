@@ -71,6 +71,7 @@ import {
   createGame,
   effectiveStrength,
   flipWouldFire,
+  trapWouldFire,
   legalAttackTargets,
   manaKindFor,
   NEEDS_ENEMY,
@@ -426,6 +427,10 @@ function trapLive(state: GameState, me: PlayerIdx, def: CardDef): boolean {
   }
   const p = state.players[me];
   if (!canPay(p, costFor(p, def))) return false;
+  // The card's own answer about the window in front of it, which is narrower
+  // than "does a target exist": a trap can have nothing to point at and still
+  // be unable to touch what is attacking.
+  if (!trapWouldFire(state, me, def)) return false;
   return hasTargets(state, me, def);
 }
 

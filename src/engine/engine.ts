@@ -6,6 +6,7 @@ import {
   drawCards,
   effectiveStrength,
   flipWouldFire,
+  trapWouldFire,
   oppWasWanted,
   strengthSourcesOf,
   supporterLocked,
@@ -981,6 +982,11 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
       } else if (pending.spell && !def.spellTrap) {
         return `${def.name} only answers attacks.`;
       }
+      // Refused rather than spent. The card stays in hand and the window stays
+      // open, because a trap that cannot touch what it is being sprung at has
+      // not been used: springing it would cost the mana and the card for
+      // nothing, which is what the client's own gate exists to prevent.
+      if (!trapWouldFire(state, actor, def)) return `${def.name} cannot answer this.`;
       const bad = validateTargets(state, actor, def.targets, action.targets, def);
       if (bad) return bad;
       const paid = costFor(me, def);
@@ -1261,4 +1267,4 @@ export function applyAction(
   return { ok: true, state: next };
 }
 
-export { effectiveStrength, flipWouldFire, strengthSourcesOf };
+export { effectiveStrength, flipWouldFire, strengthSourcesOf, trapWouldFire };

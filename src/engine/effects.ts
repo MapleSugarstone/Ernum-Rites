@@ -1775,6 +1775,21 @@ function makeFlipCheckCtx(
 }
 
 /**
+ * Whether a trap could answer the window that is open. Mirrors `flipWouldFire`:
+ * a card that prints no opinion is always worth offering, and the one that does
+ * answers for the windows its effect cannot touch.
+ */
+export function trapWouldFire(state: GameState, me: PlayerIdx, def: CardDef): boolean {
+  if (!def.trapUseful) return true;
+  return def.trapUseful({
+    state,
+    me,
+    opp: defaultOpp(state, me),
+    summonAt: (target: TargetRef) => findSummon(state, target),
+  });
+}
+
+/**
  * Whether paying for the flip at the head of the queue would change anything.
  * A card that prints no opinion is always worth asking about; the ones that do
  * answer for positions where the effect would find nothing to work on.

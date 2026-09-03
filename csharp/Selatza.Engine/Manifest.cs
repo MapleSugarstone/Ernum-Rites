@@ -61,6 +61,7 @@ public static class Manifest
             + $"\"powers\":[{string.Join(",", powers)}],"
             + $"\"flip\":{L(c.Flip is not null)},"
             + $"\"flipUseful\":{L(c.FlipUseful is not null)},"
+            + $"\"trapUseful\":{L(c.TrapUseful is not null)},"
             + $"\"flipCost\":{J(CostString(c.FlipCost))},"
             + $"\"triggers\":{J(TriggerList(c))},"
             + $"\"stage\":{J(StageList(c))}"

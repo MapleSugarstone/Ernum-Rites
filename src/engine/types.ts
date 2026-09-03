@@ -739,6 +739,12 @@ export interface CardDef {
    * Absent means always worth asking.
    */
   flipUseful?: (ctx: FlipCheckCtx) => boolean;
+  /**
+   * Whether this trap can answer the window that is open. A trap that prints no
+   * opinion always can; the one that does answers for a window its effect would
+   * find nothing to do in, so the game does not offer it as a live response.
+   */
+  trapUseful?: (ctx: TrapCheckCtx) => boolean;
   /** stage only. A stage stays in play and applies these continuously. */
   stageHooks?: StageHooks;
 }
@@ -972,6 +978,15 @@ export interface FlipCtx {
  * wanted while a prompt is being drawn, outside any action, so nothing here may
  * touch the position.
  */
+/** What a trap is allowed to look at when asked whether it could answer. */
+export interface TrapCheckCtx {
+  readonly state: import('./state').GameState;
+  /** The player holding the trap. */
+  readonly me: PlayerIdx;
+  readonly opp: PlayerIdx;
+  summonAt(target: TargetRef): import('./state').SummonInstance | null;
+}
+
 export interface FlipCheckCtx {
   readonly state: import('./state').GameState;
   /** Owner of the summon the card is protecting. */

@@ -360,6 +360,15 @@ public sealed class EffectCtx
 }
 
 /// <summary>What a card can do when it is flipped face up as damage.</summary>
+/// <summary>What a trap may look at when asked whether it could answer.</summary>
+public sealed class TrapCheckCtx
+{
+    public required GameState State { get; init; }
+    public required int Me { get; init; }
+    public int Opp => GameState.Other(Me);
+    public SummonInstance? SummonAt(TargetRef t) => State.Find(t);
+}
+
 public sealed class FlipCtx
 {
     public required GameState State { get; init; }
@@ -476,6 +485,16 @@ public static class Effects
     /// prints no opinion is always worth asking about; the ones that do answer
     /// for positions where the effect would find nothing to work on.
     /// </summary>
+    /// <summary>
+    /// Whether a trap could answer the window that is open. Mirrors
+    /// FlipWouldFire: a card that prints no opinion is always worth offering.
+    /// </summary>
+    public static bool TrapWouldFire(GameState state, int me, CardDef def)
+    {
+        if (def.TrapUseful is null) return true;
+        return def.TrapUseful(new TrapCheckCtx { State = state, Me = me });
+    }
+
     public static bool FlipWouldFire(GameState state, FlipOffer offer)
     {
         var def = Registry.TryCard(offer.CardId);

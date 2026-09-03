@@ -568,6 +568,14 @@ public static class Blue
             null, c =>
             {
                 if (c.State.BattleAttacker is { } a) c.ShuffleIntoDeck(a);
+            },
+            // A leader has no slot to leave and never goes back to a deck, so an
+            // attack led by one is not a window this can answer.
+            trapUseful: c =>
+            {
+                if (c.State.BattleAttacker is not { } a) return false;
+                var s = c.SummonAt(a);
+                return s is not null && !s.IsLeader;
             }),
 
         K.Stage("fishideology", "Field: Fish Ideology", new Cost(F: 2),

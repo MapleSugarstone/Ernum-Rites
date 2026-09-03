@@ -47,6 +47,7 @@ export interface Extra {
   flipText?: string;
   flipCost?: FlipCost;
   flipUseful?: CardDef['flipUseful'];
+  trapUseful?: CardDef['trapUseful'];
   color2?: Color;
   color3?: Color;
   /** Spelled out when a card carries more colours than color2 and color3 hold. */
@@ -174,6 +175,7 @@ function base(
   if (extra.flipText) def.flipText = extra.flipText;
   if (extra.flipCost) def.flipCost = extra.flipCost;
   if (extra.flipUseful) def.flipUseful = extra.flipUseful;
+  if (extra.trapUseful) def.trapUseful = extra.trapUseful;
   if (extra.targets) def.targets = extra.targets;
   if (extra.effect) def.effect = extra.effect;
   if (extra.stageHooks) def.stageHooks = extra.stageHooks;

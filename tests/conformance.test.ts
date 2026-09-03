@@ -155,6 +155,8 @@ describe('card manifest', () => {
      * exists to catch: the rule that reads it lives in both engines.
      */
     flipUseful: boolean;
+    /** Presence only, like `flipUseful`, and for the same reason. */
+    trapUseful: boolean;
     flipCost: string;
     triggers: string;
     stage: string;
@@ -215,6 +217,7 @@ describe('card manifest', () => {
       })),
       flip: !!def.flip,
       flipUseful: !!def.flipUseful,
+      trapUseful: !!def.trapUseful,
       flipCost: def.flipCost
         ? `${costToString(def.flipCost.mana)}|${def.flipCost.mill ?? 0}|${def.flipCost.discard ?? 0}`
         : '',

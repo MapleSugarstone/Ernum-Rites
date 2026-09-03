@@ -283,6 +283,7 @@ public static class Kit
             TargetSpec[]? targets = null, Action<EffectCtx>? effect = null,
             string? flipText = null, FlipCost? flipCost = null,
             Action<FlipCtx>? flip = null, Func<FlipCtx, bool>? flipUseful = null,
+            Func<TrapCheckCtx, bool>? trapUseful = null,
             bool spellTrap = false, bool letSpellResolve = false)
             => new()
             {
@@ -300,6 +301,7 @@ public static class Kit
                 FlipCost = flipCost,
                 Flip = flip,
                 FlipUseful = flipUseful,
+                TrapUseful = trapUseful,
                 Art = ArtPath($"{_spellFolder}/{file}"),
                 Num = NextNum(),
             };

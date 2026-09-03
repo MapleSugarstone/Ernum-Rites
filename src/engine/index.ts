@@ -11,6 +11,7 @@ export {
   drawCards,
   effectiveStrength,
   flipWouldFire,
+  trapWouldFire,
   refFor,
   resolveClash,
   strengthSourcesOf,

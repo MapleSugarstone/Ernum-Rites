@@ -765,6 +765,12 @@ public sealed class CardDef
     /// nothing to work on, and keeps its owner from being billed for it.
     /// </summary>
     public Func<FlipCtx, bool>? FlipUseful { get; init; }
+    /// <summary>
+    /// Whether this trap can answer the window that is open. A trap that prints
+    /// no opinion always can; the one that does answers for a window its effect
+    /// would find nothing to do in.
+    /// </summary>
+    public Func<TrapCheckCtx, bool>? TrapUseful { get; init; }
     public string? FlipText { get; init; }
     /// <summary>When set, the flip is optional and its owner must pay this.</summary>
     public FlipCost? FlipCost { get; init; }

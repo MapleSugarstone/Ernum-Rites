@@ -1017,6 +1017,13 @@ public static class Engine
                 {
                     return $"{def.Name} only answers attacks.";
                 }
+                // Refused rather than spent. The card stays in hand and the
+                // window stays open, because a trap that cannot touch what it
+                // is being sprung at has not been used.
+                if (!Effects.TrapWouldFire(state, actor, def))
+                {
+                    return $"{def.Name} cannot answer this.";
+                }
                 var bad = ValidateTargets(state, actor, def.Targets, action.Targets, def);
                 if (bad is not null) return bad;
                 var trapCost = CostFor(me, def);
