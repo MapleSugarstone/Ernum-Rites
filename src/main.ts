@@ -4027,9 +4027,12 @@ function renderZoom(): void {
     // click handler, so it listens for itself.
     document.body.appendChild(host);
     host.addEventListener('click', (ev) => {
-      const hit = (ev.target as HTMLElement).closest<HTMLElement>('[data-cmd]');
-      // The backdrop carries the same command, so clicking away closes it too.
-      if (!hit || !hit.dataset.cmd?.startsWith('zoom:')) return;
+      const t = ev.target as HTMLElement;
+      // Anywhere off the card closes it, which on a phone is the whole screen
+      // around a card that fills most of it. The card itself is exempt so that
+      // reading it, or dragging to see the art, does not dismiss it; the Close
+      // button sits on the card and is the one thing there that still closes.
+      if (t.closest('.cardzoom') && !t.closest('button[data-cmd^="zoom:"]')) return;
       ui.zoom = null;
       render();
     });

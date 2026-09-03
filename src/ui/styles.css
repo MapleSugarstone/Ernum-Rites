@@ -5611,6 +5611,12 @@ body.mobile .topbar .themeset {
   background: var(--scrim-invert);
   backdrop-filter: blur(2px);
   padding: 18px;
+  /* Takes the whole screen back, the way the builder's inspect overlay does.
+     Inherited from .promptlayer this is none, so every tap fell straight through
+     to whatever sat underneath: on a phone the card being read covers the
+     controls, and a tap meant for it hit Concede. It also has to take the tap
+     itself, or there is no way to dismiss the card by tapping away from it. */
+  pointer-events: auto;
 }
 .cardzoom {
   display: grid;
