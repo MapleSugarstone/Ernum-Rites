@@ -1610,8 +1610,8 @@ public static class Program
             // summon in hand it immediately offers itself as the replacement for
             // the slot it just left. That looks unkillable. It is not: dying is
             // what charges the debt, the debt is charged after the trigger, and
-            // it walks its owner to the limit a lap at a time, one point a lap
-            // for a level 1 body.
+            // it walks its owner to the limit a lap at a time. Skeleton bills
+            // its level plus one, so the lap costs two rather than one.
             var s = Game();
             const string skeleton = "o1-skeleton";
             s = Place(s, 0, skeleton, 0);
@@ -1621,7 +1621,7 @@ public static class Program
                 int before = s.Players[0].DebtCount;
                 Effects.DestroySummon(s, s.Players[0].Slots[0]!);
                 laps++;
-                Harness.Eq(before + 1, s.Players[0].DebtCount, $"debt after lap {laps}");
+                Harness.Eq(before + 2, s.Players[0].DebtCount, $"debt after lap {laps}");
                 if (s.Winner >= 0) break;
                 int idx = s.Players[0].Hand.IndexOf(skeleton);
                 Harness.True(idx >= 0, $"back in hand on lap {laps}");
@@ -1632,8 +1632,8 @@ public static class Program
             Harness.True(s.Winner >= 0, "the loop ends on its own");
             Harness.Eq(1, s.Winner, "the looping player is the one who loses");
             Harness.Contains("debt", s.WinReason, "reason");
-            // One debt a lap, so the cap arrives on the lap that reaches it.
-            Harness.Eq(Rules.DebtLimit, laps, "one debt a lap up to the cap");
+            // Two debt a lap, so the cap arrives in half the laps, rounded up.
+            Harness.Eq((Rules.DebtLimit + 1) / 2, laps, "two debt a lap up to the cap");
             // Returning to hand moves the body rather than minting a copy, so
             // one card stays one card however many laps it goes round.
             int copies = s.Players[0].Hand.Count(x => x == skeleton)
@@ -1660,8 +1660,8 @@ public static class Program
                 Harness.Eq(1, copies, $"still one card after lap {i + 1}");
                 s = Must(s, 0, GameAction.PlaySummon(idx, 0));
             }
-            // Level 1, and a death is billed for the level, so one a lap.
-            Harness.Eq(3, s.Players[0].DebtCount, "three laps of a level 1 body");
+            // Level 1 and a Deathrattle that bills one more, so two a lap.
+            Harness.Eq(6, s.Players[0].DebtCount, "three laps of a level 1 body");
         });
 
         Harness.Test("Enthrall rebuilds the seized body and its HP cards in Robot", () =>

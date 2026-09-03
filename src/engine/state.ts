@@ -388,7 +388,7 @@ export interface PendingChoice {
  * This is the same priority `currentActor` reads, stated once so both agree.
  */
 export function choiceIsLive(state: GameState): boolean {
-  return state.choiceQueue.length > 0 && !state.pending;
+  return state.choiceQueue.length > 0 && !state.pending && state.flipQueue.length === 0;
 }
 
 /**
@@ -405,10 +405,13 @@ export function refIsGone(state: GameState, ref: TargetRef): boolean {
 
 /** Whoever the game is currently waiting on, which is not always the active player. */
 export function currentActor(state: GameState): PlayerIdx {
-  if (state.pending) return state.pending.player;
-  // Deferred decisions settle before flips, flips before refilling the hole.
-  if (state.choiceQueue.length > 0) return state.choiceQueue[0].player;
+  // A costed flip holds the blow that revealed it, and a response window exists
+  // to decide that same blow, so the flip is answered first or the body it was
+  // printed to save dies before its owner is ever asked. Then the window, then
+  // deferred decisions, then refilling the hole.
   if (state.flipQueue.length > 0) return state.flipQueue[0].player;
+  if (state.pending) return state.pending.player;
+  if (state.choiceQueue.length > 0) return state.choiceQueue[0].player;
   if (state.replaceQueue.length > 0) return state.replaceQueue[0].player;
   return state.active;
 }

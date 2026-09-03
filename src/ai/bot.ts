@@ -349,10 +349,22 @@ export function candidateActions(state: GameState, me: PlayerIdx): Action[] {
   const acts: Action[] = [];
   const p = state.players[me];
 
-  // A response window outranks a queued choice, which is the order
-  // `currentActor` reads them in. Checking the choice first handed no
-  // candidates at all to a player whose trap window was open while somebody
-  // else's choice sat at the head of the queue.
+  // The order `currentActor` reads them in: a costed flip gates the blow that
+  // revealed it, so it comes before the window that would resolve that blow,
+  // and both come before a queued choice. Reading them in any other order hands
+  // no candidates at all to a player whose turn to answer it actually is.
+  if (state.flipQueue.length > 0) {
+    const offer = state.flipQueue[0];
+    if (offer.player !== me) return acts;
+    const cost = card(offer.cardId).flipCost;
+    if (cost?.discard) {
+      p.hand.forEach((_, handIndex) => acts.push({ type: 'PAY_FLIP', handIndex }));
+    } else {
+      acts.push({ type: 'PAY_FLIP' });
+    }
+    return acts;
+  }
+
   if (state.pending) {
     if (state.pending.player !== me) return acts;
     const wantsSpellTrap = !!state.pending.spell;
@@ -379,18 +391,6 @@ export function candidateActions(state: GameState, me: PlayerIdx): Action[] {
       }
     }
     if (ch.optional || acts.length === 0) acts.push({ type: 'RESOLVE_CHOICE' });
-    return acts;
-  }
-
-  if (state.flipQueue.length > 0) {
-    const offer = state.flipQueue[0];
-    if (offer.player !== me) return acts;
-    const cost = card(offer.cardId).flipCost;
-    if (cost?.discard) {
-      p.hand.forEach((_, handIndex) => acts.push({ type: 'PAY_FLIP', handIndex }));
-    } else {
-      acts.push({ type: 'PAY_FLIP' });
-    }
     return acts;
   }
 
@@ -458,6 +458,7 @@ export function candidateActions(state: GameState, me: PlayerIdx): Action[] {
 
 /** The action taken when nothing on offer beats standing still. */
 function passAction(state: GameState): Action {
+  if (state.flipQueue.length > 0) return { type: 'DECLINE_FLIP' };
   if (state.pending) return { type: 'PASS_RESPONSE' };
   if (state.choiceQueue.length > 0) {
     const ch = state.choiceQueue[0];
@@ -466,7 +467,6 @@ function passAction(state: GameState): Action {
     const alive = (ch.refs ?? []).find((r) => !refIsGone(state, r));
     return alive ? { type: 'RESOLVE_CHOICE', pick: alive } : { type: 'RESOLVE_CHOICE' };
   }
-  if (state.flipQueue.length > 0) return { type: 'DECLINE_FLIP' };
   if (state.replaceQueue.length > 0) return { type: 'DECLINE_REPLACE' };
   return { type: 'END_TURN' };
 }

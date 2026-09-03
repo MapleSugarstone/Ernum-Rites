@@ -161,6 +161,27 @@ public static class SharedChoices
             }
         });
 
+        // Sordid Fruit: the same return, with its draw on the far side of the
+        // pick. Drawing beside the choice let a draw that emptied the deck
+        // shuffle the discard pile back in, and the refs the choice was built
+        // from then named a pile that had moved.
+        Choices.Register("sordid-fruit", (state, choice, pick) =>
+        {
+            var p = state.Players[choice.Player];
+            if (pick.Ref is { Kind: TargetKind.Discard } r
+                && r.Index >= 0 && r.Index < p.Discard.Count)
+            {
+                var id = p.Discard[r.Index];
+                p.Discard.RemoveAt(r.Index);
+                if (Effects.ToHand(state, choice.Player, id))
+                {
+                    Effects.Log(state, choice.Player,
+                        $"{Registry.Card(id).Name} comes back from the discard pile.");
+                }
+            }
+            Effects.DrawCards(state, choice.Player, 1);
+        });
+
         // The other halves of Digital Rabbits, Fabricate and Living Spell.
         Choices.Register("rabbits", (state, choice, pick) =>
         {

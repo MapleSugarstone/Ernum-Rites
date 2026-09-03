@@ -1,5 +1,5 @@
 import { registerChoiceResolver } from '../engine/choices';
-import { chooseBoard, discardSpellRefs } from '../engine/effects';
+import { chooseBoard, discardSpellRefs, drawCards } from '../engine/effects';
 import {
   addWounds,
   assignHp,
@@ -153,6 +153,25 @@ registerChoiceResolver('discard-spell-to-hand', (state, choice, pick) => {
   if (toHand(state, choice.player, id)) {
     log(state, choice.player, `${card(id).name} comes back from the discard pile.`);
   }
+});
+
+/**
+ * Sordid Fruit: the same return, with its draw on the far side of the pick.
+ *
+ * Drawing beside the choice rather than after it let a draw that emptied the
+ * deck shuffle the discard pile back in, and the refs the choice was built from
+ * then named a pile that had moved. The card reads "return a spell, then draw",
+ * and doing it in that order is also the only order the refs survive.
+ */
+registerChoiceResolver('sordid-fruit', (state, choice, pick) => {
+  const p = state.players[choice.player];
+  if (pick.ref?.kind === 'discard' && pick.ref.index >= 0 && pick.ref.index < p.discard.length) {
+    const [id] = p.discard.splice(pick.ref.index, 1);
+    if (toHand(state, choice.player, id)) {
+      log(state, choice.player, `${card(id).name} comes back from the discard pile.`);
+    }
+  }
+  drawCards(state, choice.player, 1);
 });
 
 // The draw lands before this fires, so a freshly drawn card is pickable.

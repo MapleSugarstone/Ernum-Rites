@@ -800,6 +800,17 @@ public static class Engine
                     }
                 }
 
+                // Looked up before anything is spent. An offer can outlive the
+                // body it was protecting, and paying for a card that has nothing
+                // left to protect takes the cost and fires nothing.
+                var holder = state.Find(offer.Holder);
+                if (holder is null)
+                {
+                    state.FlipQueue.RemoveAt(0);
+                    Effects.Log(state, actor, $"{fdef.Name} has nothing left to protect.");
+                    Effects.ResumeDamage(state, offer);
+                    return null;
+                }
                 state.FlipQueue.RemoveAt(0);
                 if (!fcost.Mana.IsFree) PayCost(state, actor, fcost.Mana);
                 for (int i = 0; i < fcost.Mill; i++)
@@ -815,13 +826,9 @@ public static class Engine
                     me.Hand.RemoveAt(discardIndex);
                     Effects.ToDiscard(state, actor, id);
                 }
-                var holder = state.Find(offer.Holder);
                 Effects.Log(state, actor, $"{me.Name} pays for {fdef.Name}'s flip.");
-                if (holder is not null)
-                {
-                    fdef.Flip(new FlipCtx
-                    { State = state, Me = actor, Holder = holder, Card = fdef });
-                }
+                fdef.Flip(new FlipCtx
+                { State = state, Me = actor, Holder = holder, Card = fdef });
                 // The blow that revealed this card stopped on it. Now that it
                 // has fired, the rest of the damage lands and the body is
                 // settled after it.
@@ -982,6 +989,9 @@ public static class Engine
             {
                 var pending = state.Pending;
                 if (pending is null || pending.Player != actor) return "No response window is open.";
+                // Springing the trap resolves the clash, and a flip revealed on
+                // the way in is owed its answer before that blow can land.
+                if (state.FlipQueue.Count > 0) return "Settle the flipped card first.";
                 if (action.HandIndex < 0 || action.HandIndex >= me.Hand.Count) return "No card at that hand index.";
                 var id = me.Hand[action.HandIndex];
                 var def = Registry.Card(id);
@@ -1093,6 +1103,9 @@ public static class Engine
             case ActionType.PassResponse:
             {
                 if (state.Pending is null || state.Pending.Player != actor) return "No response window is open.";
+                // Passing resolves the clash, so a flip still gating that blow
+                // comes first.
+                if (state.FlipQueue.Count > 0) return "Settle the flipped card first.";
                 // A window only opens for a player already holding a trap that
                 // answers it, so declining is a decision rather than an absence.
                 Effects.Log(state, actor, $"{state.Players[actor].Name} holds their trap.");

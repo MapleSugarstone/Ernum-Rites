@@ -79,19 +79,16 @@
     {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":1,"index":0},"target":{"kind":"summon","player":0,"index":0}}, "digest": "7cd1abbaaac45cab"},
     {"actor": 0, "action": {"type":"DECLINE_REPLACE"}, "digest": "b61a21e96781a48c"},
     {"actor": 1, "action": {"type":"END_TURN"}, "digest": "e2bb3807ccd1c37d"},
-    {"actor": 0, "action": {"type":"PLAY_SUPPORTER","handIndex":3}, "digest": "328f88260cb60f2e"},
-    {"actor": 0, "action": {"type":"ACTIVATE_POWER","source":{"kind":"leader","player":0,"index":0},"powerIndex":1,"targets":[{"kind":"debt","player":0,"index":6}]}, "digest": "4595a43a9b38b176"},
-    {"actor": 0, "action": {"type":"END_TURN"}, "digest": "9152df3b84e97a5d"},
-    {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":1,"index":2},"target":{"kind":"leader","player":0,"index":0}}, "digest": "94ae9f78bd4d7303"},
-    {"actor": 0, "action": {"type":"CAST_TRAP","handIndex":0,"targets":[]}, "digest": "bf876c262a6895ec"},
-    {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"leader","player":1,"index":0},"target":{"kind":"leader","player":0,"index":0}}, "digest": "6aa5511d980891c0"},
-    {"actor": 1, "action": {"type":"PLAY_SUPPORTER","handIndex":4}, "digest": "cc4a367968aec2a7"},
-    {"actor": 1, "action": {"type":"PLAY_SUMMON","handIndex":4,"slot":2,"targets":[]}, "digest": "2e477e2f60b7bdad"},
-    {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":1,"index":0},"target":{"kind":"leader","player":0,"index":0}}, "digest": "aeb91f52107f2b52"},
-    {"actor": 0, "action": {"type":"DECLINE_FLIP"}, "digest": "d0934c357271458c"},
-    {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":1,"index":2},"target":{"kind":"leader","player":0,"index":0}}, "digest": "feaad7b9da77bec1"}
+    {"actor": 0, "action": {"type":"ACTIVATE_POWER","source":{"kind":"leader","player":0,"index":0},"powerIndex":1,"targets":[{"kind":"debt","player":0,"index":6}]}, "digest": "0e7b0f7c87aabbd3"},
+    {"actor": 0, "action": {"type":"PLAY_SUPPORTER","handIndex":0}, "digest": "87386e9d32bda81a"},
+    {"actor": 0, "action": {"type":"END_TURN"}, "digest": "d04de3523823e689"},
+    {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":1,"index":2},"target":{"kind":"leader","player":0,"index":0}}, "digest": "29cd21dc75576ba1"},
+    {"actor": 1, "action": {"type":"PLAY_SUPPORTER","handIndex":4}, "digest": "5e592cbcb5635c84"},
+    {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":1,"index":0},"target":{"kind":"leader","player":0,"index":0}}, "digest": "8d9b1cc5e2de43f3"},
+    {"actor": 0, "action": {"type":"DECLINE_FLIP"}, "digest": "c5061d93e5f6cd6c"},
+    {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"leader","player":1,"index":0},"target":{"kind":"leader","player":0,"index":0}}, "digest": "dac365f4c5421a8b"}
   ],
-  "finalDigest": "feaad7b9da77bec1",
+  "finalDigest": "dac365f4c5421a8b",
   "winner": 1,
   "winReason": "The Fish (P1) lost their leader."
 }

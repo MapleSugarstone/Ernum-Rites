@@ -19,7 +19,6 @@ import {
   resumeDamage,
   sweepReplaceQueue,
   setActingPlayer,
-  toDebt,
   clearSpellBonus,
   takeSpellBonus,
   toDiscard,
@@ -748,6 +747,16 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
         if (discardIndex < 0 || discardIndex >= me.hand.length) return 'Choose a card to discard.';
       }
 
+      // Looked up before anything is spent. An offer can outlive the body it was
+      // protecting, and paying for a card that has nothing left to protect takes
+      // the cost and fires nothing.
+      const holder = findSummon(state, offer.holder);
+      if (!holder) {
+        state.flipQueue.shift();
+        log(state, actor, `${def.name} has nothing left to protect.`);
+        resumeDamage(state, offer);
+        return null;
+      }
       state.flipQueue.shift();
       if (cost.mana) payCost(state, actor, cost.mana);
       if (cost.mill) {
@@ -758,12 +767,13 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
       }
       if (cost.discard && discardIndex >= 0) {
         const [id] = me.hand.splice(discardIndex, 1);
-        toDebt(state, actor, id);
+        // A card spent as a cost is spent, so it lands in the discard pile the
+        // way every other spent card does rather than being owed for.
+        toDiscard(state, actor, id);
       }
-      const holder = findSummon(state, offer.holder);
       log(state, actor, `${me.name} pays for ${def.name}'s flip.`);
       clearOppWanted();
-      if (holder) def.flip(makeFlipCtx(state, holder, def, 0, mode));
+      def.flip(makeFlipCtx(state, holder, def, 0, mode));
       const needsEnemy = mode?.kind === 'track' && oppWasWanted();
       // The blow that revealed this card stopped on it. Now that it has fired,
       // the rest of the damage lands and the body is settled after it.
@@ -947,6 +957,9 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
     case 'CAST_TRAP': {
       const pending = state.pending;
       if (!pending || pending.player !== actor) return 'No response window is open.';
+      // Springing the trap resolves the clash, and a flip revealed on the way in
+      // is owed its answer before the blow it gates can land.
+      if (state.flipQueue.length > 0) return 'Settle the flipped card first.';
       const id = me.hand[action.handIndex];
       if (!id) return 'No card at that hand index.';
       const def = card(id);
@@ -1030,6 +1043,8 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
       if (!state.pending || state.pending.player !== actor) {
         return 'No response window is open.';
       }
+      // Passing resolves the clash, so a flip still gating that blow comes first.
+      if (state.flipQueue.length > 0) return 'Settle the flipped card first.';
       // A window only opens for a player already holding a trap that answers it,
       // so declining is a decision rather than an absence, and the retelling of
       // the match is poorer without it.

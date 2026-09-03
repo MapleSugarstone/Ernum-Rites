@@ -46,11 +46,11 @@
     {"actor": 1, "action": {"type":"PASS_RESPONSE"}, "digest": "f0e6aa76838dbc28"},
     {"actor": 0, "action": {"type":"DECLARE_ATTACK","source":{"kind":"leader","player":0,"index":0},"target":{"kind":"leader","player":1,"index":0}}, "digest": "77062761e7a9982f"},
     {"actor": 1, "action": {"type":"PASS_RESPONSE"}, "digest": "31f819f3d5a815f1"},
-    {"actor": 0, "action": {"type":"PLAY_SUMMON","handIndex":0,"slot":0,"targets":[]}, "digest": "c4d4b80c62fd91ce"},
-    {"actor": 0, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":0,"index":0},"target":{"kind":"leader","player":1,"index":0}}, "digest": "efe17766f1cb5abb"},
-    {"actor": 1, "action": {"type":"PASS_RESPONSE"}, "digest": "b0a83ff43499f86f"}
+    {"actor": 0, "action": {"type":"PLAY_SUMMON","handIndex":1,"slot":0,"targets":[]}, "digest": "fc719051305bfa54"},
+    {"actor": 0, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":0,"index":0},"target":{"kind":"leader","player":1,"index":0}}, "digest": "7ca0388a0689e769"},
+    {"actor": 1, "action": {"type":"PASS_RESPONSE"}, "digest": "4e88ad4e45bd95f9"}
   ],
-  "finalDigest": "b0a83ff43499f86f",
+  "finalDigest": "4e88ad4e45bd95f9",
   "winner": 0,
   "winReason": "Trap Lab (P2) lost their leader."
 }

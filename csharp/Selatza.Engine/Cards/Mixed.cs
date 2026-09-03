@@ -306,8 +306,7 @@ public static class Mixed
             "Return a spell from your discard pile to your hand, then draw a card.",
             null, c =>
             {
-                c.Choose("discard-spell-to-hand", c.DiscardSpells(c.Me), "Return which spell to hand?");
-                c.Draw(c.Me, 1);
+                c.Choose("sordid-fruit", c.DiscardSpells(c.Me), "Return which spell to hand?");
             }),
 
         Rb.Trap("sordidmark", "Trap: Sordid Mark", new Cost(P: 1, F: 1),

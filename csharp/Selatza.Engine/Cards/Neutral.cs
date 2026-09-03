@@ -75,7 +75,7 @@ public static class Neutral
                     c.Unflip(me, 1);
                 },
             }),
-        N.Summon(2, "SecretLetter", "Secret Letter", null, str: 2, hp: 3,
+        N.Summon(2, "SecretLetter", "Secret Letter", null, str: 3, hp: 2,
             text: "Battlecry: Draw a card.",
             triggers: new Triggers { OnEnter = c => c.Draw(c.Me, 1) }),
         N.Summon(2, "Smithee", "Smithee", F(Faction.Mortal), str: 2, hp: 3,

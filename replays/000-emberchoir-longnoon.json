@@ -62,11 +62,9 @@
     {"actor": 1, "action": {"type":"ACTIVATE_POWER","source":{"kind":"summon","player":1,"index":2},"powerIndex":0,"targets":[{"kind":"leader","player":1,"index":0},{"kind":"hand","player":1,"index":0}]}, "digest": "b61d111c412dade9"},
     {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":1,"index":2},"target":{"kind":"summon","player":0,"index":2}}, "digest": "29cf1bb65616abe5"},
     {"actor": 1, "action": {"type":"PLAY_SUMMON","handIndex":3,"slot":1,"targets":[]}, "digest": "e9493ebd0cb80c5c"},
-    {"actor": 0, "action": {"type":"RESOLVE_CHOICE","target":{"kind":"discard","player":0,"index":3}}, "digest": "94116ab784795a18"},
-    {"actor": 0, "action": {"type":"RESOLVE_CHOICE","target":{"kind":"discard","player":0,"index":5}}, "digest": "eccd8287220ba321"},
-    {"actor": 0, "action": {"type":"PAY_FLIP"}, "digest": "cb0a9a106b94b20b"}
+    {"actor": 0, "action": {"type":"PAY_FLIP"}, "digest": "f9057b3f6f4e9cb2"}
   ],
-  "finalDigest": "cb0a9a106b94b20b",
+  "finalDigest": "f9057b3f6f4e9cb2",
   "winner": 0,
   "winReason": "Aetus Vox (P2) lost their leader."
 }

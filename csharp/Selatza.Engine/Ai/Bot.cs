@@ -243,6 +243,26 @@ public static class Bot
         var acts = new List<GameAction>();
         var p = state.Players[me];
 
+        // The order CurrentActor reads them in: a costed flip gates the blow
+        // that revealed it, so it comes before the window that would resolve
+        // that blow, and both come before a queued choice.
+        if (state.FlipQueue.Count > 0)
+        {
+            var offer = state.FlipQueue[0];
+            if (offer.Player != me) return acts;
+            var fcost = Registry.Card(offer.CardId).FlipCost;
+            if (fcost is not null && fcost.Discard > 0)
+            {
+                for (int i = 0; i < p.Hand.Count; i++) acts.Add(GameAction.PayFlip(i));
+            }
+            else
+            {
+                acts.Add(GameAction.PayFlip());
+            }
+            return acts;
+        }
+
+
         // A response window outranks a queued choice, which is the order
         // CurrentActor reads them in. Checking the choice first handed no
         // candidates at all to a player whose trap window was open while
@@ -284,22 +304,6 @@ public static class Bot
                 }
             }
             if (ch.Optional || acts.Count == 0) acts.Add(GameAction.ResolveChoice());
-            return acts;
-        }
-
-        if (state.FlipQueue.Count > 0)
-        {
-            var offer = state.FlipQueue[0];
-            if (offer.Player != me) return acts;
-            var fcost = Registry.Card(offer.CardId).FlipCost;
-            if (fcost is not null && fcost.Discard > 0)
-            {
-                for (int i = 0; i < p.Hand.Count; i++) acts.Add(GameAction.PayFlip(i));
-            }
-            else
-            {
-                acts.Add(GameAction.PayFlip());
-            }
             return acts;
         }
 
@@ -379,6 +383,7 @@ public static class Bot
 
     private static GameAction PassAction(GameState state)
     {
+        if (state.FlipQueue.Count > 0) return GameAction.DeclineFlip();
         if (state.Pending is not null) return GameAction.PassResponse();
         if (state.ChoiceQueue.Count > 0)
         {
@@ -396,7 +401,6 @@ public static class Bot
             }
             return GameAction.ResolveChoice();
         }
-        if (state.FlipQueue.Count > 0) return GameAction.DeclineFlip();
         if (state.ReplaceQueue.Count > 0) return GameAction.DeclineReplace();
         return GameAction.EndTurn();
     }

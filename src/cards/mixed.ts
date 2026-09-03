@@ -340,8 +340,7 @@ export const mixedCards: CardDef[] = [
   rb.spell('sordidfruit', 'Sordid Fruit', { P: 1, F: 1 }, {
     text: 'Return a spell from your discard pile to your hand, then draw a card.',
     effect: (c) => {
-      c.choose('discard-spell-to-hand', c.discardSpells(c.me), 'Return which spell to hand?');
-      c.draw(c.me, 1);
+      c.choose('sordid-fruit', c.discardSpells(c.me), 'Return which spell to hand?');
     },
   }),
   rb.trap('sordidmark', 'Trap: Sordid Mark', { P: 1, F: 1 }, {

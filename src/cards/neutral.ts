@@ -115,8 +115,8 @@ export const neutralCards: CardDef[] = [
     },
   }),
   n.summon(2, 'SecretLetter', 'Secret Letter', [], {
-    str: 2,
-    hp: 3,
+    str: 3,
+    hp: 2,
     text: 'Battlecry: Draw a card.',
     triggers: { onEnter: (c) => c.draw(c.me, 1) },
   }),

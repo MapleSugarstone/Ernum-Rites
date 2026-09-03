@@ -387,10 +387,14 @@ public sealed class GameState
     {
         get
         {
-            if (Pending is not null) return Pending.Player;
-            // Deferred decisions settle before flips, flips before refilling the hole.
-            if (ChoiceQueue.Count > 0) return ChoiceQueue[0].Player;
+            // A costed flip holds the blow that revealed it, and a response
+            // window exists to decide that same blow, so the flip is answered
+            // first or the body it was printed to save dies before its owner is
+            // ever asked. Then the window, then deferred decisions, then
+            // refilling the hole.
             if (FlipQueue.Count > 0) return FlipQueue[0].Player;
+            if (Pending is not null) return Pending.Player;
+            if (ChoiceQueue.Count > 0) return ChoiceQueue[0].Player;
             if (ReplaceQueue.Count > 0) return ReplaceQueue[0].Player;
             return Active;
         }

@@ -142,6 +142,26 @@ public static class LegacyBot
         var acts = new List<GameAction>();
         var p = state.Players[me];
 
+        // The order CurrentActor reads them in: a costed flip gates the blow
+        // that revealed it, so it comes before the window that would resolve
+        // that blow, and both come before a queued choice.
+        if (state.FlipQueue.Count > 0)
+        {
+            var offer = state.FlipQueue[0];
+            if (offer.Player != me) return acts;
+            var fcost = Registry.Card(offer.CardId).FlipCost;
+            if (fcost is not null && fcost.Discard > 0)
+            {
+                for (int i = 0; i < p.Hand.Count; i++) acts.Add(GameAction.PayFlip(i));
+            }
+            else
+            {
+                acts.Add(GameAction.PayFlip());
+            }
+            return acts;
+        }
+
+
         if (state.ChoiceQueue.Count > 0)
         {
             var ch = state.ChoiceQueue[0];
@@ -178,22 +198,6 @@ public static class LegacyBot
                 if (def.Type != CardType.Trap || !Engine.CanPay(p, Engine.CostFor(p, def))) continue;
                 if (def.SpellTrap != wantsSpellTrap) continue;
                 foreach (var t in TargetCombos(state, me, def.Targets, def)) acts.Add(GameAction.CastTrap(i, t));
-            }
-            return acts;
-        }
-
-        if (state.FlipQueue.Count > 0)
-        {
-            var offer = state.FlipQueue[0];
-            if (offer.Player != me) return acts;
-            var fcost = Registry.Card(offer.CardId).FlipCost;
-            if (fcost is not null && fcost.Discard > 0)
-            {
-                for (int i = 0; i < p.Hand.Count; i++) acts.Add(GameAction.PayFlip(i));
-            }
-            else
-            {
-                acts.Add(GameAction.PayFlip());
             }
             return acts;
         }
@@ -274,6 +278,7 @@ public static class LegacyBot
 
     private static GameAction PassAction(GameState state)
     {
+        if (state.FlipQueue.Count > 0) return GameAction.DeclineFlip();
         if (state.Pending is not null) return GameAction.PassResponse();
         if (state.ChoiceQueue.Count > 0)
         {
@@ -291,7 +296,6 @@ public static class LegacyBot
             }
             return GameAction.ResolveChoice();
         }
-        if (state.FlipQueue.Count > 0) return GameAction.DeclineFlip();
         if (state.ReplaceQueue.Count > 0) return GameAction.DeclineReplace();
         return GameAction.EndTurn();
     }

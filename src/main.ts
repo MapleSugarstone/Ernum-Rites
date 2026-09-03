@@ -463,14 +463,24 @@ let autoChose = -1;
 function maybeAutoChoice(): void {
   const state = ui.state;
   const ch = state?.choiceQueue[0];
-  if (!state || !ch?.refs || ch.cards || !canAct()) return;
+  // choiceIsLive, not canAct: a window or a parked flip in front of the queue
+  // means the game is waiting on that instead, and canAct is satisfied by
+  // whoever owns it rather than by the owner of this choice.
+  if (!state || !ch?.refs || ch.cards) return;
+  if (!choiceIsLive(state) || ch.player !== viewSeat() || !canAct()) return;
   if (choiceHasTarget(state, ch)) return;
   if (autoChose === state.version) return;
   autoChose = state.version;
   const version = state.version;
   // Off the render that noticed it: dispatching mid-render would re-enter it.
   window.setTimeout(() => {
-    if (ui.state === state && state.version === version && state.choiceQueue[0] === ch && canAct()) {
+    if (
+      ui.state === state &&
+      state.version === version &&
+      state.choiceQueue[0] === ch &&
+      choiceIsLive(state) &&
+      canAct()
+    ) {
       dispatch({ type: 'RESOLVE_CHOICE' });
     }
   }, 0);
@@ -504,13 +514,19 @@ function maybeAutoPass(): void {
 function maybeAutoDecline(): void {
   const state = ui.state;
   if (!state || !canAct() || state.flipQueue.length === 0) return;
+  if (state.flipQueue[0].player !== viewSeat()) return;
   if (flipWorthAsking(state, viewSeat())) return;
   if (autoDeclined === state.version) return;
   autoDeclined = state.version;
   const version = state.version;
   // The delay lets the flip animation land before the card is waved away.
   window.setTimeout(() => {
-    if (ui.state === state && state.version === version && canAct()) {
+    if (
+      ui.state === state &&
+      state.version === version &&
+      state.flipQueue[0]?.player === viewSeat() &&
+      canAct()
+    ) {
       dispatch({ type: 'DECLINE_FLIP' });
     }
   }, 900);
@@ -519,7 +535,9 @@ function maybeAutoDecline(): void {
 function candidateKeys(): Set<string> {
   if (!ui.state) return new Set();
   const ch = ui.state.choiceQueue[0];
-  if (ch?.refs && canAct()) return new Set(ch.refs.map(refKey));
+  if (ch?.refs && choiceIsLive(ui.state) && ch.player === viewSeat() && canAct()) {
+    return new Set(ch.refs.map(refKey));
+  }
   if (!ui.targeting) return new Set();
   const spec = ui.targeting.specs[ui.targeting.collected.length];
   if (!spec) return new Set();
@@ -4162,7 +4180,8 @@ let pointerAt: { x: number; y: number } | null = null;
 /** Whether a board choice is waiting on the viewer, so an arrow should track the cursor. */
 function boardChoiceActive(): boolean {
   const ch = ui.state?.choiceQueue[0];
-  if (!ch || !ch.refs || !canAct()) return false;
+  if (!ch || !ch.refs || !ui.state) return false;
+  if (!choiceIsLive(ui.state) || ch.player !== viewSeat() || !canAct()) return false;
   const kind = ch.refs[0]?.kind;
   return kind !== 'debt' && kind !== 'discard';
 }
@@ -6602,7 +6621,10 @@ function beginSummonPlay(handIndex: number, slot: number | null): void {
 function offerChoice(ref: TargetRef): boolean {
   const state = ui.state;
   const ch = state?.choiceQueue[0];
-  if (!state || !ch?.refs || !canAct()) return false;
+  if (!state || !ch?.refs) return false;
+  // The same priority the board rings on, so a click cannot answer a choice the
+  // game is not asking about yet.
+  if (!choiceIsLive(state) || ch.player !== viewSeat() || !canAct()) return false;
   if (!ch.refs.some((r) => refKey(r) === refKey(ref))) return false;
   dispatch({ type: 'RESOLVE_CHOICE', pick: ref });
   return true;
@@ -7038,6 +7060,9 @@ function startMatch(decks: [DeckList, DeckList]): void {
   ui.inspectRef = null;
   ui.choiceHidden = false;
   // Versions start over with the match, so the answered-already marks have to.
+  // All three of them: a dead choice left marked answered survives into the next
+  // match and stalls there until it is dismissed by hand.
+  autoChose = -1;
   autoPassed = -1;
   autoDeclined = -1;
   resetLogGroups(ui.state);
