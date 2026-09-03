@@ -25,6 +25,8 @@ import type { ClientMessage, QueueReply, RoomKind, ServerMessage } from '../../w
 
 export interface NetHandlers {
   onSeated(seat: PlayerIdx, kind: RoomKind, code?: string, token?: string): void;
+  /** The room does not have the match this client was holding a seat in. */
+  onResumeFailed(reason: string): void;
   /** A seat whose connection went, held until `until` rather than given up on. */
   onPlayerAway(seat: PlayerIdx, name: string, until: number): void;
   onPlayerBack(seat: PlayerIdx, name: string): void;
@@ -98,6 +100,13 @@ const SILENCE_MS = PING_EVERY_MS * 2 + 5_000;
 const WATCH_EVERY_MS = 2_500;
 
 /**
+ * How far past its own interval a check has to run before it is read as the
+ * machine having stopped rather than the room having gone quiet. Well clear of
+ * ordinary scheduling jitter and well under the silence it guards.
+ */
+const SLEEP_SLACK_MS = 5_000;
+
+/**
  * Whether a connection that has gone quiet should be given up on.
  *
  * Pulled out whole because every clause is a way to get this wrong. Giving up
@@ -113,8 +122,16 @@ export function connectionLost(now: {
   visible: boolean;
   open: boolean;
   alreadyGaveUp: boolean;
+  /** How late this check ran against its own interval. Optional so old callers read the same. */
+  lateMs?: number;
 }): boolean {
   if (now.alreadyGaveUp || !now.open || !now.visible) return false;
+  // A check that is itself overdue means this tab's clock stopped: a lid closed
+  // on a focused window fires no visibility change, so nothing else notices. The
+  // quiet it is looking at is the sleep rather than the room going away, and
+  // reporting it cost the player a socket and their opponent a false "lost
+  // connection" notice.
+  if ((now.lateMs ?? 0) >= SLEEP_SLACK_MS) return false;
   return now.quietMs >= SILENCE_MS;
 }
 
@@ -130,6 +147,8 @@ export class NetClient {
   private lastHeard = 0;
   /** Set once the silence has been reported, so it is reported once. */
   private gaveUp = false;
+  /** When the watchdog last ran, so it can tell a slept machine from a dead room. */
+  private lastCheck = 0;
   /** How the last socket ended, for the report. Empty until one has. */
   private lastClose = '';
   /** What the socket called itself when this side let go of it. */
@@ -190,8 +209,8 @@ export class NetClient {
    * is called finished, so a clock that runs out fills in what the player had
    * rather than dealing them a random deck.
    */
-  sendDraftDeck(leaderId: string, cards: string[], done: boolean): void {
-    this.send({ type: 'draftDeck', leaderId, cards, done });
+  sendDraftDeck(leaderId: string, cards: string[], done: boolean, opened?: number): void {
+    this.send({ type: 'draftDeck', leaderId, cards, done, opened });
   }
 
   /** Back out of the queue so nobody is paired into an empty room. */
@@ -248,6 +267,7 @@ export class NetClient {
         this.send({ type: 'join', deckKey, name, version: BUILD_VERSION, deck, resume });
         this.measureSkew();
         this.pingTimer = window.setInterval(() => this.measureSkew(), PING_EVERY_MS);
+        this.lastCheck = Date.now();
         this.watchTimer = window.setInterval(() => this.checkAlive(), WATCH_EVERY_MS);
       },
       on,
@@ -325,12 +345,19 @@ export class NetClient {
    * rather than left playing a match nobody else is in.
    */
   private checkAlive(): void {
+    const now = Date.now();
+    const lateMs = Math.max(0, now - this.lastCheck - WATCH_EVERY_MS);
+    this.lastCheck = now;
     const lost = connectionLost({
-      quietMs: Date.now() - this.lastHeard,
+      quietMs: now - this.lastHeard,
       visible: document.visibilityState === 'visible',
       open: this.socket?.readyState === WebSocket.OPEN,
       alreadyGaveUp: this.gaveUp,
+      lateMs,
     });
+    // Start the count again after a sleep, or the next check, on time and with
+    // the same stale reading behind it, reports what this one just excused.
+    if (lateMs >= SLEEP_SLACK_MS) this.lastHeard = now;
     if (!lost) return;
     this.gaveUp = true;
     this.status.connected = false;
@@ -406,6 +433,9 @@ export class NetClient {
         this.status.seat = msg.seat;
         return this.handlers.onSeated(msg.seat, msg.kind, msg.code, msg.token);
 
+      case 'resumeFailed':
+        return this.handlers.onResumeFailed(msg.reason);
+
       case 'playerAway':
         return this.handlers.onPlayerAway(msg.seat, msg.name, msg.until);
 
@@ -468,6 +498,16 @@ export class NetClient {
 
       case 'error':
         return this.handlers.onError(msg.reason);
+
+      default:
+        // A message this build has no case for means the room is running a
+        // newer one. Dropping it in silence is how a client ends up waiting on
+        // an answer it already threw away, which is what the version gate
+        // exists to prevent and cannot catch when only the protocol moved.
+        note(`unknown message ${(msg as { type?: string }).type ?? '?'}`);
+        return this.handlers.onError(
+          'the room said something this version does not understand. Reload the page.',
+        );
     }
   }
 }

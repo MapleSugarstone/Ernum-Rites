@@ -471,6 +471,26 @@ public enum TriggerName
 
 public static class Effects
 {
+    /// <summary>
+    /// Whether paying for a waiting flip would change anything. A card that
+    /// prints no opinion is always worth asking about; the ones that do answer
+    /// for positions where the effect would find nothing to work on.
+    /// </summary>
+    public static bool FlipWouldFire(GameState state, FlipOffer offer)
+    {
+        var def = Registry.TryCard(offer.CardId);
+        if (def?.FlipUseful is null) return true;
+        var holder = state.Find(offer.Holder);
+        if (holder is null) return false;
+        return def.FlipUseful(new FlipCtx
+        {
+            State = state,
+            Me = holder.Owner,
+            Holder = holder,
+            Card = def,
+        });
+    }
+
     /// <summary>Guards against a flip effect that damages something whose flip damages back.</summary>
     private const int MaxFlipDepth = 8;
 

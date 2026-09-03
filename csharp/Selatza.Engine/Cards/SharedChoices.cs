@@ -102,6 +102,15 @@ public static class SharedChoices
             if (pick.Ref is not { } r || r.Kind != TargetKind.Debt) return;
             var p = state.Players[choice.Player];
             if (r.Index < 0 || r.Index >= p.DebtZone.Count) return;
+            // Asked before it leaves the debt zone. Pulling it out first and
+            // letting ToHand turn it away destroyed the very summon this was
+            // rescuing: it left the debt pile, found no room, and was discarded.
+            if (p.Hand.Count >= Rules.HandLimit)
+            {
+                Effects.Log(state, choice.Player,
+                    $"Hand is full at {Rules.HandLimit}; it stays in the debt zone.");
+                return;
+            }
             var id = p.DebtZone[r.Index];
             Effects.RemoveFromDebt(state, choice.Player, r.Index);
             if (Effects.ToHand(state, choice.Player, id))
@@ -117,6 +126,14 @@ public static class SharedChoices
             if (pick.Ref is not { } r || r.Kind != TargetKind.Debt) return;
             var zone = state.Players[r.Player].DebtZone;
             if (r.Index < 0 || r.Index >= zone.Count) return;
+            // The same rule: a card that cannot be held is left where it was
+            // rather than pulled out of the scrap and thrown away.
+            if (state.Players[choice.Player].Hand.Count >= Rules.HandLimit)
+            {
+                Effects.Log(state, choice.Player,
+                    $"Hand is full at {Rules.HandLimit}; it stays in the scrap.");
+                return;
+            }
             var id = zone[r.Index];
             Effects.RemoveFromDebt(state, r.Player, r.Index);
             if (Effects.ToHand(state, choice.Player, Generated.RobotCopy(id)))

@@ -97,6 +97,7 @@ public static class Kit
             int str = 2, int hp = 1, string? text = null,
             Power[]? powers = null, Triggers? triggers = null, TargetSpec[]? targets = null,
             Action<FlipCtx>? flip = null, string? flipText = null, FlipCost? flipCost = null,
+            Func<FlipCtx, bool>? flipUseful = null,
             bool stationary = false, bool redirect = false, bool spellImmune = false,
             bool reborn = false, bool frenzy = false)
             => new()
@@ -122,6 +123,7 @@ public static class Kit
                 Art = $"Cardgame/Neutral/{level}/{file}.png",
                 Num = NextNum(),
                 Flip = flip,
+                FlipUseful = flipUseful,
                 FlipText = flipText,
                 FlipCost = flipCost,
             };
@@ -176,6 +178,7 @@ public static class Kit
             int? str = null, int? hp = null, string? text = null,
             Power[]? powers = null, Triggers? triggers = null, TargetSpec[]? targets = null,
             Action<FlipCtx>? flip = null, string? flipText = null, FlipCost? flipCost = null,
+            Func<FlipCtx, bool>? flipUseful = null,
             int effectDamage = 0, bool woundAmplify = false, bool supporterLock = false,
             bool spellEcho = false,
             bool cursePotency = false, bool muffleFlips = false,
@@ -213,6 +216,7 @@ public static class Kit
                 Triggers = triggers,
                 Targets = targets,
                 Flip = flip,
+                FlipUseful = flipUseful,
                 FlipText = flipText,
                 FlipCost = flipCost,
                 Art = ArtPath($"{_folder}/{level}/{file}"),
@@ -248,7 +252,8 @@ public static class Kit
 
         private CardDef NonSummon(CardType type, string file, string name, Cost cost,
             string? text, TargetSpec[]? targets, Action<EffectCtx>? effect,
-            StageHooks? hooks, string? flipText, FlipCost? flipCost, Action<FlipCtx>? flip)
+            StageHooks? hooks, string? flipText, FlipCost? flipCost, Action<FlipCtx>? flip,
+            Func<FlipCtx, bool>? flipUseful = null)
             => new()
             {
                 Id = $"{_prefix}x-{file}",
@@ -263,6 +268,7 @@ public static class Kit
                 FlipText = flipText,
                 FlipCost = flipCost,
                 Flip = flip,
+                FlipUseful = flipUseful,
                 Art = ArtPath($"{_spellFolder}/{file}"),
                 Num = NextNum(),
             };
@@ -270,13 +276,14 @@ public static class Kit
         public CardDef Spell(string file, string name, Cost cost, string text,
             TargetSpec[]? targets = null, Action<EffectCtx>? effect = null,
             string? flipText = null, FlipCost? flipCost = null,
-            Action<FlipCtx>? flip = null)
-            => NonSummon(CardType.Spell, file, name, cost, text, targets, effect, null, flipText, flipCost, flip);
+            Action<FlipCtx>? flip = null, Func<FlipCtx, bool>? flipUseful = null)
+            => NonSummon(CardType.Spell, file, name, cost, text, targets, effect, null, flipText, flipCost, flip, flipUseful);
 
         public CardDef Trap(string file, string name, Cost cost, string text,
             TargetSpec[]? targets = null, Action<EffectCtx>? effect = null,
             string? flipText = null, FlipCost? flipCost = null,
-            Action<FlipCtx>? flip = null, bool spellTrap = false, bool letSpellResolve = false)
+            Action<FlipCtx>? flip = null, Func<FlipCtx, bool>? flipUseful = null,
+            bool spellTrap = false, bool letSpellResolve = false)
             => new()
             {
                 Id = $"{_prefix}x-{file}",
@@ -292,6 +299,7 @@ public static class Kit
                 FlipText = flipText,
                 FlipCost = flipCost,
                 Flip = flip,
+                FlipUseful = flipUseful,
                 Art = ArtPath($"{_spellFolder}/{file}"),
                 Num = NextNum(),
             };
@@ -299,9 +307,10 @@ public static class Kit
         public CardDef Stage(string file, string name, Cost cost, string text,
             StageHooks? hooks = null,
             string? flipText = null, FlipCost? flipCost = null,
-            Action<FlipCtx>? flip = null, Action<EffectCtx>? effect = null)
+            Action<FlipCtx>? flip = null, Func<FlipCtx, bool>? flipUseful = null,
+            Action<EffectCtx>? effect = null)
             => NonSummon(CardType.Stage, file, name, cost, text, null, effect, hooks,
-                flipText, flipCost, flip);
+                flipText, flipCost, flip, flipUseful);
     }
 
     /// <summary>Dual-colour cards live in their own folders and carry two colours.</summary>
@@ -323,7 +332,8 @@ public static class Kit
         public CardDef Summon(int level, string file, string name, Faction[]? factions = null,
             int? str = null, int? hp = null, string? text = null,
             Power[]? powers = null, Triggers? triggers = null, TargetSpec[]? targets = null,
-            Action<FlipCtx>? flip = null, string? flipText = null, int effectDamage = 0,
+            Action<FlipCtx>? flip = null, Func<FlipCtx, bool>? flipUseful = null,
+            string? flipText = null, int effectDamage = 0,
             bool cursePotency = false, bool stationary = false, bool redirect = false,
             bool spellImmune = false, bool reborn = false, bool frenzy = false,
             bool neutral = false)
@@ -352,6 +362,7 @@ public static class Kit
                 Triggers = triggers,
                 Targets = targets,
                 Flip = flip,
+                FlipUseful = flipUseful,
                 FlipText = flipText,
                 Art = ArtPath($"Mixed/{_pair}/{file}"),
                 Num = NextNum(),
@@ -360,7 +371,8 @@ public static class Kit
 
         private CardDef Other(CardType type, string file, string name, Cost cost, string? text,
             TargetSpec[]? targets, Action<EffectCtx>? effect, StageHooks? hooks,
-            string? flipText, FlipCost? flipCost, Action<FlipCtx>? flip)
+            string? flipText, FlipCost? flipCost, Action<FlipCtx>? flip,
+            Func<FlipCtx, bool>? flipUseful = null)
             => new()
             {
                 Id = Id(file),
@@ -376,6 +388,7 @@ public static class Kit
                 FlipText = flipText,
                 FlipCost = flipCost,
                 Flip = flip,
+                FlipUseful = flipUseful,
                 Art = ArtPath($"Mixed/{_pair}/{file}"),
                 Num = NextNum(),
             };

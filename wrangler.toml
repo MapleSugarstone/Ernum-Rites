@@ -8,6 +8,11 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 ALLOWED_ORIGINS = "https://maplesugarstone.github.io,http://localhost:5173"
 
+# Without this nothing server-side is retained, so an incident nobody happened
+# to be tailing leaves no record anywhere.
+[observability]
+enabled = true
+
 [[durable_objects.bindings]]
 name = "MATCH_ROOM"
 class_name = "MatchRoom"

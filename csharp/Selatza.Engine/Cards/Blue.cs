@@ -82,6 +82,8 @@ public static class Blue
         K.Summon(1, "seabunny", "Sea Bunny", F(Faction.Fish, Faction.Beast), str: 1, hp: 2,
             flipText: "Bring a summon back from your debt to your hand.",
             flipCost: new FlipCost { Mana = new Cost(F: 1) },
+            flipUseful: c => c.DebtSummons(c.Me).Length > 0
+                && c.State.Players[c.Me].Hand.Count < Rules.HandLimit,
             flip: c =>
             {
                 c.Choose("debt-summon-to-hand", c.DebtSummons(c.Me), "Bring back which summon?");
@@ -305,6 +307,8 @@ public static class Blue
             }),
             flipText: "Bring a summon back from your debt to your hand.",
             flipCost: new FlipCost { Mana = new Cost(F: 1) },
+            flipUseful: c => c.DebtSummons(c.Me).Length > 0
+                && c.State.Players[c.Me].Hand.Count < Rules.HandLimit,
             flip: c =>
             {
                 c.Choose("debt-summon-to-hand", c.DebtSummons(c.Me), "Bring back which summon?");
@@ -525,6 +529,8 @@ public static class Blue
             Specs(Any()), c => c.Transform(c.Target(0), "f1-basicfish"),
             flipText: "Bring a summon back from your debt to your hand.",
             flipCost: new FlipCost { Mana = new Cost(F: 1) },
+            flipUseful: c => c.DebtSummons(c.Me).Length > 0
+                && c.State.Players[c.Me].Hand.Count < Rules.HandLimit,
             flip: c =>
             {
                 c.Choose("debt-summon-to-hand", c.DebtSummons(c.Me), "Bring back which summon?");

@@ -1,6 +1,6 @@
 import type { CardDef, TargetRef } from '../engine/types';
 import { effectiveStrength } from '../engine/effects';
-import { battleAttacker, battleDefender, livingOpponents } from '../engine/state';
+import { battleAttacker, battleDefender, HAND_LIMIT, livingOpponents } from '../engine/state';
 import { card } from '../engine/registry';
 import { T, colorKit, holderRef, selfRef } from './build';
 
@@ -90,7 +90,8 @@ export const blueCards: CardDef[] = [
     hp: 2,
     flipText: 'Bring a summon back from your debt to your hand.',
     flipCost: { mana: { F: 1 } },
-    flipUseful: (c) => c.debtSummons(c.me).length > 0,
+    flipUseful: (c) =>
+      c.debtSummons(c.me).length > 0 && c.state.players[c.me].hand.length < HAND_LIMIT,
     flip: (c) => {
       c.choose('debt-summon-to-hand', c.debtSummons(c.me), 'Bring back which summon?');
     },
@@ -330,7 +331,8 @@ export const blueCards: CardDef[] = [
     ],
     flipText: 'Bring a summon back from your debt to your hand.',
     flipCost: { mana: { F: 1 } },
-    flipUseful: (c) => c.debtSummons(c.me).length > 0,
+    flipUseful: (c) =>
+      c.debtSummons(c.me).length > 0 && c.state.players[c.me].hand.length < HAND_LIMIT,
     flip: (c) => {
       c.choose('debt-summon-to-hand', c.debtSummons(c.me), 'Bring back which summon?');
     },
@@ -567,7 +569,8 @@ export const blueCards: CardDef[] = [
     effect: (c) => c.transform(c.targets[0], 'f1-basicfish'),
     flipText: 'Bring a summon back from your debt to your hand.',
     flipCost: { mana: { F: 1 } },
-    flipUseful: (c) => c.debtSummons(c.me).length > 0,
+    flipUseful: (c) =>
+      c.debtSummons(c.me).length > 0 && c.state.players[c.me].hand.length < HAND_LIMIT,
     flip: (c) => {
       c.choose('debt-summon-to-hand', c.debtSummons(c.me), 'Bring back which summon?');
     },

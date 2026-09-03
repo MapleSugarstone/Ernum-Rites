@@ -288,7 +288,9 @@ export const yellowCards: CardDef[] = [
     ],
     flipText: 'The attached character gains 2 HP.',
     flipCost: { mana: { S: 1 } },
-    flipUseful: (c) => c.deckLeft(c.me) > 0 || c.discardLeft(c.me) > 0,
+    // No gate. Adding HP always does something, and the deck-and-discard test
+    // that used to sit here was copied from Trailblaze above: it hid a flip that
+    // works perfectly well from anyone whose deck and discard had both run out.
     flip: (c) => c.reinforce(holderRef(c), 2),
   }),
   k.summon(2, 'livingruin', 'Living Ruin', ['Living'], {

@@ -759,6 +759,12 @@ public sealed class CardDef
     public TargetSpec[]? Targets { get; init; }
     public Action<EffectCtx>? Effect { get; init; }
     public Action<FlipCtx>? Flip { get; init; }
+    /// <summary>
+    /// Whether paying for this flip would change anything. A card that answers
+    /// no for a position keeps the game from stopping to offer a flip that has
+    /// nothing to work on, and keeps its owner from being billed for it.
+    /// </summary>
+    public Func<FlipCtx, bool>? FlipUseful { get; init; }
     public string? FlipText { get; init; }
     /// <summary>When set, the flip is optional and its owner must pay this.</summary>
     public FlipCost? FlipCost { get; init; }

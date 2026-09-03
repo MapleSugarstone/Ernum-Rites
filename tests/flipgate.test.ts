@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import '../src/cards';
-import { applyAction, createGame } from '../src/engine/engine';
-import { dealDamage } from '../src/engine/effects';
+import { applyAction, createGame, flipWouldFire } from '../src/engine/engine';
+import { chooseBoard, dealDamage } from '../src/engine/effects';
 import { card } from '../src/engine/registry';
-import { choiceIsLive, currentActor, remainingHp, type GameState } from '../src/engine/state';
+import {
+  choiceIsLive,
+  currentActor,
+  HAND_LIMIT,
+  remainingHp,
+  type GameState,
+} from '../src/engine/state';
 
 /**
  * A costed flip stops the blow that revealed it.
@@ -15,6 +21,10 @@ import { choiceIsLive, currentActor, remainingHp, type GameState } from '../src/
  */
 
 const HEAL_FLIP = 'n1-Thing';
+/** Fishify: its flip brings a summon back from the debt pile, or does nothing. */
+const DEBT_FLIP = 'fx-fishify';
+/** A summon to sit in the debt pile and be brought back. */
+const RESCUED = 'f1-basicfish';
 const PLAIN = 'x-r-dummy-1';
 const LEADER = 'x-hero-dummy-warden';
 
@@ -180,6 +190,88 @@ describe('a flip parked under an open response window', () => {
     expect(s.flipQueue.length, 'the offer is settled').toBe(0);
     const passed = applyAction(s, 1, { type: 'PASS_RESPONSE' });
     expect(passed.ok, passed.ok ? '' : passed.error).toBe(true);
+  });
+
+  it('never bills for a flip that would find nothing to work on', () => {
+    // Reported from a live game: a Fishify turned up on an HP card, the player
+    // paid its cost, and nothing came back because their debt zone was empty.
+    // The card says so itself through `flipUseful` and the client hides the
+    // offer on the strength of it, but the client is not the authority.
+    const s = game();
+    s.players[0].leader!.hp = [
+      { cardId: DEBT_FLIP, flipped: false },
+      { cardId: PLAIN, flipped: false },
+    ];
+    s.players[0].mana.F = 3;
+    s.players[0].debt = [];
+
+    dealDamage(s, { kind: 'leader', player: 0 }, 1);
+    const offer = s.flipQueue[0];
+    expect(offer, 'the flip is offered').toBeTruthy();
+    expect(flipWouldFire(s, offer), 'and the card says it would do nothing').toBe(false);
+
+    const r = applyAction(s, 0, { type: 'PAY_FLIP' });
+    const after = r.ok ? r.state : s;
+    expect(after.players[0].mana.F, 'nothing was charged for nothing').toBe(3);
+    expect(after.flipQueue.length, 'and the offer is not left hanging').toBe(0);
+  });
+
+  it('still bills for the same flip when there is something to bring back', () => {
+    const s = game();
+    s.players[0].leader!.hp = [
+      { cardId: DEBT_FLIP, flipped: false },
+      { cardId: PLAIN, flipped: false },
+    ];
+    s.players[0].mana.F = 3;
+    s.players[0].debt = [PLAIN];
+
+    dealDamage(s, { kind: 'leader', player: 0 }, 1);
+    expect(flipWouldFire(s, s.flipQueue[0]), 'the card has work to do').toBe(true);
+
+    const r = applyAction(s, 0, { type: 'PAY_FLIP' });
+    expect(r.ok).toBe(true);
+    const after = r.ok ? r.state : s;
+    expect(after.players[0].mana.F, 'and it is paid for').toBe(2);
+    expect(after.players[0].hand, 'the summon comes back').toContain(PLAIN);
+  });
+
+  it('leaves a rescued summon in debt rather than destroying it on a full hand', () => {
+    // The live report. With a summon in debt and the hand at its limit the gate
+    // said yes, the payment went through, and the summon was pulled out of debt
+    // only for `toHand` to turn it away into the discard pile. The player paid,
+    // nothing arrived, and the card they were rescuing was gone.
+    const s = game();
+    s.players[0].leader!.hp = [
+      { cardId: DEBT_FLIP, flipped: false },
+      { cardId: PLAIN, flipped: false },
+    ];
+    s.players[0].mana.F = 3;
+    s.players[0].debt = [RESCUED];
+    s.players[0].hand = Array(HAND_LIMIT).fill(PLAIN);
+
+    dealDamage(s, { kind: 'leader', player: 0 }, 1);
+
+    // Not offered at all now: a hand with no room is a flip with nothing to do.
+    expect(flipWouldFire(s, s.flipQueue[0])).toBe(false);
+    const r = applyAction(s, 0, { type: 'PAY_FLIP' });
+    const after = r.ok ? r.state : s;
+    expect(after.players[0].mana.F, 'nothing was charged').toBe(3);
+    expect(after.players[0].debt, 'and the summon is still there to rescue').toContain(RESCUED);
+    expect(after.players[0].discard, 'certainly not destroyed').not.toContain(RESCUED);
+  });
+
+  it('leaves it in debt whatever asked for it, not only a flip', () => {
+    // The guard lives in the resolver as well as in the gate, because every
+    // other route into "bring a summon back" runs through the same code and a
+    // card that cannot be held must not be destroyed by the attempt.
+    const s = game();
+    s.players[0].debt = [RESCUED];
+    s.players[0].hand = Array(HAND_LIMIT).fill(PLAIN);
+
+    chooseBoard(s, 0, DEBT_FLIP, 'debt-summon-to-hand', [{ kind: 'debt', player: 0, index: 0 }], '');
+
+    expect(s.players[0].debt, 'still there').toContain(RESCUED);
+    expect(s.players[0].discard, 'not thrown away').not.toContain(RESCUED);
   });
 
   it('never bills for an offer whose body has already left the board', () => {

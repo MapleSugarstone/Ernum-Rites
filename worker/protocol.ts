@@ -45,7 +45,13 @@ export type ClientMessage =
    * `done` when they call it finished, so a clock that runs out has the latest
    * build to fill in rather than an empty one.
    */
-  | { type: 'draftDeck'; leaderId: string; cards: string[]; done: boolean }
+  /**
+   * `opened` repeats what the last `draftOpened` said. That message is sent once
+   * and `send` drops anything not on an open socket, so a single lost frame used
+   * to boot a player who had opened every pack. Carried here it is re-asserted
+   * with every change to the deck.
+   */
+  | { type: 'draftDeck'; leaderId: string; cards: string[]; done: boolean; opened?: number }
   /**
    * Round trip for clock skew. The client stamps `sent`, the room echoes it back
    * beside its own clock, and the client works out the offset from the two.
@@ -70,6 +76,12 @@ export type ServerMessage =
       /** Hand it back on a later join to reclaim this seat. Absent before a match. */
       token?: string;
     }
+  /**
+  * A resume token this room does not know. Its own message rather than an
+  * `error`, because the client has to stop retrying and let the token go: a
+  * client that keeps presenting it would be asking for a match nobody has.
+  */
+  | { type: 'resumeFailed'; reason: string }
   /** A seat whose connection went. Held until `until`, then it is given up on. */
   | { type: 'playerAway'; seat: PlayerIdx; name: string; until: number }
   | { type: 'playerBack'; seat: PlayerIdx; name: string }

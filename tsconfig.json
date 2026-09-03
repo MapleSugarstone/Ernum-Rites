@@ -13,7 +13,11 @@
     "isolatedModules": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["vite/client", "node"]
+    "types": ["vite/client", "node"],
+    // The suite drives a real MatchRoom, which extends a class that only exists
+    // inside workerd. Mirrors the vitest alias so `npm run typecheck` and the
+    // tests resolve the same module. The worker's own tsconfig uses the real one.
+    "paths": { "cloudflare:workers": ["./tests/cloudflare-workers.stub.ts"] }
   },
   "include": ["src", "tests", "scripts", "vite.config.ts"]
 }

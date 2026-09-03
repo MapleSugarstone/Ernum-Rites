@@ -185,6 +185,7 @@ public static class Red
             },
             flipText: "Deal 2 to the enemy leader.",
             flipCost: new FlipCost { Mana = new Cost(P: 1) },
+            flipUseful: c => c.SummonAt(TargetRef.Leader(c.Opp)) is not null,
             flip: c => c.Damage(TargetRef.Leader(c.Opp), 2)),
 
         K.Summon(2, "evil squire", "Evil Squire", F(Faction.Mortal),
@@ -374,6 +375,7 @@ public static class Red
             Specs(Enemy()), c => c.Damage(c.Target(0), 4),
             flipText: "Deal 2 to the enemy leader.",
             flipCost: new FlipCost { Mana = new Cost(P: 1) },
+            flipUseful: c => c.SummonAt(TargetRef.Leader(c.Opp)) is not null,
             flip: c => c.Damage(TargetRef.Leader(c.Opp), 2)),
 
         K.Spell("poisondagger", "Dagger Dance", new Cost(P: 1),
@@ -422,6 +424,7 @@ public static class Red
             },
             flipText: "Deal 3 to every enemy summon.",
             flipCost: new FlipCost { Mana = new Cost(P: 2) },
+            flipUseful: c => c.SummonsOf(c.Opp).Length > 0,
             flip: c =>
             {
                 foreach (var t in c.SummonsOf(c.Opp)) c.Damage(t, 3);

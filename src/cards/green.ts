@@ -310,7 +310,7 @@ export const greenCards: CardDef[] = [
       {
         name: 'Machine Learning',
         cost: { R: 1 },
-        text: "Draw the top card of the enemy's deck, rebuilt in Robot.",
+        text: "Draw a copy of the top card of the enemy's deck, rebuilt in Robot.",
         sapSelf: true,
         effect: (c) => {
           const deck = c.state.players[c.opp].deck;

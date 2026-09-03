@@ -13,7 +13,7 @@ import {
 } from '../engine/effects';
 import { oilCopy, robotCopy } from '../engine/generated';
 import { card } from '../engine/registry';
-import { findSummon, type GameState } from '../engine/state';
+import { findSummon, HAND_LIMIT, type GameState } from '../engine/state';
 import type { TargetRef } from '../engine/types';
 
 function reinforce(state: GameState, ref: TargetRef, count: number): void {
@@ -105,6 +105,13 @@ registerChoiceResolver('debt-summon-to-hand', (state, choice, pick) => {
   if (pick.ref?.kind !== 'debt') return;
   const p = state.players[choice.player];
   if (pick.ref.index < 0 || pick.ref.index >= p.debt.length) return;
+  // Asked before it leaves the debt zone. Pulling it out first and letting
+  // `toHand` turn it away destroyed the very summon this was rescuing: it left
+  // the debt pile, found no room, and went to the discard pile instead.
+  if (p.hand.length >= HAND_LIMIT) {
+    log(state, choice.player, `Hand is full at ${HAND_LIMIT}; it stays in the debt zone.`);
+    return;
+  }
   const id = removeFromDebt(state, choice.player, pick.ref.index);
   if (!id) return;
   if (toHand(state, choice.player, id)) {
@@ -117,6 +124,12 @@ registerChoiceResolver('download', (state, choice, pick) => {
   if (pick.ref?.kind !== 'debt') return;
   const from = pick.ref.player;
   if (pick.ref.index < 0 || pick.ref.index >= state.players[from].debt.length) return;
+  // The same rule: a card that cannot be held is left where it was rather than
+  // pulled out of the scrap and thrown away.
+  if (state.players[choice.player].hand.length >= HAND_LIMIT) {
+    log(state, choice.player, `Hand is full at ${HAND_LIMIT}; it stays in the scrap.`);
+    return;
+  }
   const id = removeFromDebt(state, from, pick.ref.index);
   if (!id) return;
   if (toHand(state, choice.player, robotCopy(id))) {

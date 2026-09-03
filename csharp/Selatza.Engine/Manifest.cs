@@ -60,6 +60,7 @@ public static class Manifest
             + $"\"targets\":{(c.Targets?.Length ?? 0)},"
             + $"\"powers\":[{string.Join(",", powers)}],"
             + $"\"flip\":{L(c.Flip is not null)},"
+            + $"\"flipUseful\":{L(c.FlipUseful is not null)},"
             + $"\"flipCost\":{J(CostString(c.FlipCost))},"
             + $"\"triggers\":{J(TriggerList(c))},"
             + $"\"stage\":{J(StageList(c))}"

@@ -148,6 +148,13 @@ describe('card manifest', () => {
     targets: number;
     powers: { name: string; cost: string; once: boolean; sap: boolean; targets: number }[];
     flip: boolean;
+    /**
+     * Presence only, the way `flip` is. A predicate cannot be compared across
+     * the two engines, but whether a card carries one can be, and a card that
+     * grew one on this side and not the other is exactly the drift this list
+     * exists to catch: the rule that reads it lives in both engines.
+     */
+    flipUseful: boolean;
     flipCost: string;
     triggers: string;
     stage: string;
@@ -207,6 +214,7 @@ describe('card manifest', () => {
         targets: p.targets?.length ?? 0,
       })),
       flip: !!def.flip,
+      flipUseful: !!def.flipUseful,
       flipCost: def.flipCost
         ? `${costToString(def.flipCost.mana)}|${def.flipCost.mill ?? 0}|${def.flipCost.discard ?? 0}`
         : '',

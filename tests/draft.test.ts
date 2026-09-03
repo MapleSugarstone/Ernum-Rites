@@ -318,6 +318,16 @@ describe('giving up on a connection that went quiet', () => {
     expect(connectionLost({ ...live, quietMs: 90_000 })).toBe(true);
   });
 
+  it('excuses the silence when its own check was late', () => {
+    // A lid closed on a focused tab fires no visibility change, so nothing else
+    // notices the machine stopped. The check running long after its own interval
+    // is the evidence, and the quiet behind it is the sleep rather than the room.
+    const slept = { ...live, quietMs: 40 * 60_000, lateMs: 40 * 60_000 };
+    expect(connectionLost(slept)).toBe(false);
+    // Ordinary scheduling jitter is not a sleep, and still reports.
+    expect(connectionLost({ ...live, quietMs: 40_000, lateMs: 400 })).toBe(true);
+  });
+
   it('never gives up on a tab that was only put away', () => {
     // A hidden tab has both the check and the ping that feeds it clamped to
     // about once a minute, so its silence says nothing. Acting on it would

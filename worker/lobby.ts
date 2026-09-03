@@ -139,15 +139,14 @@ export class Lobby extends DurableObject {
       await this.save();
       return null;
     }
-    // A head-to-head code is good for one guest: leaving it live would let a
-    // third player knock on a room that is already full. A party code has to
-    // seat several guests, so it lives out its clock and the room's own
-    // "room is full" answer turns away anyone extra.
-    if (!isPartyName(entry.roomId)) {
-      this.codes.delete(code.toUpperCase());
-    } else {
-      entry.expiresAt = Date.now() + PARTY_CODE_MS;
-    }
+    // The code is not spent here. This runs before the guest has opened a socket,
+    // let alone been seated, so every refusal the room can still make, a version
+    // mismatch above all, used to leave them holding a dead code and reading
+    // "Lobby not found" on the retry they had just been told to make. The room's
+    // own "room is full" answer is what turns away anyone extra, which is how a
+    // party code has always worked, so a head-to-head one can live out its clock
+    // the same way.
+    entry.expiresAt = Date.now() + (isPartyName(entry.roomId) ? PARTY_CODE_MS : CODE_MS);
     await this.save();
     return { roomId: entry.roomId };
   }

@@ -8,7 +8,7 @@
  */
 import { copiesLeft, PACK_COUNT, poolCounts, spentCounts } from '../engine/draft';
 import { canBeLeader } from '../engine/identity';
-import { card, tryCard } from '../engine/registry';
+import { tryCard } from '../engine/registry';
 import type { CardDef, Rarity } from '../engine/types';
 
 export interface DraftState {
@@ -114,8 +114,12 @@ export function draftSections(pool: readonly string[]): Section[] {
 export function deckCopies(cards: readonly string[]): CardDef[] {
   const rank = (d: CardDef) =>
     d.type === 'summon' ? (d.level ?? 1) : d.type === 'spell' ? 4 : d.type === 'trap' ? 5 : 6;
+  // tryCard rather than card, like every other reader here. Both callers pass
+  // ids the room dealt, so an unknown one cannot arrive today, but this runs
+  // inside a render and a throw there takes the whole screen with it.
   return cards
-    .map((id) => card(id))
+    .map((id) => tryCard(id))
+    .filter((d): d is CardDef => d !== undefined)
     .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
 }
 
@@ -143,7 +147,8 @@ export function deckRows(cards: readonly string[]): { def: CardDef; n: number }[
   const rank = (d: CardDef) =>
     d.type === 'summon' ? (d.level ?? 1) : d.type === 'spell' ? 4 : d.type === 'trap' ? 5 : 6;
   return [...spentCounts('', cards)]
-    .map(([id, n]) => ({ def: card(id), n }))
+    .map(([id, n]) => ({ def: tryCard(id), n }))
+    .filter((e): e is { def: CardDef; n: number } => e.def !== undefined)
     .sort((a, b) => rank(a.def) - rank(b.def) || a.def.name.localeCompare(b.def.name));
 }
 

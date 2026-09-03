@@ -235,6 +235,12 @@ interface Ui {
     draft: boolean;
     /** Who is in the room while it fills, from the room's waiting pushes. */
     roster: { players: number; needed: number; names: string[] } | null;
+    /**
+     * Seats whose connection went, and when the room stops holding each. A
+     * ninety second absence used to be one toast, so the player left at the
+     * table watched turns pass with nothing on screen saying why.
+     */
+    away: { seat: number; name: string; until: number }[];
     /** The local player chose to keep watching after being eliminated. */
     spectating: boolean;
   };
@@ -286,6 +292,7 @@ const ui: Ui = {
     timers: true,
     draft: false,
     roster: null,
+    away: [],
     spectating: false,
   },
   enemyPick: null,
@@ -1778,14 +1785,18 @@ function watchError(): void {
  * anything that needs a button is a prompt and belongs in the prompt layer.
  */
 function popNotice(title: string, body: string, kind = ''): void {
+  // `.stage` only exists once a board is mounted. Every other screen that has
+  // something to say, the draft above all, used to say it into nothing: a
+  // refused deck was indistinguishable from a dead button.
   const stage = document.querySelector('.stage');
-  if (!stage) return;
+  const host = stage ?? document.body;
+  if (!stage) kind = `${kind} floating`.trim();
   // Only ever one on screen: two stacked read as one garbled message.
-  stage.querySelector('.notice')?.remove();
+  host.querySelector('.notice')?.remove();
   const el = document.createElement('div');
   el.className = `notice ${kind}`.trim();
   el.innerHTML = `<b>${esc(title)}</b>${body ? `<span>${esc(body)}</span>` : ''}`;
-  stage.appendChild(el);
+  host.appendChild(el);
   window.setTimeout(() => el.remove(), NOTICE_MS);
 }
 
@@ -4417,6 +4428,7 @@ function render(): void {
   syncLayout();
   // Drawn on every screen, because a connection can die on any of them.
   renderReconnect();
+  renderAway();
   document.body.classList.toggle('party', !!ui.state && isParty(ui.state));
   // The board is rebuilt from scratch on every action, and a fresh element
   // starts its animation over. Handing the marks the time as a negative delay
@@ -5248,6 +5260,12 @@ function startDraftWatch(): void {
   if (draftWatch === null) draftWatch = window.setInterval(draftTick, 250);
 }
 
+/** Drop a build that has not been sent yet, so it cannot land on a later socket. */
+function stopDraftSend(): void {
+  if (draftSend !== null) window.clearTimeout(draftSend);
+  draftSend = null;
+}
+
 function stopDraftWatch(): void {
   if (draftWatch !== null) window.clearInterval(draftWatch);
   draftWatch = null;
@@ -5286,12 +5304,12 @@ function pushDraftDeck(done = false): void {
   draftSend = null;
   const d = ui.draft;
   if (done) {
-    net?.sendDraftDeck(d.leaderId, d.cards, true);
+    net?.sendDraftDeck(d.leaderId, d.cards, true, d.pack);
     return;
   }
   draftSend = window.setTimeout(() => {
     draftSend = null;
-    net?.sendDraftDeck(ui.draft.leaderId, ui.draft.cards, false);
+    net?.sendDraftDeck(ui.draft.leaderId, ui.draft.cards, false, ui.draft.pack);
   }, 600);
 }
 
@@ -5748,6 +5766,11 @@ function handleDraftCommand(cmd: string): boolean {
   }
   if (cmd === 'd-edit') {
     d.done = false;
+    // Tell the room, rather than waiting for the next card change to carry it.
+    // The seat stays on the finished list until a `done: false` arrives, so a
+    // player who went back to look and then changed nothing was still counted
+    // as ready, and the draft could be closed out from under them.
+    pushDraftDeck();
     render();
     return true;
   }
@@ -5935,16 +5958,28 @@ function netClient(): NetClient {
           token,
           deckKey: ui.online.deckKey,
           name: ui.online.name.trim(),
+          heldUntil: Date.now() + AWAY_GRACE_SECONDS * 1000,
         });
       }
       render();
     },
-    onPlayerAway(_seat, name, until) {
+    onResumeFailed(reason) {
+      // The seat is gone, so there is nothing to keep trying for. Letting the
+      // token go is what stops the retry loop and takes the Rejoin button away.
+      endReconnect();
+      keepResumable(null);
+      failOnline(reason);
+    },
+    onPlayerAway(seat, name, until) {
       const left = Math.max(0, Math.ceil((until - Date.now()) / 1000));
       popNotice(name, `Lost connection, ${left}s to return`, 'bad');
+      ui.online.away = [...ui.online.away.filter((a) => a.seat !== seat), { seat, name, until }];
+      render();
     },
-    onPlayerBack(_seat, name) {
+    onPlayerBack(seat, name) {
       popNotice(name, 'Back', '');
+      ui.online.away = ui.online.away.filter((a) => a.seat !== seat);
+      render();
     },
     onWaiting(players, code, needed, names) {
       ui.online.phase = 'waiting';
@@ -5959,6 +5994,14 @@ function netClient(): NetClient {
           ? `v${state.version} seat ${move.actor} ${move.action.type}`
           : `v${state.version} resync`,
       );
+      // Once the result is in the room holds nothing, so the way back goes too.
+      // Left standing it offers a rejoin that can only be refused, and a drop
+      // while the winner reads the banner would raise a scrim over it.
+      if (isOver(state)) {
+        endReconnect();
+        keepResumable(null);
+        ui.online.away = [];
+      }
       // Seating happens on arrival, which for the host is while still alone in
       // the room. The match starts on the first state the room pushes.
       const opening = ui.online.phase !== 'playing';
@@ -6084,6 +6127,9 @@ function netClient(): NetClient {
     },
     onOpponentLeft() {
       note('the other player left');
+      // The room only says this once it has given up on the seat, so there is
+      // nothing left to go back to.
+      keepResumable(null);
       failOnline('Your opponent left the match.');
     },
     onPlayerLeft(_seat, name) {
@@ -6146,6 +6192,12 @@ interface Resumable {
   token: string;
   deckKey: string;
   name: string;
+  /**
+   * When the room stops holding the seat. Without it the lobby offers to rejoin
+   * a match that ended hours ago, and the only way to find out is to click and
+   * be told it is gone.
+   */
+  heldUntil: number;
 }
 
 const RESUME_KEY = 'ernumrites.resume';
@@ -6154,10 +6206,16 @@ let resumable: Resumable | null = readResumable();
 function readResumable(): Resumable | null {
   try {
     const raw = sessionStorage.getItem(RESUME_KEY);
-    return raw ? (JSON.parse(raw) as Resumable) : null;
+    const held = raw ? (JSON.parse(raw) as Resumable) : null;
+    return held && held.heldUntil > Date.now() ? held : null;
   } catch {
     return null;
   }
+}
+
+/** Whether the room could still be holding the seat this client remembers. */
+function seatStillHeld(): boolean {
+  return resumable !== null && resumable.heldUntil > Date.now();
 }
 
 function keepResumable(r: Resumable | null): void {
@@ -6182,7 +6240,10 @@ let reconnecting: { attempt: number; until: number; timer: number | null } | nul
  * by every client that was talking to it.
  */
 function beginReconnect(): void {
-  if (reconnecting || !resumable) return;
+  if (reconnecting || !seatStillHeld()) return;
+  // A won match has nothing to go back to, and a scrim over the result banner
+  // is the last thing the winner needs.
+  if (ui.state && isOver(ui.state)) return;
   reconnecting = { attempt: 0, until: Date.now() + AWAY_GRACE_SECONDS * 1000, timer: null };
   ui.error = null;
   render();
@@ -6223,6 +6284,48 @@ function endReconnect(): void {
 }
 
 /**
+ * Who at the table is not connected, and how long the room will wait for them.
+ *
+ * Standing rather than a toast: the absence lasts a minute and a half, their
+ * turns go on timing out throughout, and a player watching that happen with no
+ * explanation is the same puzzle as a dropped connection nobody reported. Sits
+ * clear of the reconnect overlay and never takes a click, so it can be ignored.
+ */
+function renderAway(): void {
+  const now = Date.now();
+  const away = ui.online.away.filter((a) => a.until > now);
+  let host = document.getElementById('awaybar');
+  // The player's own reconnect is a bigger statement on the same subject.
+  if (away.length === 0 || reconnecting || ui.screen !== 'game') {
+    host?.remove();
+    if (awayTick !== null && away.length === 0) {
+      window.clearInterval(awayTick);
+      awayTick = null;
+    }
+    return;
+  }
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'awaybar';
+    host.className = 'awaybar';
+    document.body.appendChild(host);
+  }
+  host.innerHTML = away
+    .map(
+      (a) =>
+        `<span><b>${esc(a.name)}</b> lost connection &middot; ${Math.max(
+          0,
+          Math.ceil((a.until - now) / 1000),
+        )}s</span>`,
+    )
+    .join('');
+  // Its own tick, because nothing else repaints while everyone is waiting.
+  if (awayTick === null) awayTick = window.setInterval(renderAway, 1000);
+}
+
+let awayTick: number | null = null;
+
+/**
  * The overlay while a client is trying to get back in. On the body rather than
  * inside the shell, because #app carries a transform when the table is scaled
  * and a transformed ancestor makes position:fixed behave like position:absolute.
@@ -6238,6 +6341,14 @@ function renderReconnect(): void {
     host.id = 'reconnect';
     host.className = 'reconnectlayer';
     document.body.appendChild(host);
+    // Its own listener, because the delegated one is on #app and this sits
+    // beside it rather than inside it. Without this the only control on a
+    // full-screen scrim does nothing and the board underneath cannot be
+    // clicked either, which strands the player for the whole grace.
+    host.addEventListener('click', (ev) => {
+      const btn = (ev.target as HTMLElement | null)?.closest<HTMLElement>('[data-cmd]');
+      if (btn?.dataset.cmd) handleCommand(btn.dataset.cmd);
+    });
   }
   const left = Math.max(0, Math.ceil((reconnecting.until - Date.now()) / 1000));
   host.innerHTML = `<div class="reconnectbox">
@@ -6255,26 +6366,41 @@ let desyncStrikes = 0;
 let rejoinTried = false;
 
 /** Drop back to the lobby with something to read. */
-function failOnline(reason: string): void {
+function failOnline(reason: string, report = true): void {
   // Before anything is torn down. The reset below drops the seat, the room code
   // and the phase, so a report built after it calls an online match local and
   // has no room to name, which is the whole of what a dropped connection has to
   // say for itself. The quiet stretch is frozen here too: measured later it
   // grows with however long the player took to reach for the button.
   const health = net?.health();
-  recordClose({
-    reason,
-    state: ui.state,
-    seat: ui.online.seat,
-    roomCode: ui.online.roomCode,
-    online: ui.online.phase === 'playing' || ui.online.phase === 'waiting',
-    ...(health ? { health: { quietMs: health.quietMs, readyState: health.readyState } } : {}),
-  });
+  // Skipped for a lobby refusal. An illegal deck or a mistyped code is a message
+  // the player can act on themselves, and offering them a match report to paste
+  // into a chat for it is noise: the report would read `mode: local` with no
+  // room to name.
+  if (report) {
+    recordClose({
+      reason,
+      state: ui.state,
+      seat: ui.online.seat,
+      roomCode: ui.online.roomCode,
+      online:
+        ui.online.phase === 'playing' ||
+        ui.online.phase === 'waiting' ||
+        // Without this a drafter's report says `mode: local` and drops the room
+        // line, which is the one field that ties it to a line in the tail.
+        ui.online.phase === 'drafting',
+      ...(health ? { health: { quietMs: health.quietMs, readyState: health.readyState } } : {}),
+    });
+  }
+  onlineGeneration++;
   stopRopeWatch();
   stopDraftWatch();
-  // Whatever brought us here, the seat is not being gone back to now.
+  stopDraftSend();
   endReconnect();
-  keepResumable(null);
+  // The token is deliberately left alone. Ending this session is not the same
+  // as the seat being gone, and the room holds it for the grace however this
+  // client got here; the paths that know it is really over drop it themselves,
+  // and `heldUntil` retires the rest.
   net?.close();
   pendingRoom = null;
   // A finished match cannot fail. The result is already on screen and the socket
@@ -6295,6 +6421,7 @@ function failOnline(reason: string): void {
   ui.online.roomCode = null;
   ui.online.seat = null;
   ui.online.roster = null;
+  ui.online.away = [];
   ui.online.spectating = false;
   ui.enemyPick = null;
   ui.draft = newDraft();
@@ -6324,6 +6451,10 @@ async function startOnline(how: 'public' | 'host' | 'join'): Promise<void> {
   o.phase = how === 'public' ? 'seeking' : 'connecting';
   render();
 
+  // Matchmaking is a round trip, and Cancel is the button on screen for the
+  // whole of it. Without this the reply lands after the player has left and
+  // seats them in the room they just backed out of.
+  const mine = ++onlineGeneration;
   const client = netClient();
   const reply =
     how === 'public'
@@ -6332,8 +6463,9 @@ async function startOnline(how: 'public' | 'host' | 'join'): Promise<void> {
         ? await client.hostPrivateGame(o.party === 2 ? undefined : o.party, !o.timers, o.draft)
         : await client.joinPrivateGame(o.code);
 
+  if (mine !== onlineGeneration) return;
   if (!reply.ok) {
-    failOnline(reply.reason);
+    failOnline(reply.reason, false);
     return;
   }
   pendingRoom = { roomId: reply.roomId, code: reply.code, hosted: how === 'host' };
@@ -6362,6 +6494,10 @@ async function resumeMatch(): Promise<void> {
   const o = ui.online;
   o.error = null;
   o.phase = 'connecting';
+  // Carried so a failure here lands on the quiet-rejoin path rather than on the
+  // one that throws the token away: the room may still be holding the seat, and
+  // one refused attempt is no reason to take the way back off the screen.
+  o.roomCode = back.code ?? o.roomCode;
   render();
   pendingRoom = { roomId: back.roomId, code: back.code };
   const saved = savedDecks().find((d) => d.key === back.deckKey);
@@ -6376,8 +6512,16 @@ async function resumeMatch(): Promise<void> {
   );
 }
 
+/**
+ * Which attempt to reach a room is the current one. Bumped by anything that
+ * ends a session, so a reply that arrives after the player walked away is
+ * dropped rather than acted on.
+ */
+let onlineGeneration = 0;
+
 /** Leave cleanly, so a half-made room does not sit in the queue. */
 function leaveOnline(): void {
+  onlineGeneration++;
   if (pendingRoom && ui.online.phase !== 'playing') {
     // Only the host's cancel retires the code. A guest backing out of a party
     // lobby holds the same code as everyone else, and sending it here would
@@ -6391,10 +6535,12 @@ function leaveOnline(): void {
   net?.close();
   pendingRoom = null;
   stopDraftWatch();
+  stopDraftSend();
   ui.online.phase = 'idle';
   ui.online.roomCode = null;
   ui.online.seat = null;
   ui.online.roster = null;
+  ui.online.away = [];
   ui.online.spectating = false;
   ui.enemyPick = null;
   ui.draft = newDraft();

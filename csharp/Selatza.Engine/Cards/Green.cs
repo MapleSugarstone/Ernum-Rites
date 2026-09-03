@@ -1,3 +1,4 @@
+using System.Linq;
 using static Selatza.Cards.Kit;
 
 namespace Selatza.Cards;
@@ -66,6 +67,8 @@ public static class Green
             triggers: new Triggers { OnEnter = c => c.RecycleTopDiscard(c.Me) }, str: 1, hp: 2,
             flipText: "Destroy any enemy active mana pips and sap one of their supporters.",
             // Pool first: sapping alone is dodged by tapping out early in the turn.
+            flipUseful: c => c.State.Players[c.Opp].Mana.Sum() > 0
+                || c.State.Players[c.Opp].Supporters.Any(x => !x.Sapped),
             flip: c =>
             {
                 // The mana always goes; the sap is only put to the player when
@@ -282,7 +285,7 @@ public static class Green
             {
                 Name = "Machine Learning",
                 Cost = new Cost(R: 1),
-                Text = "Draw the top card of the enemy's deck, rebuilt in Robot.",
+                Text = "Draw a copy of the top card of the enemy's deck, rebuilt in Robot.",
                 SapSelf = true,
                 Effect = c =>
                 {

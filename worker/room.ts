@@ -167,6 +167,9 @@ export class MatchRoom extends DurableObject {
       'seat closed',
       JSON.stringify({
         room: this.ctx.id.name ?? this.ctx.id.toString(),
+        // The player's report carries this and the room name carries a uuid, and
+        // the map between them dies with the lobby's swept code table.
+        code: this.code ?? '',
         seat: idx,
         name: this.seats[idx]?.name ?? '',
         seats: this.seats.length,
@@ -234,13 +237,22 @@ export class MatchRoom extends DurableObject {
     );
     if (this.state === null) {
       this.seats[idx] = null;
-      if (this.draftEndsAt !== null) this.broadcastDraftStatus();
-      else this.broadcastWaiting();
+      if (this.draftEndsAt !== null) {
+        this.broadcastDraftStatus();
+        // The seat that just went may have been the last one anybody was
+        // waiting on. Without this the rest sit reading "everyone is finished"
+        // until the eight minutes are up.
+        await this.maybeFinishDraft();
+      } else this.broadcastWaiting();
       return;
     }
     const seat = idx as PlayerIdx;
     if (isOver(this.state) || this.state.players[seat].eliminated) return;
-    if (this.seats.length === 2) {
+    // Read off the game rather than off `this.seats`. The two agree today,
+    // because `finishDraft` shrinks the seats and `startMatch` builds the game
+    // from exactly those, but only one of them is the authority on how many
+    // players are in the match and it is not the array the room keeps sockets in.
+    if (this.state.players.length === 2) {
       this.seats[idx] = null;
       this.clock = null;
       this.broadcast({ type: 'opponentLeft' });
@@ -365,8 +377,16 @@ export class MatchRoom extends DurableObject {
           await this.armAlarm();
           return;
         }
-        // A token this room has never issued: fall through and let them take a
-        // seat the ordinary way rather than refusing them outright.
+        // A token this room does not know means the match it belongs to is not
+        // here any more: the object lost its memory, or the seat was given up
+        // on. Falling through to an ordinary seat was worse than refusing.
+        // Both players reconnect within a second of each other, both are dealt
+        // fresh chairs, the room fills, and the match silently restarts under
+        // them with new hands and a new opening roll.
+        return this.send(socket, {
+          type: 'resumeFailed',
+          reason: 'That match is no longer running.',
+        });
       }
       // A second join from a socket that already holds a seat is that player
       // changing their deck while they wait, not a second player arriving.
@@ -559,6 +579,11 @@ export class MatchRoom extends DurableObject {
     }
 
     if (msg.type !== 'draftDeck') return;
+    // Only ever forwards, like the dedicated message, so a build that reports an
+    // older count cannot walk the seat back into being booted.
+    if (typeof msg.opened === 'number' && Number.isFinite(msg.opened)) {
+      draft.opened = Math.max(draft.opened, Math.min(PACK_COUNT, Math.floor(msg.opened)));
+    }
     if (
       typeof msg.leaderId !== 'string' ||
       !Array.isArray(msg.cards) ||
@@ -579,7 +604,17 @@ export class MatchRoom extends DurableObject {
     }
     draft.leaderId = msg.leaderId;
     draft.cards = [...msg.cards];
-    if (!msg.done) return;
+    if (!msg.done) {
+      // Keep editing puts the seat back on the waiting list. Left set, the room
+      // counts a player as finished while they are still changing cards, and
+      // `finishDraft` skips the autofill that exists for exactly this case and
+      // boots them for a deck it declined to fill.
+      if (draft.done) {
+        draft.done = false;
+        this.broadcastDraftStatus();
+      }
+      return;
+    }
     if (!draftDeckLegal(msg.leaderId, msg.cards, pool)) {
       return this.send(socket, {
         type: 'rejected',
@@ -589,8 +624,14 @@ export class MatchRoom extends DurableObject {
     }
     draft.done = true;
     this.broadcastDraftStatus();
+    await this.maybeFinishDraft();
+  }
+
+  /** Deal the match if every seat still drafting has sent a finished deck. */
+  private async maybeFinishDraft(): Promise<void> {
+    if (this.draftEndsAt === null) return;
     const seated = this.seats.filter((s): s is Seat => s !== null && s.draft !== undefined);
-    if (seated.every((s) => s.draft!.done)) await this.finishDraft();
+    if (seated.length > 0 && seated.every((s) => s.draft!.done)) await this.finishDraft();
   }
 
   /**
@@ -643,7 +684,13 @@ export class MatchRoom extends DurableObject {
       seat.socket = null;
     }
 
-    const playing = ready.filter((s) => s.socket !== null);
+    // Every seat that drafted, whether or not its player is currently connected.
+    // `booted` and `ready` are already disjoint, so filtering on the socket only
+    // ever dropped a seat whose player was away, which is precisely the seat the
+    // grace exists to hold: a blip during a draft threw the player out of the
+    // match their deck had just qualified for, and in a two-seat room it took
+    // the other player down with it for want of a second survivor.
+    const playing = ready;
     if (playing.length < 2) {
       for (const seat of playing) {
         if (seat.socket) {
@@ -678,6 +725,10 @@ export class MatchRoom extends DurableObject {
   }
 
   private async startMatch(): Promise<void> {
+    // A match is dealt exactly once. Reaching here twice would lay new hands and
+    // a new opener over a game already in progress, which is what a room that
+    // had lost its state and been rejoined used to do to both players at once.
+    if (this.state) return;
     const decks = this.seats.map((s, i) => {
       // A custom deck came in with the join and was checked then; anything else
       // the room rebuilds from its key.
@@ -819,7 +870,15 @@ export class MatchRoom extends DurableObject {
       } catch (err) {
         console.error('finishDraft threw', err);
         this.draftEndsAt = null;
-        this.broadcast({ type: 'error', reason: 'The draft could not be finished.' });
+        // Rejected rather than error. This is the only path in the room that
+        // speaks to every seat at once, and an `error` here would turn one bug
+        // into everybody's match ending; `rejected` says so and leaves them
+        // seated to leave on their own terms.
+        this.broadcast({
+          type: 'rejected',
+          reason: 'The draft could not be finished.',
+          version: 0,
+        });
         return;
       }
     }

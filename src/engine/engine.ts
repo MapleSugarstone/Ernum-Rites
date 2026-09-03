@@ -757,6 +757,17 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
         resumeDamage(state, offer);
         return null;
       }
+      // The same rule for a flip that would find nothing to work on. The card
+      // says so itself through `flipUseful`, and the client hides the offer on
+      // the strength of it, but the client is not the authority: a payment that
+      // arrives anyway used to be taken and the effect fired into an empty
+      // board. Let the card lie instead of billing for nothing.
+      if (!flipWouldFire(state, offer)) {
+        state.flipQueue.shift();
+        log(state, actor, `${def.name}'s flip would do nothing.`);
+        resumeDamage(state, offer);
+        return null;
+      }
       state.flipQueue.shift();
       if (cost.mana) payCost(state, actor, cost.mana);
       if (cost.mill) {

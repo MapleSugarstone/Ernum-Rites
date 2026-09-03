@@ -811,6 +811,18 @@ public static class Engine
                     Effects.ResumeDamage(state, offer);
                     return null;
                 }
+                // The same rule for a flip that would find nothing to work on.
+                // The card says so itself, and a client hides the offer on the
+                // strength of it, but a client is not the authority: a payment
+                // that arrives anyway used to be taken and the effect fired into
+                // an empty board. Let the card lie instead of billing for it.
+                if (!Effects.FlipWouldFire(state, offer))
+                {
+                    state.FlipQueue.RemoveAt(0);
+                    Effects.Log(state, actor, $"{fdef.Name}'s flip would do nothing.");
+                    Effects.ResumeDamage(state, offer);
+                    return null;
+                }
                 state.FlipQueue.RemoveAt(0);
                 if (!fcost.Mana.IsFree) PayCost(state, actor, fcost.Mana);
                 for (int i = 0; i < fcost.Mill; i++)
