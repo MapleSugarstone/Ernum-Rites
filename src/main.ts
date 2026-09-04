@@ -40,6 +40,7 @@ import {
   browseSections,
   canAdd,
   clearSuggestions,
+  colorCounts,
   copyName,
   counts,
   deckCards,
@@ -76,6 +77,11 @@ import {
   manaKindFor,
   NEEDS_ENEMY,
   powerBlockers,
+  storeBlockers,
+  storeBoosted,
+  storeOf,
+  storePriceBounds,
+  storeSelfPrice,
   strengthSourcesOf,
   targetCandidates,
   type DeckList,
@@ -130,7 +136,6 @@ import {
   type SummonInstance,
 } from './engine/state';
 import {
-  COLORS,
   COLOR_NAME,
   COPY_LIMIT,
   RARITY_NAME,
@@ -272,6 +277,12 @@ interface Ui {
   discardView: PlayerIdx | null;
   /** The body whose HP cards are being read, spread out over the board. */
   hpView: TargetRef | null;
+  /** The Store slider's position, or null to follow the price on the table. */
+  storePrice: number | null;
+  /** The buyer moved the slider, which locks Accept until a counter is sent. */
+  storeMoved: boolean;
+  /** Which negotiation pass the two fields above belong to. */
+  storePass: number;
 }
 
 const ui: Ui = {
@@ -313,6 +324,9 @@ const ui: Ui = {
   zoom: null,
   discardView: null,
   hpView: null,
+  storePrice: null,
+  storeMoved: false,
+  storePass: -1,
 };
 
 /**
@@ -352,6 +366,7 @@ const DEBUFF_ARROW = 'Cardgame/Extras/Debuff%20Arrow.png';
 const NO_UNSAP = 'Cardgame/Extras/NoUnsap.png';
 /** Worn by a body the enemy has to come through. */
 const REDIRECT_TOKEN = 'Cardgame/Extras/Redirect.png';
+const LOVE_TOKEN = 'Cardgame/Extras/lovetoken.png';
 /** Worn by a body no spell or trap may choose. */
 const SPELL_IMMUNE_TOKEN = 'Cardgame/Extras/SpellImmune.png';
 
@@ -632,11 +647,8 @@ function artFit(def: CardDef | null | undefined): string {
   return css ? `<i class="sprfit" style="${css}"></i>` : '';
 }
 
-/**
- * Ernum has a pip drawn for it but no cost is written in one, so it is a pip
- * kind here and nowhere in the rules: ManaKind stays what a cost can ask for.
- */
-type PipKind = ManaKind | 'E';
+/** Every mana kind has a pip drawn for it, Ernum included. */
+type PipKind = ManaKind;
 
 /** Art for a mana pip. Every kind is drawn, so a new colour has to bring one. */
 const PIP_ART: Record<PipKind, string> = {
@@ -645,6 +657,7 @@ const PIP_ART: Record<PipKind, string> = {
   R: 'Cardgame/Extras/RobotPip.png',
   F: 'Cardgame/Extras/FishPip.png',
   S: 'Cardgame/Extras/SunPip.png',
+  K: 'Cardgame/Extras/CandyPip.png',
   C: 'Cardgame/Extras/NeutralPip.png',
   E: 'Cardgame/Extras/ErnumPip.png',
 };
@@ -654,7 +667,14 @@ const PIP_ART: Record<PipKind, string> = {
  * order the rules happen to list the colours in. Kept apart from MANA_KINDS on
  * purpose: that one's order is baked into the cross-engine digest.
  */
-const PIP_ORDER: PipKind[] = ['P', 'S', 'R', 'F', 'O', 'C', 'E'];
+const PIP_ORDER: PipKind[] = ['P', 'S', 'R', 'F', 'O', 'K', 'C', 'E'];
+
+/** Pips for a pool rather than a cost, which is the one place Ernum prints. */
+function poolHtml(mana: Record<ManaKind, number>): string {
+  return PIP_ORDER.filter((k) => k !== 'C' && mana[k] > 0)
+    .map((k) => pipRun(k, mana[k]))
+    .join('');
+}
 
 function pipRun(kind: PipKind, n: number): string {
   // One image per pip rather than one repeated: a cost of three reads as three
@@ -666,6 +686,7 @@ function pipRun(kind: PipKind, n: number): string {
 
 function pipHtml(cost: CardDef['cost']): string {
   if (!cost) return '';
+  // Ernum mana is generated rather than asked for, so no cost line prints it.
   return PIP_ORDER.map((k) => {
     const n = k === 'E' ? 0 : (cost[k] ?? 0);
     return n > 0 ? pipRun(k, n) : '';
@@ -734,6 +755,9 @@ function ruleText(text: string, edmg = 0): string {
     .replace(/Battlecry:/g, '<span class="kw-bc">Battlecry:</span>')
     .replace(/Deathrattle:/g, '<span class="kw-dr">Deathrattle:</span>')
     .replace(/Strike:/g, '<span class="kw-st">Strike:</span>')
+    // Candy's two keywords wear their own colours, the way the triggers do.
+    .replace(/\b(Stores?)\b/g, '<span class="kw-shop">$1</span>')
+    .replace(/\b(Love)\b/g, '<span class="kw-love">$1</span>')
     .replace(KEYWORD_RE, '<span class="kw-b">$1</span>');
   // Only the text between tags, so a name can never match inside a class name.
   return html
@@ -800,6 +824,11 @@ function rulesBlocks(def: CardDef, edmg = 0): RuleBlocks {
     ? `<span class="fliplabel">FLIP</span> ${flipPips}${ruleText(def.flipText, edmg)}`
     : '';
   if (def.flipText) chars += def.flipText.length;
+  // Blocks cost height the characters cannot see: a Power brings a name row
+  // and its pips, a flip its label row. Charged here so a card heavy with
+  // blocks steps down a size before it clips, which is what Vier and Little
+  // Gummy Bear did when only their letters were counted.
+  chars += (def.powers?.length ?? 0) * 30 + (def.flipText ? 20 : 0);
   // Factions and powers are blocks of their own, so no <br> between parts: a
   // break before a block element would print as a blank line.
   return { body: parts.join(''), flip, chars };
@@ -812,18 +841,23 @@ function rulesBlocks(def: CardDef, edmg = 0): RuleBlocks {
  * ramp, because it is a fraction of the card's own width: a body on the board is
  * the same printed card, smaller.
  *
- * The last two gates were placed by rendering the set rather than by guessing.
- * Every printed card fits the third size except Seer Altine, whose 287 spills by
- * ten pixels and drops its second Power off the bottom of the card; the next
- * wordiest is Living Curse at 219, which fits with room to spare. So 250 sits
- * between them. The fifth size is for the minted cards, which carry more than
- * one card's text at once: a graft tops out around 436 and a fusion, which takes
- * both parents' everything, around 485.
+ * Nine set sizes, placed by measuring rather than guessing: the count charges
+ * block overhead (30 per Power, 20 per flip line) on top of the letters, and
+ * each gate sits just under a card measured at its edge in the browser (Vier
+ * fits at 0.0446 and prints 0.044; Little Gummy Bear fits at 0.0608 and
+ * prints 0.06), so every card gets the largest size that provably holds it,
+ * capped at the base size. The whole set was re-measured overflow-free after
+ * the ladder was placed. The floor is the minted cards' size: a graft tops
+ * out around 436 characters and a fusion around 485.
  */
 function fitFactor(chars: number): number {
   if (chars <= 100) return 0.064;
-  if (chars <= 140) return 0.055;
-  if (chars <= 250) return 0.047;
+  if (chars <= 115) return 0.06;
+  if (chars <= 135) return 0.055;
+  if (chars <= 160) return 0.051;
+  if (chars <= 200) return 0.047;
+  if (chars <= 240) return 0.0455;
+  if (chars <= 280) return 0.044;
   if (chars <= 350) return 0.04;
   return 0.034;
 }
@@ -1508,6 +1542,7 @@ const SPELL_BY_COLOR: Record<string, Sfx> = {
   P: 'spellP',
   R: 'spellR',
   S: 'spellS',
+  K: 'spellK',
 };
 
 /** What a Neutral card casts with, having no colour of its own to speak in. */
@@ -1519,6 +1554,7 @@ const CARD_VOICE: Record<string, Sfx> = {
   'ox-graft': 'graft',
   'm-rg-recomp': 'recompile',
   'm-rg-recompiler': 'recompile',
+  'kx-cuffed': 'handcuffs',
 };
 
 /** Powers with a voice of their own, keyed by the power's printed name. */
@@ -1533,7 +1569,11 @@ function cue(name: Sfx, at = 0, gain?: number): void {
 /** What a card sounds like when it goes off. Never silent, whatever the card. */
 function spellVoice(def: CardDef | null): Sfx {
   if (!def) return GENERIC_SPELL;
-  return CARD_VOICE[def.id] ?? SPELL_BY_COLOR[def.color] ?? GENERIC_SPELL;
+  const own = CARD_VOICE[def.id];
+  if (own) return own;
+  // Candy's cheap spells speak in the smaller of its two voices.
+  if (def.color === 'K' && ((def.cost?.K ?? 0) + (def.cost?.C ?? 0)) < 2) return 'candySoft';
+  return SPELL_BY_COLOR[def.color] ?? GENERIC_SPELL;
 }
 
 /** The card a hand-index action is spending, since the action only holds the index. */
@@ -1578,7 +1618,10 @@ function computeSoundFx(prev: GameState, next: GameState, action: Action, actor:
       const power = def ? (powersOf(body!, def)[action.powerIndex] ?? null) : null;
       const named = power ? POWER_VOICE[power.name] : undefined;
       if (named) cue(named);
-      else {
+      else if (def?.color === 'K') {
+        // Candy's big voice for the costed powers, the small one for the free.
+        cue((power?.cost?.K ?? 0) >= 2 ? 'spellK' : 'candySoft');
+      } else {
         // Solar prints a big and a small voice; the costly powers get the big one.
         const heavy = (power?.cost?.S ?? 0) >= 3;
         cue(def?.color === 'S' && heavy ? 'solarBig' : spellVoice(def));
@@ -1587,6 +1630,14 @@ function computeSoundFx(prev: GameState, next: GameState, action: Action, actor:
     }
     case 'DECLARE_ATTACK':
       cue('clash', landed);
+      break;
+    case 'USE_STORE':
+      // Running your own shop is the small transaction.
+      cue('candySoft');
+      break;
+    case 'STORE_ACCEPT':
+      // A sale closing is the big one.
+      cue('spellK');
       break;
     case 'SAP_SUPPORTER':
       cue('sap');
@@ -2550,7 +2601,7 @@ function unitHtml(state: GameState, ref: TargetRef, caption: string): string {
   if (def.spellImmune) {
     tokens.push({
       art: SPELL_IMMUNE_TOKEN,
-      title: 'Spell Immunity: no spell or trap may choose this body as a target, from either side.',
+      title: 'Spell Immunity: no card effect touches this body, from any side. Its own text and combat still work.',
       // Only while a spell is being aimed that would otherwise land here. The
       // token is always on the card; this is it answering.
       cls: warded.has(refKey(ref)) ? 'warding' : '',
@@ -2561,6 +2612,20 @@ function unitHtml(state: GameState, ref: TargetRef, caption: string): string {
       art: NO_UNSAP,
       title: 'Stays sapped: this body will not unsap the next time it would.',
     });
+  }
+  // A shop's stock sits on the card as Love tokens: a purchase slides one into
+  // the seller's supporter row, a rejection sets it aside for the turn.
+  if (storeOf(s, def)) {
+    const stock = s.storeStock ?? 0;
+    for (let i = 0; i < stock; i++) {
+      tokens.push({
+        art: LOVE_TOKEN,
+        title: 'Store stock: another player may buy from this Store this turn.',
+      });
+    }
+    if (stock === 0) {
+      tokens.push({ art: LOVE_TOKEN, title: 'Store closed this turn.', cls: 'spent' });
+    }
   }
   extra += tokenHtml(s.uid, tokens);
   if (liveStrength > printedStrength) {
@@ -2619,7 +2684,8 @@ function supportRow(state: GameState, player: PlayerIdx): string {
       // What it pays, which is not always what colour it is: a neutral card
       // faced here pays colourless whatever colour its art was drawn in.
       const kind = manaKindFor(p, def);
-      const pays = kind === 'C' ? 'colorless' : COLOR_NAME[kind];
+      const pays =
+        kind === 'C' ? 'colorless' : kind === 'E' ? 'Ernum, which covers any pip' : COLOR_NAME[kind];
       // Lying at 90 degrees puts a card's name end on its right, so the stack
       // runs against DOM order: each card covers the one after it, and what
       // stays showing is the half you can read it by.
@@ -2630,9 +2696,16 @@ function supportRow(state: GameState, player: PlayerIdx): string {
         >${renderCard(def, { classes: ['supportcard'] })}</span>`;
     })
     .join('');
-  const pool = COLORS.filter((c) => p.mana[c] > 0)
-    .map((c) => pipRun(c, p.mana[c]))
-    .join('');
+  const pool = poolHtml(p.mana);
+  // Love lives beside the supporters: the tokens a shop earns land here.
+  const loveShown = Math.min(p.love, 9);
+  const love =
+    p.love > 0
+      ? `<span class="loverun" title="Love: ${p.love} held. A Love card spends every token at once.">${Array.from(
+          { length: loveShown },
+          () => `<img src="${BASE}${LOVE_TOKEN}" alt="" draggable="false">`,
+        ).join('')}${p.love > loveShown ? `<b>+${p.love - loveShown}</b>` : ''}</span>`
+      : '';
   // Sideways cards are wide, so past a few they overlap the way the hand fan
   // does rather than pushing the well off the board. A fraction of the card
   // rather than a pixel count, because the card scales with the viewport.
@@ -2646,7 +2719,7 @@ function supportRow(state: GameState, player: PlayerIdx): string {
   // than as whatever happens to be sitting in it.
   return `<div class="supportrow${droppable ? ' droppable' : ''}" style="--soverlap:${overlap}" data-act="supportrow" data-player="${player}">
     <span class="zlabel supportlabel">supporters</span>
-    ${cells}${pool ? `<span class="manapool">${pool}</span>` : ''}
+    ${cells}${pool ? `<span class="manapool">${pool}</span>` : ''}${love}
   </div>`;
 }
 
@@ -2868,6 +2941,12 @@ let lastBoardHtml = '';
 let lastActiveSlid: PlayerIdx | null = null;
 /** The same for the play-by-play strip, which redraws on the same renders. */
 let lastHistoryHtml = '';
+/**
+ * And for the prompt layer. Rewriting identical markup every paint replaced
+ * the haggle window's slider and buttons mid-negotiation, which read as the
+ * whole panel flashing whenever the bot moved or an effect repainted.
+ */
+let lastPromptHtml = '';
 
 function renderHistory(): void {
   const state = ui.state;
@@ -3204,6 +3283,69 @@ function promptHtml(state: GameState): string {
     </div>`;
   }
 
+  // The haggle. Both sides of it see the window; the buttons live only on the
+  // seat the game is waiting on, and everyone else sees nothing at all.
+  if (state.pending?.kind === 'store') {
+    const w = state.pending;
+    if (me !== w.seller && me !== w.buyer) return '';
+    const s = findSummon(state, w.source);
+    if (!s) return '';
+    const def = card(s.cardId);
+    const shop = storeOf(s, def);
+    const { min, max } = shop ? storePriceBounds(shop) : { min: 1, max: 4 };
+    // The slider and the moved flag belong to one pass of the haggle.
+    if (ui.storePass !== w.pass) {
+      ui.storePass = w.pass;
+      ui.storeMoved = false;
+      ui.storePrice = null;
+    }
+    const iAmSeller = me === w.seller;
+    const other = state.players[iAmSeller ? w.buyer : w.seller].name;
+    // The per-pass default only: the live slider position is synced into the
+    // DOM by renderPrompt, never written into the markup, so moving the slider
+    // cannot make the next repaint rebuild the window.
+    const val = Math.min(max, Math.max(min, w.price ?? Math.min(max, min + 1)));
+    const onTable =
+      w.price !== undefined
+        ? `<p class="storeline">On the table: <b>${w.price} debt</b>${w.final ? ' · final offer' : ''}${
+            storeBoosted(state, w.seller) ? ' · Clearance Sale takes 1 off the price paid' : ''
+          }</p>`
+        : `<p class="storeline">${iAmSeller ? 'Name your price.' : 'Waiting on a price.'}</p>`;
+    const slider = `<label class="storeslider">Price
+      <input type="range" data-act="storeprice" min="${min}" max="${max}" step="1" value="${val}">
+      <output id="storepriceval">${val}</output> debt</label>`;
+    let row = '';
+    if (canAct()) {
+      if (iAmSeller) {
+        // The seller must answer with a price, and may take a counter.
+        const canTake = w.pass > 0 && w.price !== undefined;
+        row =
+          `${slider}` +
+          btn('store-offer', 'Offer', w.pass >= 4 ? '' : 'primary') +
+          btn('store-final', 'Final offer') +
+          (canTake ? btn('store-accept', `Accept ${w.price}`) : '');
+        if (w.pass >= 4) row = `${slider}${btn('store-final', 'Final offer', 'primary')}${canTake ? btn('store-accept', `Accept ${w.price}`) : ''}`;
+      } else {
+        const acceptDead = ui.storeMoved
+          ? `<button disabled title="You moved the slider: send the counter or reject.">Accept ${w.price}</button>`
+          : btn('store-accept', `Accept ${w.price}`, 'primary');
+        const canCounter = !w.final && w.pass < 4;
+        row =
+          (canCounter ? slider + btn('store-counter', 'Counter') : '') +
+          acceptDead +
+          btn('store-reject', 'Reject');
+      }
+    } else {
+      row = `<p class="storewait">Waiting on ${esc(other)}…</p>`;
+    }
+    return `<div class="prompt urgent storeprompt">
+      <h2>${esc(def.name)}'s Store</h2>
+      <p>${ruleText(def.text ?? '')}</p>
+      ${onTable}
+      <div class="row">${row}</div>
+    </div>`;
+  }
+
   if (!canAct()) return '';
 
   if (state.pending) {
@@ -3321,15 +3463,38 @@ function promptHtml(state: GameState): string {
     if (!s) return '';
     const def = card(s.cardId);
     const source = sel.ref as SourceRef;
-    const buttons = powersOf(s, def).map((pw, i) => {
-      const why = powerBlockers(state, me, source, i);
-      const price = powerCostHtml(pw);
-      return `<button data-act="btn" data-cmd="power:${i}" ${why ? `disabled title="${esc(why)}"` : ''}>${esc(pw.name)}${price ? ` ${price}` : ''}</button>`;
-    });
+    // An enemy selection exists only to reach its Store, so its own powers are
+    // not buttons this side could ever press.
+    const buttons =
+      s.owner !== me
+        ? []
+        : powersOf(s, def).map((pw, i) => {
+            const why = powerBlockers(state, me, source, i);
+            const price = powerCostHtml(pw);
+            return `<button data-act="btn" data-cmd="power:${i}" ${why ? `disabled title="${esc(why)}"` : ''}>${esc(pw.name)}${price ? ` ${price}` : ''}</button>`;
+          });
+    const shop = storeOf(s, def);
+    if (shop && !isOver(state) && state.active === me) {
+      const why = storeBlockers(state, me, source);
+      if (s.owner === me) {
+        const price = storeSelfPrice(state, me, shop);
+        buttons.push(
+          `<button data-act="btn" data-cmd="use-store" ${why ? `disabled title="${esc(why)}"` : ''}>Run Store (${price} debt)</button>`,
+        );
+      } else {
+        buttons.push(
+          `<button data-act="btn" data-cmd="open-store" class="${why ? '' : 'primary'}" ${why ? `disabled title="${esc(why)}"` : ''}>Buy from Store</button>`,
+        );
+      }
+    }
     if (buttons.length === 0) return '';
+    const hint =
+      s.owner === me
+        ? 'Drag it onto a ringed target to attack, or use a power.'
+        : 'Open the Store to haggle over a price.';
     return `<div class="prompt">
       <h2>${esc(def.name)}</h2>
-      <p>Drag it onto a ringed target to attack, or use a power.</p>
+      <p>${esc(hint)}</p>
       <div class="row">${buttons.join('')}${btn('cancel', 'Cancel')}</div>
     </div>`;
   }
@@ -3340,7 +3505,25 @@ function promptHtml(state: GameState): string {
 function renderPrompt(): void {
   const el = document.getElementById('prompt');
   if (!el || !ui.state) return;
-  el.innerHTML = promptHtml(ui.state);
+  const html = promptHtml(ui.state);
+  if (html !== lastPromptHtml) {
+    lastPromptHtml = html;
+    el.innerHTML = html;
+  }
+  // The slider's live position is DOM state rather than markup: written into
+  // the html, every repaint after a move rebuilt the window once, which read
+  // as a blink. Synced here instead, on the skip path and the rebuild alike.
+  if (ui.storePrice !== null) {
+    const input = el.querySelector<HTMLInputElement>('input[data-act="storeprice"]');
+    if (input) {
+      const v = String(
+        Math.min(Number(input.max), Math.max(Number(input.min), ui.storePrice)),
+      );
+      if (input.value !== v) input.value = v;
+      const out = document.getElementById('storepriceval');
+      if (out && out.textContent !== v) out.textContent = v;
+    }
+  }
 }
 
 // --- hand -------------------------------------------------------------------
@@ -3568,6 +3751,16 @@ function renderRail(): void {
   const state = ui.state;
   const el = document.getElementById('rail');
   if (!state || !el) return;
+
+  // A flip waiting on an answer pins itself to the rail on desktop, so the
+  // card doing the asking sits in the highlight window instead of leaving the
+  // player to find the small gold card in the stack. Hovering something else
+  // still works: the hover overwrites the pin until the next repaint.
+  const flip = state.flipQueue[0];
+  if (flip && !document.body.classList.contains('mobile')) {
+    ui.inspect = flip.cardId;
+    ui.inspectRef = null;
+  }
 
   const id = ui.inspect;
   const def = id ? tryCard(id) : null;
@@ -4383,6 +4576,7 @@ function mountGame(): void {
   lastBoardHtml = '';
   lastDeclareHtml = '';
   lastHistoryHtml = '';
+  lastPromptHtml = '';
   lastActiveSlid = null;
 }
 
@@ -4686,12 +4880,21 @@ function renderRules(): string {
     ${sec('14-4.', 'Frenzy fires the first time its summon takes damage and survives, once per summon. A summon that dies to the hit never frenzies.')}
     ${sec('14-5.', 'A Stationary character never declares an attack. It still deals its attack back when something attacks it.')}
     ${sec('14-6.', 'Redirection forces the enemy to attack this character and to aim every spell and trap at it. A leader with Redirection is the only legal target, so you may attack it even with its slots full.')}
-    ${sec('14-7.', 'Spell Immunity stops any spell or trap from targeting this character, from either side of the table. Combat and triggers still reach it.')}
+    ${sec('14-7.', 'Spell Immunity stops every card effect from touching this character: spells, traps, powers, flips and field effects alike, its own controller included. Its own printed text still works, and combat damage still lands.')}
     ${sec('14-8.', 'Effect Damage raises the damage its controller deals with spells, Powers and flips by that much. It does not change combat damage.')}
     ${sec('14-9.', 'Scry N looks at the top N cards of your deck, takes the first match to your hand, and puts the rest on the bottom.')}
     ${sec('14-10.', 'Mill moves cards from the top of a deck into its discard pile.')}
     ${sec('14-11.', 'Healing a character turns its flipped HP cards back face down. Healing debt lowers the debt counter instead.')}
     ${sec('14-12.', 'Catch takes a spent, face-up HP card off the board and returns it to its owner&rsquo;s hand.')}
+
+    <h2>15. Stores and Love</h2>
+    ${sec('15-1.', 'A Store is a power printed as a &ldquo;Store:&rdquo; line. Its controller may run it once per turn by taking 2 debt, plus any &ldquo;Store costs +N&rdquo; surcharge, never on the turn the card entered play.')}
+    ${sec('15-2.', 'On your own main step you may open another player&rsquo;s Store while it shows a stock token. The seller must answer with a price from 1 to 4 plus the surcharge, as an offer or a final offer.')}
+    ${sec('15-3.', 'Against an offer you may accept, reject, or counter with a different price. Moving the slider commits you to countering. Against a final offer you may only accept or reject, and only the seller may declare an offer final.')}
+    ${sec('15-4.', 'The haggle holds an opening offer and up to three counters. After that the seller may only accept the counter or restate a price as final. Each pass runs on the response clock, and a timeout counts as a rejection for the buyer and as &ldquo;top price, final&rdquo; for the seller.')}
+    ${sec('15-5.', 'On acceptance the buyer takes the agreed price as debt, the effect resolves for the buyer with any target asked of them next, and the seller gains 1 Love. Rejecting closes that Store for the turn.')}
+    ${sec('15-6.', 'A bought effect reads as if the buyer had printed it: &ldquo;you&rdquo;, &ldquo;your summons&rdquo; and &ldquo;an empty slot&rdquo; all mean the buyer&rsquo;s. Running your own Store gives no Love. Neither counts as using a Power.')}
+    ${sec('15-7.', 'Love tokens are kept between turns with no cap. A &ldquo;Love:&rdquo; line spends every token its controller holds when it resolves and applies once per token spent. With no tokens the line does nothing and the rest of the card still resolves.')}
   </div></div>`;
 }
 
@@ -4983,21 +5186,28 @@ function renderBuilder(): string {
   const issues = problems(b);
 
   const leader = tryCard(b.leaderId);
+  const searching = b.search.trim().length > 0;
 
   // The color tabs filter the full card list, so the row is hidden while the
-  // deck view is showing.
+  // deck view is showing. A search reaches past them into every colour, so they
+  // go quiet until the box is empty again.
   const tabs = b.viewingDeck
     ? ''
-    : `<nav class="tabs">${BROWSE_TABS.map((t) => {
-        const label = t === 'M' ? 'Mixed' : t === 'N' ? 'Neutral' : COLOR_NAME[t];
-        const dot =
-          t === 'M'
-            ? '<span class="tabdot dual"></span>'
-            : t === 'N'
-              ? '<span class="tabdot neutral"></span>'
-              : `<span class="tabdot" style="background: var(--c-${t})"></span>`;
-        return `<button data-act="btn" data-cmd="btab:${t}" class="tab${b.tab === t ? ' on' : ''}">${dot}${label}</button>`;
-      }).join('')}</nav>`;
+    : `<nav class="tabs${searching ? ' quiet' : ''}"
+        ${searching ? 'title="Clear the search to browse one colour again."' : ''}>${BROWSE_TABS.map(
+          (t) => {
+            const label = t === 'M' ? 'Mixed' : t === 'N' ? 'Neutral' : COLOR_NAME[t];
+            const dot =
+              t === 'M'
+                ? '<span class="tabdot dual"></span>'
+                : t === 'N'
+                  ? '<span class="tabdot neutral"></span>'
+                  : `<span class="tabdot" style="background: var(--c-${t})"></span>`;
+            return `<button data-act="btn" data-cmd="btab:${t}" class="tab${
+              b.tab === t && !searching ? ' on' : ''
+            }">${dot}${label}</button>`;
+          },
+        ).join('')}</nav>`;
 
   const rarityChips = RARITY_FILTERS.map((r) => {
     const on = b.rarities.includes(r);
@@ -5018,7 +5228,9 @@ function renderBuilder(): string {
         }
         return `<div class="bookgrid deckgrid">${shown.map(deckViewCardHtml).join('')}</div>`;
       })()
-    : browseSections(b.tab)
+    : // A query looks through every colour rather than the open tab, so
+      // searching a tribe or a colour finds it wherever it prints.
+      browseSections(searching ? 'ALL' : b.tab)
         .map((sec) => ({ ...sec, cards: sec.cards.filter(hit) }))
         .filter((sec) => sec.cards.length > 0)
         .map(
@@ -5052,6 +5264,22 @@ function renderBuilder(): string {
       </button>`;
     })
     .join('');
+
+  // Under the deck: how many of its cards each colour brings. A dual card lands
+  // in both of its colours, so the row carries a note rather than a total.
+  const tally = colorCounts(b.cards);
+  const tallyRow = tally.length
+    ? `<div class="decktally" title="A card with two colours counts under each of them.">${tally
+        .map(
+          (t) =>
+            `<span class="tallychip"><span class="tabdot${
+              t.color === 'N' ? ' neutral' : ''
+            }"${t.color === 'N' ? '' : ` style="background: var(--c-${t.color})"`}></span>${
+              t.n
+            } ${esc(COLOR_NAME[t.color])}</span>`,
+        )
+        .join('')}</div>`
+    : '';
 
   const importGroups = [
     { label: 'Starter decks', options: starterDecks.map((d) => ({ value: d.key, label: d.name })) },
@@ -5146,7 +5374,7 @@ function renderBuilder(): string {
       <section class="book">
         <div class="bookscroll">${browser}</div>
         <div class="bookbar">
-          <input id="bsearch" type="text" placeholder="Search name, text or rarity" value="${esc(b.search)}"
+          <input id="bsearch" type="text" placeholder="Search name, colour, tribe, type or any printed line" value="${esc(b.search)}"
             data-act="bsearch" autocomplete="off" spellcheck="false">
           <div class="rchips">${rarityChips}</div>
           <label class="ddfield"><span>Start from</span>${dropdownHtml({
@@ -5195,6 +5423,7 @@ function renderBuilder(): string {
           <h4 class="mydecks-h"><span>My decks</span></h4>
           <div class="mydecks">${savedRows || '<p class="blurb">None saved yet.</p>'}</div>
         </div>
+        ${tallyRow}
         <div class="deckfoot">
           <span class="countpill ${issues.length ? 'bad' : 'good'}"
             ${issues.length ? `title="${esc(issues.join(' '))}"` : ''}>${b.cards.length}/${DECK_SIZE}</span>
@@ -5597,7 +5826,7 @@ function draftBuildHtml(): string {
     <section class="book">
       <div class="bookscroll">${draftBookHtml()}</div>
       <div class="bookbar">
-        <input id="dsearch" type="text" placeholder="Search name, text or rarity"
+        <input id="dsearch" type="text" placeholder="Search name, colour, tribe, type or any printed line"
           value="${esc(d.search)}" data-act="dsearch" autocomplete="off" spellcheck="false">
         <div class="rchips">${rarityChips}</div>
       </div>
@@ -5846,22 +6075,20 @@ function ropeTick(): void {
     isRoping(clock, now, skew);
 
   if (burning) {
-    // Keyed on the window rather than a flag, so ticks inside one window do not
-    // restart the clip and a genuinely new window is not swallowed by its tail.
-    if (ringingFor?.endsAt !== clock.endsAt) {
-      stopLast10();
-      if (startLast10()) ringingFor = clock;
-    }
+    // The loop just runs while the window burns: a play that extends the turn
+    // but stays inside ten seconds keeps ticking without a restart, and
+    // startLast10 is idempotent while the source is live.
+    if (startLast10()) ringingFor = clock;
     return;
   }
 
-  const ended = ringingFor;
-  if (!ended) return;
+  if (!ringingFor) return;
   ringingFor = null;
-  // A window that reached zero is a turn the player let run out, and the ring
-  // going off is the whole point of it, so it is left to finish. Anything else
-  // means they acted, and the sound gets out of the way.
-  if (secondsLeft(ended, now, skew) > 0) stopLast10();
+  // The tick is a loop now, so every way out of the window stops it: a play
+  // that bought the clock back over ten seconds, an action that ended the
+  // turn, or the window running out. The run-out case has already had its
+  // full ticking, which is the only time the sound plays to the end.
+  stopLast10();
 }
 
 /**
@@ -6745,11 +6972,18 @@ function beginAction(
   source: CardDef,
   build: (t: TargetRef[]) => Action,
 ): void {
-  if (!specs || specs.length === 0) {
+  // An optional ask with nothing on the board to offer is skipped outright
+  // rather than shown as a picker holding only its skip button: Sugar Crash
+  // countering with no enemy summon to annihilate asks for nothing.
+  const live = (specs ?? []).filter(
+    (sp) =>
+      !sp.optional || !ui.state || targetCandidates(ui.state, viewSeat(), sp, source).length > 0,
+  );
+  if (live.length === 0) {
     dispatch(build([]));
     return;
   }
-  ui.targeting = { label, specs, collected: [], source, build };
+  ui.targeting = { label, specs: live, collected: [], source, build };
   ui.error = null;
   render();
 }
@@ -7366,6 +7600,29 @@ function handleCommand(cmd: string): void {
   if (cmd === 'end-turn') return dispatch({ type: 'END_TURN' });
   if (cmd === 'concede') return dispatch({ type: 'CONCEDE' });
   if (cmd === 'pass-response') return dispatch({ type: 'PASS_RESPONSE' });
+  if (cmd === 'use-store' || cmd === 'open-store') {
+    const at = ui.selection;
+    if (at?.kind !== 'summon') return;
+    const source = at.ref as SourceRef;
+    ui.selection = null;
+    return dispatch({ type: cmd === 'use-store' ? 'USE_STORE' : 'OPEN_STORE', source });
+  }
+  if (cmd === 'store-offer' || cmd === 'store-final' || cmd === 'store-counter') {
+    const w = state.pending;
+    if (w?.kind !== 'store') return;
+    const s = findSummon(state, w.source);
+    const shop = s ? storeOf(s, card(s.cardId)) : null;
+    const { min, max } = shop ? storePriceBounds(shop) : { min: 1, max: 4 };
+    const price = Math.min(
+      max,
+      Math.max(min, ui.storePrice ?? w.price ?? Math.min(max, min + 1)),
+    );
+    ui.storeMoved = false;
+    if (cmd === 'store-counter') return dispatch({ type: 'STORE_COUNTER', price });
+    return dispatch({ type: 'STORE_OFFER', price, final: cmd === 'store-final' });
+  }
+  if (cmd === 'store-accept') return dispatch({ type: 'STORE_ACCEPT' });
+  if (cmd === 'store-reject') return dispatch({ type: 'STORE_REJECT' });
   if (cmd === 'decline-replace') return dispatch({ type: 'DECLINE_REPLACE' });
   if (cmd === 'decline-flip') return dispatch({ type: 'DECLINE_FLIP' });
   if (cmd === 'pay-flip') {
@@ -7939,6 +8196,19 @@ window.addEventListener('pointermove', (ev) => {
   renderArrow();
 });
 
+window.addEventListener('blur', () => {
+  // Alt-tabbing away mid-drag can eat the pointerup: the drag then sits armed
+  // forever, its arrow frozen over the board and every click swallowed. Focus
+  // loss puts the gesture down the same way a pointercancel does.
+  cancelHold();
+  buildPending = null;
+  if (ui.drag || ghost) {
+    ui.drag = null;
+    killGhost();
+    render();
+  }
+});
+
 window.addEventListener('pointercancel', (ev) => {
   cancelHold();
   // The browser takes the gesture over rather than handing back a release, so
@@ -8028,6 +8298,27 @@ root.addEventListener('input', (ev) => {
   if (el.dataset.act === 'vol') {
     // No render: rebuilding the slider mid-drag would drop the drag.
     setLevel(el.dataset.bus as 'music' | 'sfx', Number((el as HTMLInputElement).value) / 100);
+    return;
+  }
+  if (el.dataset.act === 'storeprice') {
+    // No render: rebuilding the slider mid-drag would drop the drag. The label
+    // and the buyer's Accept button are patched in place instead.
+    ui.storePrice = Number((el as HTMLInputElement).value);
+    const out = document.getElementById('storepriceval');
+    if (out) out.textContent = String(ui.storePrice);
+    const w = ui.state?.pending;
+    if (w?.kind === 'store' && viewSeat() === w.buyer && canAct() && !ui.storeMoved) {
+      ui.storeMoved = true;
+      // Patched rather than rendered: the full repaint this used to do replaced
+      // the slider under the pointer, which read as the window blinking out.
+      const accept = document.querySelector<HTMLButtonElement>(
+        '#prompt [data-cmd="store-accept"]',
+      );
+      if (accept) {
+        accept.disabled = true;
+        accept.title = 'You moved the slider: send the counter or reject.';
+      }
+    }
     return;
   }
   if (el.dataset.act === 'oppslider') {
@@ -8189,9 +8480,9 @@ root.addEventListener('click', (ev) => {
   const act = el.dataset.act;
 
   if (act === 'btn') return handleCommand(el.dataset.cmd ?? '');
-  // The view slider handles itself through input events; a click on it must
+  // The sliders handle themselves through input events; a click on either must
   // not fall through to the render at the bottom and rebuild it mid-drag.
-  if (act === 'oppslider') return;
+  if (act === 'oppslider' || act === 'storeprice') return;
   if (act === 'theme') {
     setTheme(el.dataset.cmd === 'light' ? 'light' : 'dark');
     return render();
@@ -8252,7 +8543,15 @@ root.addEventListener('click', (ev) => {
         return dispatch({ type: 'DECLARE_ATTACK', source: sel.ref as SourceRef, target });
       }
     }
-    ui.selection = Number(el.dataset.player) === me ? { kind: 'summon', ref: target } : null;
+    if (Number(el.dataset.player) === me) {
+      ui.selection = { kind: 'summon', ref: target };
+    } else {
+      // An enemy body with a Store is selectable: the selection panel is where
+      // the Buy from Store button lives. Any other enemy click just clears.
+      const s = findSummon(state, target);
+      ui.selection =
+        s && storeOf(s, card(s.cardId)) ? { kind: 'summon', ref: target } : null;
+    }
     ui.error = null;
     return render();
   }
@@ -8319,9 +8618,11 @@ const KEYWORD_HELP: [RegExp, string, string][] = [
   [/\bPower Shields?\b/, 'Power Shield', 'Blocks the next instance of damage completely, then breaks.'],
   [/\bRedirection\b/, 'Redirection', 'Enemies may only attack this body and only aim spells and traps at it.'],
   [/\bStationary\b/, 'Stationary', 'Never declares an attack, but still deals its attack back when attacked.'],
-  [/\bSpell Immunity\b/, 'Spell Immunity', 'No spell or trap may choose this body as a target, from either side.'],
+  [/\bSpell Immunity\b/, 'Spell Immunity', 'No card effect touches this body, from any side: spells, traps, powers, flips and fields alike. Its own text and combat still work.'],
   [/\bSpell Trap\b/, 'Spell Trap', 'Springs when the enemy casts a spell, and countering it means the spell never resolves.'],
   [/\bEffect Damage\b/, 'Effect Damage', 'Damage from your spells, Powers and flips is increased by this much.'],
+  [/\bStores?\b/, 'Store', 'Its controller may run it once per turn for 2 debt, never the turn it arrived. On their own turn other players may buy it: the seller names a price from 1 to 4, only the buyer may reject, and each sale pays the seller 1 Love.'],
+  [/\bLove\b/, 'Love', 'Heart tokens kept between turns, shown by the supporter row. A Love line spends every token you hold at once and applies its effect once per token.'],
   [/\bcharacters?\b/, 'Character', 'A summon or a leader.'],
   [/\b(?:un)?sap(?:ped|s|ping)?\b/i, 'Sap', 'A sapped card cannot attack or use Powers until its next turn. ↷ on a Power means sapping this summon is part of the cost.'],
 ];

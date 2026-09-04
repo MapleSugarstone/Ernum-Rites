@@ -1,6 +1,6 @@
 import { allCards } from './engine/registry';
 import { DIGEST_FORMAT, digestHash } from './engine/digest';
-import { costTotal, MANA_KINDS } from './engine/types';
+import { costTotal, COST_KINDS } from './engine/types';
 import './cards';
 
 /**
@@ -24,12 +24,12 @@ import './cards';
  * check and then fall out of step mid-match, which is the thing the check exists
  * to prevent, so behaviour changes are counted here instead.
  */
-const RULES_REVISION = 12;
+const RULES_REVISION = 15;
 
 function computeVersion(): string {
   const parts = allCards()
     .map((c) => {
-      const cost = MANA_KINDS.map((k) => `${k}${c.cost?.[k] ?? 0}`).join('');
+      const cost = COST_KINDS.map((k) => `${k}${c.cost?.[k] ?? 0}`).join('');
       const powers = (c.powers ?? [])
         .map((p) => `${p.name}/${costTotal(p.cost)}/${p.text}`)
         .join('|');

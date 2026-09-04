@@ -16,14 +16,10 @@ const SOURCE_HUE = { g: 187, b: 204 };
  * Frames exist for the five colours and for neutral, which is not a colour but
  * needs a frame all the same.
  */
-/**
- * A card's colour, plus 'X' for the one card that carries every colour and so
- * belongs to none of them. It is a frame key rather than a colour because the
- * rules never see it: deck legality reads the card's identity.
- */
-export type FrameKey = CardColour | 'X';
+/** A card's colour. Every one of them has a frame drawn for it. */
+export type FrameKey = CardColour;
 
-const FRAME_KEYS: FrameKey[] = [...COLORS, 'N', 'X'];
+const FRAME_KEYS: FrameKey[] = [...COLORS, 'N', 'E'];
 
 /**
  * Bright hue per frame, sampled from the drawn per-colour frames. Neutral takes
@@ -38,11 +34,13 @@ export const FRAME_HUE: Record<FrameKey, [number, number, number]> = {
   R: [0, 204, 0],
   F: [0, 187, 204],
   S: [204, 204, 0],
+  // Sampled off pinkc.png's bright tone, as redrawn.
+  K: [251, 54, 227],
   N: [153, 113, 91],
   // Sampled off ernumc.png, which is the master frame drawn in blue-violet.
   // Kept at the brightness it was drawn at rather than scaled up to the 204
   // the others sit at, so the frame renders as dark as the art.
-  X: [34, 15, 155],
+  E: [34, 15, 155],
 };
 
 /** The warm grey on the rounded corners is not part of the hue ramp. */
@@ -53,10 +51,11 @@ const CORNER_TINT: Record<FrameKey, [number, number, number]> = {
   R: [204, 183, 189],
   F: [204, 200, 183],
   S: [198, 183, 204],
+  K: [186, 204, 183],
   // The neutral frame keeps the master's corner unchanged, as drawn.
   N: [204, 200, 183],
   // ernumc.png's corner is the master's byte for byte, so it stays put too.
-  X: [204, 200, 183],
+  E: [204, 200, 183],
 };
 
 export type FrameShape = 'summon' | 'spell' | 'flipbarSummon' | 'flipbarSpell';
@@ -232,14 +231,7 @@ export function prepareFrames(base: string): Promise<void> {
 }
 
 /** The frame a card draws with: its colour, unless it is neutral. */
-export function frameKeyOf(def: {
-  color: CardColour;
-  neutral?: boolean;
-  rarity?: Rarity;
-}): FrameKey {
-  // Keyed on the rarity, not on carrying every colour: the placeholder cards
-  // spell out every colour too, to be legal anywhere, and they are not this.
-  if (def.rarity === 'P') return 'X';
+export function frameKeyOf(def: { color: CardColour; neutral?: boolean }): FrameKey {
   return def.neutral ? 'N' : def.color;
 }
 

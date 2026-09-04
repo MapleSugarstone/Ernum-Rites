@@ -184,12 +184,13 @@ public static class Kit
             bool cursePotency = false, bool muffleFlips = false,
             bool stationary = false, bool redirect = false, bool spellImmune = false,
             bool reborn = false, bool frenzy = false, bool voidsDiscard = false,
-            bool neutral = false, Color[]? identity = null)
+            bool neutral = false, Color[]? identity = null, StoreDef? store = null)
         {
             var b = LevelBase[level];
             return new CardDef
             {
                 Id = $"{_prefix}{level}-{file}",
+                Store = store,
                 Identity = identity,
                 Name = name,
                 Color = _color,
@@ -253,7 +254,7 @@ public static class Kit
         private CardDef NonSummon(CardType type, string file, string name, Cost cost,
             string? text, TargetSpec[]? targets, Action<EffectCtx>? effect,
             StageHooks? hooks, string? flipText, FlipCost? flipCost, Action<FlipCtx>? flip,
-            Func<FlipCtx, bool>? flipUseful = null)
+            Func<FlipCtx, bool>? flipUseful = null, bool annihilateAfterCast = false)
             => new()
             {
                 Id = $"{_prefix}x-{file}",
@@ -269,6 +270,7 @@ public static class Kit
                 FlipCost = flipCost,
                 Flip = flip,
                 FlipUseful = flipUseful,
+                AnnihilateAfterCast = annihilateAfterCast,
                 Art = ArtPath($"{_spellFolder}/{file}"),
                 Num = NextNum(),
             };
@@ -276,8 +278,9 @@ public static class Kit
         public CardDef Spell(string file, string name, Cost cost, string text,
             TargetSpec[]? targets = null, Action<EffectCtx>? effect = null,
             string? flipText = null, FlipCost? flipCost = null,
-            Action<FlipCtx>? flip = null, Func<FlipCtx, bool>? flipUseful = null)
-            => NonSummon(CardType.Spell, file, name, cost, text, targets, effect, null, flipText, flipCost, flip, flipUseful);
+            Action<FlipCtx>? flip = null, Func<FlipCtx, bool>? flipUseful = null,
+            bool annihilateAfterCast = false)
+            => NonSummon(CardType.Spell, file, name, cost, text, targets, effect, null, flipText, flipCost, flip, flipUseful, annihilateAfterCast);
 
         public CardDef Trap(string file, string name, Cost cost, string text,
             TargetSpec[]? targets = null, Action<EffectCtx>? effect = null,
@@ -310,9 +313,25 @@ public static class Kit
             StageHooks? hooks = null,
             string? flipText = null, FlipCost? flipCost = null,
             Action<FlipCtx>? flip = null, Func<FlipCtx, bool>? flipUseful = null,
-            Action<EffectCtx>? effect = null)
-            => NonSummon(CardType.Stage, file, name, cost, text, null, effect, hooks,
-                flipText, flipCost, flip, flipUseful);
+            Action<EffectCtx>? effect = null, bool storeBoost = false)
+            => new()
+            {
+                Id = $"{_prefix}x-{file}",
+                Name = name,
+                Color = _color,
+                Type = CardType.Stage,
+                Cost = cost,
+                Text = text,
+                Effect = effect,
+                StageHooks = hooks,
+                StoreBoost = storeBoost,
+                FlipText = flipText,
+                FlipCost = flipCost,
+                Flip = flip,
+                FlipUseful = flipUseful,
+                Art = ArtPath($"{_spellFolder}/{file}"),
+                Num = NextNum(),
+            };
     }
 
     /// <summary>Dual-colour cards live in their own folders and carry two colours.</summary>
@@ -338,7 +357,7 @@ public static class Kit
             string? flipText = null, int effectDamage = 0,
             bool cursePotency = false, bool stationary = false, bool redirect = false,
             bool spellImmune = false, bool reborn = false, bool frenzy = false,
-            bool neutral = false)
+            bool neutral = false, bool debtAmplify = false, StoreDef? store = null)
         {
             var b = LevelBase[level];
             return new CardDef
@@ -352,6 +371,8 @@ public static class Kit
                 Strength = str ?? b.Strength,
                 Hp = hp ?? b.Hp,
                 EffectDamage = effectDamage,
+                DebtAmplify = debtAmplify,
+                Store = store,
                 CursePotency = cursePotency,
                 Stationary = stationary,
                 Reborn = reborn,
@@ -442,9 +463,10 @@ public static class Kit
         public CardDef Summon(string file, string name, Faction[]? factions = null,
             int? str = null, int? hp = null, string? text = null,
             Power[]? powers = null, Triggers? triggers = null, bool freeSpells = false,
-            bool spellImmune = false)
+            bool spellImmune = false, bool redirect = false, int effectDamage = 0,
+            StoreDef? store = null)
             => Summon(3, file, name, factions, str, hp, text, powers, triggers,
-                freeSpells, spellImmune);
+                freeSpells, spellImmune, redirect, effectDamage, store);
 
         /// <summary>
         /// The ten legends are level 3; a three-colour card printed at any other
@@ -453,7 +475,8 @@ public static class Kit
         public CardDef Summon(int level, string file, string name, Faction[]? factions = null,
             int? str = null, int? hp = null, string? text = null,
             Power[]? powers = null, Triggers? triggers = null, bool freeSpells = false,
-            bool spellImmune = false)
+            bool spellImmune = false, bool redirect = false, int effectDamage = 0,
+            StoreDef? store = null)
         {
             var b = LevelBase[level];
             var slug = new string(file.ToLowerInvariant()
@@ -471,6 +494,9 @@ public static class Kit
                 Hp = hp ?? b.Hp,
                 FreeSpells = freeSpells,
                 SpellImmune = spellImmune,
+                Redirect = redirect,
+                EffectDamage = effectDamage,
+                Store = store,
                 Factions = factions ?? Array.Empty<Faction>(),
                 Text = text,
                 Powers = powers,

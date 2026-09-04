@@ -59,13 +59,15 @@ public static class Program
         return i >= 0 && i + 1 < args.Length && int.TryParse(args[i + 1], out var v) ? v : fallback;
     }
 
-    private sealed record Outcome(int Winner, string? Reason, int Turns);
+    private sealed record Outcome(int Winner, string? Reason, int Turns, bool Drawn);
 
     private static Outcome PlayOne(StarterDeck a, StarterDeck b, int seed)
     {
         var s = Engine.CreateGame(a.ToDeckList($"{a.Name} (P1)"), b.ToDeckList($"{b.Name} (P2)"), seed);
         int actions = 0;
-        while (s.Winner < 0 && actions < 8000 && s.Turn < 400)
+        // IsOver, not Winner: a drawn game leaves Winner at -1, and looping past
+        // it made Apply refuse with "The game is already over."
+        while (!s.IsOver && actions < 8000 && s.Turn < 400)
         {
             int actor = s.CurrentActor;
             var res = Engine.Apply(s, actor, Bot.ChooseAction(s, actor));
@@ -73,7 +75,7 @@ public static class Program
             s = res.State!;
             actions++;
         }
-        return new Outcome(s.Winner, s.WinReason, s.Turn);
+        return new Outcome(s.Winner, s.WinReason, s.Turn, s.Drawn);
     }
 
     /// <summary>
@@ -315,7 +317,7 @@ public static class Program
     {
         var a = CardSets.ByKey(aKey);
         var b = CardSets.ByKey(bKey);
-        int winsA = 0, winsB = 0, stalls = 0, turns = 0;
+        int winsA = 0, winsB = 0, draws = 0, stalls = 0, turns = 0;
         var reasons = new Dictionary<string, int>(StringComparer.Ordinal);
 
         for (int g = 0; g < games; g++)
@@ -324,6 +326,9 @@ public static class Program
             turns += r.Turns;
             if (r.Winner == 0) winsA++;
             else if (r.Winner == 1) winsB++;
+            // A draw is a finished game, not a harness failure: only a game the
+            // caps cut off counts as a stall and turns the exit code red.
+            else if (r.Drawn) draws++;
             else stalls++;
             var key = Classify(r.Reason);
             reasons[key] = reasons.GetValueOrDefault(key) + 1;
@@ -331,6 +336,7 @@ public static class Program
 
         string pct(int n) => $"{(int)Math.Round(n * 100.0 / games),3}%";
         Console.WriteLine($"{aKey,-13}{pct(winsA)}  vs  {pct(winsB)} {bKey,-13} avg {turns / (double)games:0.0} turns"
+            + (draws > 0 ? $"  {draws} drawn" : "")
             + (stalls > 0 ? $"  {stalls} unresolved" : ""));
         if (verbose)
         {
@@ -396,6 +402,25 @@ public static class Program
             var path = Path.Combine(dir, $"{i:D3}-{a.Key}-{b.Key}.json");
             File.WriteAllText(path, Recorder.ToJson(replay));
             written++;
+        }
+        // One game that provably haggles, so the store negotiation stays in the
+        // parity corpus: scan seeds of the Candy mirror until a purchase closes.
+        var shop = Array.Find(decks, d => d.Key == "sweetshop");
+        if (shop is not null)
+        {
+            for (int probe = 0; probe < 400; probe++)
+            {
+                int seed = 91000 + probe * 7919;
+                var replay = Recorder.RecordBotGame(shop, shop, seed, $"sweetshop-store-{seed}");
+                bool haggled = replay.Steps.Any(s =>
+                    s.Action.TryGetProperty("type", out var t) && t.GetString() == "STORE_ACCEPT");
+                if (!haggled) continue;
+                File.WriteAllText(Path.Combine(dir, $"{written:D3}-sweetshop-store.json"),
+                    Recorder.ToJson(replay));
+                written++;
+                Console.WriteLine($"store game found after {probe + 1} seed(s)");
+                break;
+            }
         }
         Console.WriteLine($"wrote {written} replays to {dir}");
         return 0;

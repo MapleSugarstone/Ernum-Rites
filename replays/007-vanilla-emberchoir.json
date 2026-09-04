@@ -1,0 +1,34 @@
+{
+  "format": 1,
+  "label": "vanilla-vs-emberchoir-753103",
+  "seed": 753103,
+  "startingPlayer": 0,
+  "decks": [
+    {"name": "Vanilla Dummies (P1)", "leaderId": "x-hero-dummy-warden", "cards": ["x-f-bolt","x-f-bolt","x-f-dummy-1","x-f-dummy-1","x-f-dummy-2","x-f-dummy-2","x-f-dummy-3","x-f-dummy-3","x-o-bolt","x-o-bolt","x-o-dummy-1","x-o-dummy-1","x-o-dummy-2","x-o-dummy-2","x-o-dummy-3","x-o-dummy-3","x-p-bolt","x-p-bolt","x-p-dummy-1","x-p-dummy-1","x-p-dummy-2","x-p-dummy-2","x-p-dummy-3","x-p-dummy-3","x-r-bolt","x-r-bolt","x-r-dummy-1","x-r-dummy-1","x-r-dummy-2","x-r-dummy-2","x-r-dummy-3","x-r-dummy-3","x-s-bolt","x-s-bolt","x-s-dummy-1","x-s-dummy-1","x-s-dummy-2","x-s-dummy-2","x-s-dummy-3","x-s-dummy-3"]},
+    {"name": "Archlife (P2)", "leaderId": "ph-archlife", "cards": ["p2-deathknight","p2-deathknight","p3-Pod","p3-Pod","n3-IneptRuler","n3-IneptRuler","p3-Looker","p3-Looker","p2-ash demon","p2-ash demon","px-potion","px-potion","n3-AcolyteofGrinkle","n3-AcolyteofGrinkle","p3-helaks","p3-helaks","px-flower","px-flower","n3-GrinkleBeast","n3-GrinkleBeast","nx-ColdBread","nx-ColdBread","n2-Smithee","n2-Smithee","p2-pinelyte","p2-pinelyte","px-planetblast","px-planetblast","p3-stareater","p3-stareater","p1-moonkrag","p1-moonkrag","p3-Tryybus","p3-Tryybus","p2-livingfort","p2-livingfort","n1-lizard","n1-lizard","n1-Wallguy","n1-Wallguy","px-treasure","px-treasure","p2-dragon","p2-dragon","ph-archlife","ph-archlife","n3-NerveLite","n3-NerveLite"]}
+  ],
+  "setupDigest": "66b61d98ed37e057",
+  "steps": [
+    {"actor": 0, "action": {"type":"END_TURN"}, "digest": "7cc602e15902e68b"},
+    {"actor": 1, "action": {"type":"PLAY_SUMMON","handIndex":4,"slot":2,"targets":[]}, "digest": "c3d2053f8021006d"},
+    {"actor": 1, "action": {"type":"CAST_SPELL","handIndex":4,"targets":[]}, "digest": "d940a3e91cae3d86"},
+    {"actor": 1, "action": {"type":"PLAY_SUMMON","handIndex":0,"slot":1,"targets":[]}, "digest": "8328278cf6e5621e"},
+    {"actor": 1, "action": {"type":"PLAY_SUPPORTER","handIndex":0}, "digest": "6838af340bf18023"},
+    {"actor": 1, "action": {"type":"PLAY_SUMMON","handIndex":3,"slot":0,"targets":[]}, "digest": "63e0aa6bc5264d4d"},
+    {"actor": 1, "action": {"type":"END_TURN"}, "digest": "557971ac0f678b4d"},
+    {"actor": 0, "action": {"type":"PLAY_SUMMON","handIndex":6,"slot":1,"targets":[]}, "digest": "80c8252ee451efcb"},
+    {"actor": 0, "action": {"type":"END_TURN"}, "digest": "9c18f61a9cf08440"},
+    {"actor": 1, "action": {"type":"ACTIVATE_POWER","source":{"kind":"leader","player":1,"index":0},"powerIndex":0,"targets":[{"kind":"summon","player":0,"index":1}]}, "digest": "6058b483eea9440f"},
+    {"actor": 0, "action": {"type":"REPLACE_SUMMON","handIndex":3,"targets":[]}, "digest": "c45285b4d9a773cd"},
+    {"actor": 1, "action": {"type":"PLAY_SUPPORTER","handIndex":4}, "digest": "05e9c86e5e3b2933"},
+    {"actor": 1, "action": {"type":"ACTIVATE_POWER","source":{"kind":"leader","player":1,"index":0},"powerIndex":0,"targets":[{"kind":"summon","player":0,"index":1}]}, "digest": "14be90113171fdd8"},
+    {"actor": 0, "action": {"type":"DECLINE_REPLACE"}, "digest": "269692d7c3bbae54"},
+    {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":1,"index":1},"target":{"kind":"leader","player":0,"index":0}}, "digest": "11b5187419b28a6b"},
+    {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":1,"index":0},"target":{"kind":"leader","player":0,"index":0}}, "digest": "805844602400ae95"},
+    {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":1,"index":2},"target":{"kind":"leader","player":0,"index":0}}, "digest": "82b1841cdd90f895"},
+    {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"leader","player":1,"index":0},"target":{"kind":"leader","player":0,"index":0}}, "digest": "042273ac31b3da1e"}
+  ],
+  "finalDigest": "042273ac31b3da1e",
+  "winner": 1,
+  "winReason": "Vanilla Dummies (P1) lost their leader."
+}

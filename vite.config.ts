@@ -19,9 +19,10 @@ export default defineConfig({
   },
   server: {
     port: Number(process.env.PORT) || 5173,
-    // Training writes snapshots continuously; watching them makes any vite
-    // process die with EBUSY while a tournament is running.
-    watch: { ignored: ['**/runs/**', '**/replays/**'] },
+    // Training writes snapshots continuously and dotnet locks its build
+    // output; watching either makes any vite process die with EBUSY while a
+    // tournament or a C# build is running.
+    watch: { ignored: ['**/runs/**', '**/replays/**', '**/csharp/**'] },
     // Online play talks to window.location.origin, so the dev server has to
     // hand /api to the worker rather than answer it. `ws` covers the room
     // socket, which is an upgrade on the same prefix.

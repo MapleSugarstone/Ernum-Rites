@@ -200,7 +200,10 @@ public static class Aux
         {
             var def = Registry.TryCard(id);
             if (def is null) continue;
-            dest[Bucket(def)] += 1f / 3f;
+            // Clamped rather than trusted: an out-of-range bucket once threw here
+            // and silently dropped whole pairings from a tournament.
+            int b = Math.Min(Bucket(def), dest.Length - 1);
+            dest[b] += 1f / 3f;
         }
     }
 

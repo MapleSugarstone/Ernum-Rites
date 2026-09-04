@@ -197,12 +197,25 @@ export function addDebt(
   // still resolving, and a second bill falling due inside that action is what a
   // tie looks like; endGame settles who the tie belongs to.
   if (amount <= 0) return;
+  // Loanshark: every gain to every player is 1 bigger per copy in play,
+  // whoever owns the shark and whoever pays the bill.
+  for (const pl of state.players) {
+    for (const s of [...pl.slots, pl.leader]) {
+      if (s && card(s.cardId).debtAmplify) amount += 1;
+    }
+  }
   const p = state.players[player];
   const limit = debtLimitOf(state);
   p.debtCount += amount;
   log(state, player, `${reason} Debt is now ${p.debtCount}/${limit}.`);
   if (p.debtCount >= limit) {
     playerLoses(state, player, `${p.name} reached ${limit} debt.`);
+  }
+  // After the loss check: a bill that ended the game fires nothing.
+  if (state.winner === null) {
+    for (const s of [...p.slots, p.leader]) {
+      if (s) fireTrigger(state, s, 'onDebtTaken');
+    }
   }
 }
 
@@ -213,6 +226,25 @@ export function clearDebt(state: GameState, player: PlayerIdx, amount: number): 
   if (paid === 0) return;
   p.debtCount -= paid;
   log(state, player, `${p.name} pays off ${paid} debt, down to ${p.debtCount}/${debtLimitOf(state)}.`);
+}
+
+/** Candy: Love tokens are a per-player count, kept between turns, no cap. */
+export function gainLove(state: GameState, player: PlayerIdx, amount: number): void {
+  if (amount <= 0) return;
+  const p = state.players[player];
+  p.love += amount;
+  log(state, player, `${p.name} gains ${amount} Love (${p.love} held).`);
+}
+
+/** Candy: a Love line spends the whole count at once. Returns how many. */
+export function spendLove(state: GameState, player: PlayerIdx): number {
+  const p = state.players[player];
+  const spent = p.love;
+  if (spent > 0) {
+    p.love = 0;
+    log(state, player, `${p.name} spends ${spent} Love.`);
+  }
+  return spent;
 }
 
 /** Pull `count` cards off the top of the deck as face-down HP. Returns how many landed. */
@@ -261,6 +293,14 @@ export function newSummon(
     enteredTurn: state.turn,
   };
   if (opts.override) s.override = opts.override;
+  // A shop opens stocked: only self-use is gated on the turn a body entered,
+  // so a store placed mid-turn (a replacement, a token) sells at once.
+  const def = card(cardId);
+  if (def.store) {
+    const stage = state.players[owner].stage;
+    s.storeStock = stage && tryCard(stage)?.storeBoost ? 2 : 1;
+    s.storeUsed = false;
+  }
   return s;
 }
 
@@ -321,6 +361,9 @@ type TriggerName =
   | 'onSpellCast'
   | 'onEnemySpellCast'
   | 'onEnemyPower'
+  | 'onStoreSold'
+  | 'onStoreBought'
+  | 'onDebtTaken'
   | 'onSurvive'
   | 'onSummonPlayed';
 
@@ -1082,14 +1125,44 @@ export function takeControlOf(state: GameState, ref: TargetRef, to: PlayerIdx): 
 
 // --- contexts ---------------------------------------------------------------
 
-function baseHelpers(state: GameState, me: PlayerIdx, sourceId: string) {
+/**
+ * Spell Immunity is total: no card's effect touches an immune body, its
+ * controller's included, so the same rule that refuses a spell refuses a
+ * power, a trap, a flip and a field. The one exemption is the body's own
+ * card acting, which is how an immune body's printed powers and triggers
+ * still reach itself. Combat damage never comes through these verbs, so the
+ * clash is untouched.
+ */
+function immunityGate(state: GameState, source: SummonInstance | null) {
+  return (target: TargetRef): boolean => {
+    if (target.kind !== 'summon' && target.kind !== 'leader') return false;
+    const s = findSummon(state, target);
+    if (!s || !card(s.cardId).spellImmune || s === source) return false;
+    log(state, s.owner, `${card(s.cardId).name} is untouched: Spell Immunity.`);
+    return true;
+  };
+}
+
+function baseHelpers(
+  state: GameState,
+  me: PlayerIdx,
+  sourceId: string,
+  sourceBody: SummonInstance | null,
+) {
+  const blocked = immunityGate(state, sourceBody);
   return {
     // Damage from a card, so Effect Damage applies. Combat does not come
     // through here, which is what keeps the keyword off the clash.
-    damage: (target: TargetRef, amount: number) =>
-      dealDamage(state, target, amount + effectDamageOf(state, me)),
-    wound: (target: TargetRef, amount: number) => addWounds(state, target, amount),
+    damage: (target: TargetRef, amount: number) => {
+      if (blocked(target)) return;
+      dealDamage(state, target, amount + effectDamageOf(state, me));
+    },
+    wound: (target: TargetRef, amount: number) => {
+      if (blocked(target)) return;
+      addWounds(state, target, amount);
+    },
     shield: (target: TargetRef, count: number) => {
+      if (blocked(target)) return;
       const s = findSummon(state, target);
       if (s && count > 0) {
         s.shields += count;
@@ -1097,7 +1170,10 @@ function baseHelpers(state: GameState, me: PlayerIdx, sourceId: string) {
       }
     },
     returnToHand: () => markReturnToHand(),
-    catch: (target: TargetRef, count: number) => catchHp(state, target, count),
+    catch: (target: TargetRef, count: number) => {
+      if (blocked(target)) return 0;
+      return catchHp(state, target, count);
+    },
     // Solar's ramp: the top card goes into the supporter row rather than the
     // hand. Sapped, so it pays nothing this turn and everything after. The card
     // is spent doing it, which is the price.
@@ -1151,14 +1227,17 @@ function baseHelpers(state: GameState, me: PlayerIdx, sourceId: string) {
       drawCards(state, player, count);
     },
     reinforce: (target: TargetRef, count: number) => {
+      if (blocked(target)) return;
       const s = findSummon(state, target);
       if (s) assignHp(state, s, count);
     },
     grantEffectDamage: (target: TargetRef, amount: number) => {
+      if (blocked(target)) return;
       const s = findSummon(state, target);
       if (s) s.effectDamageMod += amount;
     },
     buffStrength: (target: TargetRef, amount: number, duration: 'turn' | 'permanent') => {
+      if (blocked(target)) return;
       const s = findSummon(state, target);
       if (s) s.strengthMods.push({ amount, duration, source: sourceId });
     },
@@ -1168,10 +1247,15 @@ function baseHelpers(state: GameState, me: PlayerIdx, sourceId: string) {
     reviveFromDebt: (player: PlayerIdx, match: (c: CardDef) => boolean) =>
       reviveFromDebt(state, player, match),
     removeFromDebt: (player: PlayerIdx, index: number) => removeFromDebt(state, player, index),
-    unflip: (target: TargetRef, count: number) => unflipHp(state, target, count),
+    unflip: (target: TargetRef, count: number) => {
+      if (blocked(target)) return 0;
+      return unflipHp(state, target, count);
+    },
     addDebt: (player: PlayerIdx, amount: number, reason?: string) =>
       addDebt(state, player, amount, reason ?? `${state.players[player].name} takes ${amount} debt.`),
     clearDebt: (player: PlayerIdx, amount: number) => clearDebt(state, player, amount),
+    gainLove: (player: PlayerIdx, amount: number) => gainLove(state, player, amount),
+    spendLove: (player: PlayerIdx) => spendLove(state, player),
     summonsOf: (player: PlayerIdx, includeLeader = false) =>
       summonRefsOf(state, player, includeLeader),
     toHand: (player: PlayerIdx, cardId: string) => {
@@ -1395,6 +1479,7 @@ export function makeEffectCtx(
   targets: TargetRef[],
   oppMode?: OppMode,
 ): EffectCtx {
+  const ctxBlocked = immunityGate(state, source);
   return {
     state,
     me,
@@ -1404,8 +1489,11 @@ export function makeEffectCtx(
     source,
     card: def,
     targets,
-    ...baseHelpers(state, me, def.id),
-    rawDamage: (target: TargetRef, amount: number) => dealDamage(state, target, amount),
+    ...baseHelpers(state, me, def.id, source),
+    rawDamage: (target: TargetRef, amount: number) => {
+      if (ctxBlocked(target)) return;
+      dealDamage(state, target, amount);
+    },
     taxSpells: (player: PlayerIdx, amount: number) => {
       const p = state.players[player];
       p.spellTax = Math.max(0, p.spellTax + amount);
@@ -1427,10 +1515,12 @@ export function makeEffectCtx(
       return got;
     },
     sap: (target: TargetRef) => {
+      if (ctxBlocked(target)) return;
       const s = findSummon(state, target);
       if (s) s.sapped = true;
     },
     unsap: (target: TargetRef) => {
+      if (ctxBlocked(target)) return;
       const s = findSummon(state, target);
       if (s) s.sapped = false;
     },
@@ -1498,10 +1588,12 @@ export function makeEffectCtx(
     },
     summonAt: (target: TargetRef) => findSummon(state, target),
     destroy: (target: TargetRef) => {
+      if (ctxBlocked(target)) return;
       const s = findSummon(state, target);
       if (s) destroySummon(state, s);
     },
     annihilate: (target: TargetRef) => {
+      if (ctxBlocked(target)) return;
       const s = findSummon(state, target);
       if (s) annihilate(state, s);
     },
@@ -1511,6 +1603,7 @@ export function makeEffectCtx(
       state.players[me].spellBonus += amount;
     },
     devour: (target: TargetRef) => {
+      if (ctxBlocked(target)) return false;
       const victim = findSummon(state, target);
       if (!source || !victim || victim === source) return false;
       const outer = eater;
@@ -1538,6 +1631,7 @@ export function makeEffectCtx(
       options: PutSummonOptions,
     ) => putSummonDirect(state, player, cardId, slot, options),
     stackHp: (target: TargetRef, handIndex: number) => {
+      if (ctxBlocked(target)) return false;
       const s = findSummon(state, target);
       const hand = state.players[me].hand;
       if (!s || handIndex < 0 || handIndex >= hand.length) return false;
@@ -1546,14 +1640,29 @@ export function makeEffectCtx(
       log(state, me, `A card from hand slides under ${card(s.cardId).name} as HP.`);
       return true;
     },
-    moveHp: (from: TargetRef, to: TargetRef, count: number) =>
-      moveHpCards(state, from, to, count),
-    bounce: (target: TargetRef) => bounceSummon(state, target),
-    shuffleIntoDeck: (target: TargetRef) => shuffleSummonIntoDeck(state, target),
+    moveHp: (from: TargetRef, to: TargetRef, count: number) => {
+      // Either end immune stops the move: taking HP off a body and piling HP
+      // onto one are both that body being affected.
+      if (ctxBlocked(from) || ctxBlocked(to)) return 0;
+      return moveHpCards(state, from, to, count);
+    },
+    bounce: (target: TargetRef) => {
+      if (ctxBlocked(target)) return false;
+      return bounceSummon(state, target);
+    },
+    shuffleIntoDeck: (target: TargetRef) => {
+      if (ctxBlocked(target)) return false;
+      return shuffleSummonIntoDeck(state, target);
+    },
     shuffleHandIntoDeck: (player: PlayerIdx) => shuffleHandIntoDeck(state, player),
-    transform: (target: TargetRef, cardId: string) =>
-      transformSummon(state, target, cardId),
-    takeControl: (target: TargetRef) => takeControlOf(state, target, me),
+    transform: (target: TargetRef, cardId: string) => {
+      if (ctxBlocked(target)) return false;
+      return transformSummon(state, target, cardId);
+    },
+    takeControl: (target: TargetRef) => {
+      if (ctxBlocked(target)) return false;
+      return takeControlOf(state, target, me);
+    },
     debtToHp: (target: TargetRef, debtIndex: number) => {
       const s = findSummon(state, target);
       const debt = state.players[me].debt;
@@ -1710,6 +1819,11 @@ export function makeFlipCtx(
   oppMode?: OppMode,
 ): FlipCtx {
   const me = holder.owner;
+  // A flip is another card, so it earns no self-exemption: an immune holder
+  // is out of its reach like everyone else. Moving itself out of the stack
+  // (returnThis, discardThis) stays free, since the card acting on itself is
+  // not the holder being affected.
+  const flipBlocked = immunityGate(state, null);
   return {
     state,
     me,
@@ -1718,12 +1832,17 @@ export function makeFlipCtx(
     },
     holder,
     card: def,
-    ...baseHelpers(state, me, def.id),
+    ...baseHelpers(state, me, def.id, null),
     // A flip's own damage and wounds carry the flip depth, so a chain of
     // damage-flips and heal-flips cannot recurse without limit.
-    damage: (target: TargetRef, amount: number) =>
-      dealDamage(state, target, amount + effectDamageOf(state, me), depth),
-    wound: (target: TargetRef, amount: number) => addWounds(state, target, amount, depth),
+    damage: (target: TargetRef, amount: number) => {
+      if (flipBlocked(target)) return;
+      dealDamage(state, target, amount + effectDamageOf(state, me), depth);
+    },
+    wound: (target: TargetRef, amount: number) => {
+      if (flipBlocked(target)) return;
+      addWounds(state, target, amount, depth);
+    },
     choose: (
       effect: string,
       refs: TargetRef[],
@@ -1744,12 +1863,28 @@ export function makeFlipCtx(
       return lost;
     },
     // Free when the body was going to fall anyway, a real decision when it was not.
-    destroyHolder: () => destroySummon(state, holder),
+    destroyHolder: () => {
+      if (flipBlocked(refFor(state, holder))) return;
+      destroySummon(state, holder);
+    },
     discardThis: () => {
       const at = holder.hp.findIndex((h) => h.flipped && h.cardId === def.id);
       if (at < 0) return false;
       const [gone] = holder.hp.splice(at, 1);
       toDiscard(state, holder.owner, gone.cardId);
+      return true;
+    },
+    // Candy's bounce: the spent card leaves the stack for its owner's hand. The
+    // damage it absorbed stands, and a body left with nothing at all falls, the
+    // same way it does after a Catch strips it bare.
+    returnThis: () => {
+      const at = holder.hp.findIndex((h) => h.flipped && h.cardId === def.id);
+      if (at < 0) return false;
+      const [gone] = holder.hp.splice(at, 1);
+      if (toHand(state, holder.owner, gone.cardId)) {
+        log(state, holder.owner, `${def.name} returns to hand.`);
+      }
+      if (holder.hp.length === 0) destroySummon(state, holder);
       return true;
     },
   };
@@ -1808,15 +1943,20 @@ export function flipWouldFire(state: GameState, offer: FlipOffer): boolean {
 export function effectiveStrength(state: GameState, summon: SummonInstance): number {
   const def = card(summon.cardId);
   let total = strengthOf(summon, def);
+  // Spell Immunity keeps every other card's standing bonus off the body too:
+  // no field aura and no other body's aura lands on it, its own side's
+  // included. Its own card's bonus (a body counting for itself) still counts.
+  const immune = !!def.spellImmune;
   for (let controller = 0 as PlayerIdx; controller < state.players.length; controller++) {
     const stageId = state.players[controller].stage;
-    if (stageId) {
+    if (stageId && !immune) {
       const bonus = tryCard(stageId)?.stageHooks?.strengthBonus;
       if (bonus) total += bonus({ state, controller, summon, def });
     }
     for (const ref of summonRefsOf(state, controller, true)) {
       const other = findSummon(state, ref);
       if (!other) continue;
+      if (immune && other !== summon) continue;
       const bonus = tryCard(other.cardId)?.triggers?.strengthBonus;
       if (bonus) total += bonus({ state, controller, summon, def, source: other });
     }

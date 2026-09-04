@@ -13,7 +13,10 @@ namespace Selatza;
 /// </summary>
 public static class Digest
 {
-    public const string Format = "v3";
+    // v5: a seventh mana kind, Ernum, which pays for a pip of any colour.
+    // v4: a sixth mana kind (Candy), Love and plays-this-turn on every player,
+    // Store stock on summons, and the Store window.
+    public const string Format = "v5";
 
     public static string Of(GameState s)
     {
@@ -30,6 +33,16 @@ public static class Digest
         for (int i = 0; i < 2; i++) AppendPlayer(sb, s.Players[i], i);
         sb.Append("|PEND:");
         if (s.Pending is null) sb.Append('-');
+        else if (s.Pending.Store is { } win)
+        {
+            sb.Append(s.Pending.Player).Append(":B:")
+              .Append(win.Seller).Append(':')
+              .Append(win.Buyer).Append(':')
+              .Append(Ref(win.Source)).Append(':')
+              .Append(win.Price).Append(':')
+              .Append(win.Pass).Append(':')
+              .Append(win.Final ? '1' : '0');
+        }
         else if (s.Pending.Battle is not null)
         {
             sb.Append(s.Pending.Player).Append(':')
@@ -156,6 +169,8 @@ public static class Digest
           .Append(p.LeaderPlayed ? '1' : '0');
         sb.Append(":N").Append(p.TurnsTaken);
         sb.Append(":O").Append(p.DeckOuts);
+        sb.Append(":V").Append(p.Love);
+        sb.Append(":Y").Append(p.PlaysThisTurn);
         sb.Append(":L").Append(p.ReplaceLocked);
         sb.Append(":T").Append(p.SpellTax);
         sb.Append(":G").Append(p.Stage ?? "-");
@@ -230,6 +245,8 @@ public static class Digest
         sb.Append('~').Append(s.IsLeader ? '1' : '0');
         sb.Append('~').Append(s.Owner);
         sb.Append('~').Append(s.EffectDamageMod);
+        sb.Append('~').Append(s.StoreStock);
+        sb.Append('~').Append(s.StoreUsed ? '1' : '0');
         return sb.ToString();
     }
 }

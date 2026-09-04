@@ -24,6 +24,10 @@ public static class Program
         CardIndex.EnsureBuilt();
         var cmd = args.FirstOrDefault(a => !a.StartsWith("--", StringComparison.Ordinal)) ?? "train";
 
+        // Set before any game starts, because every worker thread reads it.
+        Bot.Light = Flag(args, "--light-bot");
+        if (Bot.Light) Console.WriteLine("light bot: the search runs at about a tenth of its usual cost");
+
         // Any command that plays games can record them. Opened here rather than
         // inside each one so the flag means the same thing everywhere.
         string logPath = Str(args, "--log-games", "");
@@ -98,6 +102,8 @@ public static class Program
         Console.WriteLine("         --forget 0 --no-counting --mutate 3 --reseed 0 --evolve-every 10");
         Console.WriteLine("         --steps 150 --batch 128 --lr 0.002 --replay-cap 60000 --net small");
         Console.WriteLine("         --threads N --seed 1 --out runs/latest --gauntlet 40 --quiet");
+        Console.WriteLine("         --light-bot (a tenth of the search per decision, for long balance");
+        Console.WriteLine("           runs where the number of games matters more than the play)");
         Console.WriteLine("         --snapshot-every 1 --fresh (ignore any snapshot and start over)");
         Console.WriteLine("         --net-weight-start 0 --net-weight-end 0.2 (how large a correction");
         Console.WriteLine("           the network may make to the evaluator's ranking, first round to last)");
@@ -194,6 +200,7 @@ public static class Program
                 "dual" => LeaderPool.Dual,
                 "nonflip" => LeaderPool.NonFlip,
                 "contested" => LeaderPool.Contested,
+                "contested2" => LeaderPool.Contested2,
                 "contested-sturdy" => LeaderPool.ContestedSturdy,
                 _ => LeaderPool.All,
             },

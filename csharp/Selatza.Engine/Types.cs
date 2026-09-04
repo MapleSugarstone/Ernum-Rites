@@ -1,15 +1,16 @@
 namespace Selatza;
 
 /// <summary>
-/// The five that pay mana, plus Neutral. N is deliberately index 5, which is
-/// also <see cref="Rules.Colorless"/>, so a neutral card lands in the
-/// colourless pool whichever path reaches it.
+/// The six that pay mana, plus Neutral and Ernum. N sits at
+/// <see cref="Rules.Colorless"/>, so a neutral card lands in the colourless pool
+/// whichever path reaches it, and E at <see cref="Rules.Ernum"/>. K (Candy) sits
+/// before both so every colour's ordinal is its mana index.
 /// </summary>
-public enum Color { P, O, R, F, S, N }
+public enum Color { P, O, R, F, S, K, N, E }
 
 public enum CardType { Summon, Spell, Trap, Stage }
 
-public enum Faction { Fish, Machine, Spirit, Beast, Living, Mortal, Scholar, Star, Hedron, Grinkle, Ernum }
+public enum Faction { Fish, Machine, Spirit, Beast, Living, Mortal, Scholar, Star, Hedron, Grinkle, Saccharine, Ernum }
 
 public enum Rarity { C, R, E, L, P }
 
@@ -19,7 +20,7 @@ public enum TargetKind { Summon, Leader, Hand, Supporter, Debt, Discard, ColorPi
 
 public static class Colors
 {
-    public static readonly Color[] All = { Color.P, Color.O, Color.R, Color.F, Color.S };
+    public static readonly Color[] All = { Color.P, Color.O, Color.R, Color.F, Color.S, Color.K };
 
     public static string Name(Color c) => c switch
     {
@@ -28,6 +29,8 @@ public static class Colors
         Color.R => "Robot",
         Color.F => "Fish",
         Color.S => "Solar",
+        Color.K => "Candy",
+        Color.E => "Ernum",
         _ => "Neutral",
     };
 
@@ -38,6 +41,7 @@ public static class Colors
         Color.O => "Purple",
         Color.R => "Green",
         Color.F => "Blue",
+        Color.K => "Pink",
         _ => "Yellow",
     };
 
@@ -141,6 +145,41 @@ public static class Rarities
         ["m-gpy-obscureslime"] = Rarity.L,
         ["m-grp-horriblemalware"] = Rarity.L,
         ["m-gry-spiritofsolstice"] = Rarity.L,
+        ["m-mb-CandyCraver"] = Rarity.R,
+        ["m-mb-CandyFish"] = Rarity.R,
+        ["m-mb-IcecubeCandy"] = Rarity.R,
+        ["m-mb-TropicalBlueDrink"] = Rarity.R,
+        ["m-mb-loanshark"] = Rarity.E,
+        ["m-mbp-vier"] = Rarity.L,
+        ["m-mbr-saraza"] = Rarity.L,
+        ["m-mby-wellworthit"] = Rarity.L,
+        ["m-mg-AbsurdlySourCandy"] = Rarity.R,
+        ["m-mg-CandyVirus"] = Rarity.R,
+        ["m-mg-CuriousPilgrim"] = Rarity.R,
+        ["m-mg-HedronFragments"] = Rarity.R,
+        ["m-mg-NewGrad"] = Rarity.E,
+        ["m-mgb-codeinfestedsweetling"] = Rarity.L,
+        ["m-mgp-godofmisfortune"] = Rarity.L,
+        ["m-mgr-ransomwareartist"] = Rarity.L,
+        ["m-mgy-thethorn"] = Rarity.L,
+        ["m-mp-LenAphelion"] = Rarity.E,
+        ["m-mp-MarkOfTheFalseKing"] = Rarity.R,
+        ["m-mp-PairOfCritters"] = Rarity.E,
+        ["m-mp-RottenCandy"] = Rarity.R,
+        ["m-mp-SoldBones"] = Rarity.R,
+        ["m-mpr-humanitysdefender"] = Rarity.L,
+        ["m-mpy-sopapli"] = Rarity.L,
+        ["m-mr-AbsurdlySpicyCandy"] = Rarity.E,
+        ["m-mr-CandyAxeman"] = Rarity.R,
+        ["m-mr-DeflateCurrency"] = Rarity.R,
+        ["m-mr-RedSweets"] = Rarity.L,
+        ["m-mr-RedTape"] = Rarity.R,
+        ["m-my-CandySun"] = Rarity.R,
+        ["m-my-LittleGummyBear"] = Rarity.R,
+        ["m-my-MoltenCandyBolt"] = Rarity.R,
+        ["m-my-PinkLemonader"] = Rarity.L,
+        ["m-my-SourSoda"] = Rarity.R,
+        ["m-myr-hellmage"] = Rarity.L,
         ["m-pg-AncientVirus"] = Rarity.R,
         ["m-pg-Cybergore"] = Rarity.E,
         ["m-pg-Doortonowhere"] = Rarity.R,
@@ -408,6 +447,48 @@ public static class Rarities
         ["x-s-dummy-1"] = Rarity.C,
         ["x-s-dummy-2"] = Rarity.C,
         ["x-s-dummy-3"] = Rarity.C,
+        // Candy. Tiers from the character-count rule at the list's first printing.
+        ["k1-SugarBug"] = Rarity.E,
+        ["k1-apprentice"] = Rarity.R,
+        ["k1-candymouse"] = Rarity.R,
+        ["k1-gingerbreadgirl"] = Rarity.C,
+        ["k1-icecreambird"] = Rarity.E,
+        ["k1-livingbubbles"] = Rarity.C,
+        ["k1-livingcandy"] = Rarity.C,
+        ["k1-lovecat"] = Rarity.C,
+        ["k1-patheticbonbon"] = Rarity.R,
+        ["k1-sleepybeast"] = Rarity.E,
+        ["k2-Briber"] = Rarity.C,
+        ["k2-CandyGuardSeller"] = Rarity.C,
+        ["k2-CandyWizard"] = Rarity.R,
+        ["k2-GunForHire"] = Rarity.R,
+        ["k2-HotcakeSeller"] = Rarity.R,
+        ["k2-Nurse"] = Rarity.E,
+        ["k2-PrivateDetective"] = Rarity.R,
+        ["k2-Recycler"] = Rarity.E,
+        ["k2-SnoozingGiant"] = Rarity.R,
+        ["k2-spellsell"] = Rarity.C,
+        ["k3-AncientSugar"] = Rarity.C,
+        ["k3-DebtReliever"] = Rarity.R,
+        ["k3-DerangedCandyfolk"] = Rarity.L,
+        ["k3-Eidola"] = Rarity.C,
+        ["k3-Final Unicorn"] = Rarity.E,
+        ["k3-HyperCapitalist"] = Rarity.E,
+        ["k3-InfiniteLove"] = Rarity.R,
+        ["k3-LastLollipop"] = Rarity.L,
+        ["k3-SweetHarmony"] = Rarity.L,
+        ["kh-PinkDeus"] = Rarity.L,
+        ["kx-Candycane"] = Rarity.C,
+        ["kx-DarkCandy"] = Rarity.L,
+        ["kx-FieldClearanceSale"] = Rarity.R,
+        ["kx-GiftOfGiving"] = Rarity.E,
+        ["kx-LineGoesUp"] = Rarity.C,
+        ["kx-Loan"] = Rarity.L,
+        ["kx-LoveForAPrice"] = Rarity.C,
+        ["kx-cuffed"] = Rarity.R,
+        ["kx-trapExpensiveSecurity"] = Rarity.C,
+        ["kx-trapSugarCrash"] = Rarity.C,
+        ["k-candyguard"] = Rarity.C,
     };
 
     /// <summary>
@@ -453,8 +534,8 @@ public static class Rarities
     }
 }
 
-/// <summary>A mana cost. Five small counters rather than a dictionary, so it copies cheaply.</summary>
-public readonly record struct Cost(int P = 0, int O = 0, int R = 0, int F = 0, int S = 0, int C = 0)
+/// <summary>A mana cost. Small counters rather than a dictionary, so it copies cheaply.</summary>
+public readonly record struct Cost(int P = 0, int O = 0, int R = 0, int F = 0, int S = 0, int C = 0, int K = 0)
 {
     public int this[Color c] => c switch
     {
@@ -462,11 +543,12 @@ public readonly record struct Cost(int P = 0, int O = 0, int R = 0, int F = 0, i
         Color.O => O,
         Color.R => R,
         Color.F => F,
+        Color.K => K,
         _ => S,
     };
 
     /// <summary>Coloured pips only. Colourless is deliberately not a colour.</summary>
-    public int Colored => P + O + R + F + S;
+    public int Colored => P + O + R + F + S + K;
 
     public int Total => Colored + C;
 
@@ -531,6 +613,30 @@ public sealed class Power
     /// <summary>Sapping this summon is part of the cost, shown as a symbol on the cost line.</summary>
     public bool SapSelf { get; init; }
 
+    /// <summary>
+    /// Candy: a power whose whole text is a Love line spends the pool to do
+    /// anything, so with 0 Love it is refused rather than wasting the sap.
+    /// </summary>
+    public bool NeedsLove { get; init; }
+
+    public required Action<EffectCtx> Effect { get; init; }
+}
+
+/// <summary>
+/// Candy's shop, printed as a "Store:" line in the card's text. Its controller
+/// may run it once per turn for 2 debt (plus the surcharge), never on the turn
+/// the card entered play. In the TypeScript engine other players buy it through
+/// a price negotiation; this engine carries the self-use half, which is the
+/// floor the balance harness measures.
+/// </summary>
+public sealed class StoreDef
+{
+    /// <summary>Added to the self-use price and to every offered price.</summary>
+    public int Surcharge { get; init; }
+    /// <summary>At most one: the target is collected as a deferred choice.</summary>
+    public TargetSpec[]? Targets { get; init; }
+    /// <summary>Whether the store could do anything for this user right now.</summary>
+    public Func<GameState, int, bool>? Useful { get; init; }
     public required Action<EffectCtx> Effect { get; init; }
 }
 
@@ -586,6 +692,25 @@ public sealed class Triggers
     /// </summary>
     public Action<EffectCtx>? OnEnemyPower { get; init; }
 
+    /// <summary>
+    /// Candy: when another player buys from one of this card's controller's
+    /// Stores. Fires on the seller's side once per accepted purchase.
+    /// </summary>
+    public Action<EffectCtx>? OnStoreSold { get; init; }
+
+    /// <summary>
+    /// Candy: when this card's controller buys from another player's Store.
+    /// Fires on the buyer's side once per accepted purchase; self-use is not a
+    /// purchase and does not fire it.
+    /// </summary>
+    public Action<EffectCtx>? OnStoreBought { get; init; }
+
+    /// <summary>
+    /// When this card's controller takes debt, after the amount lands and only
+    /// while the game is still going. Fires once per gain, whatever its size.
+    /// </summary>
+    public Action<EffectCtx>? OnDebtTaken { get; init; }
+
     /// <summary>When any summon is played from a hand. The body that landed is Targets[0].</summary>
     public Action<EffectCtx>? OnSummonPlayed { get; init; }
 
@@ -621,6 +746,8 @@ public sealed class StageHooks
     public Func<StrengthBonusArgs, int>? StrengthBonus { get; init; }
     /// <summary>Fires for the stage's own controller; Target(0) is the summon that landed.</summary>
     public Action<EffectCtx>? OnSummonPlayed { get; init; }
+    /// <summary>Candy: when another player buys from the controller's Store. TS-only.</summary>
+    public Action<EffectCtx>? OnStoreSold { get; init; }
 }
 
 public sealed class CardDef
@@ -694,6 +821,11 @@ public sealed class CardDef
     /// one for one instead of two for one. Oil's payoff keyword.
     /// </summary>
     public bool WoundAmplify { get; init; }
+    /// <summary>
+    /// While this body is in play, every debt gain to every player is 1 bigger,
+    /// once per copy, the controller's own bills included. Loanshark's aura.
+    /// </summary>
+    public bool DebtAmplify { get; init; }
 
     /// <summary>
     /// Supporter Lock. While this card is in play the other player may not face
@@ -737,6 +869,8 @@ public sealed class CardDef
     /// nothing left to reshuffle when the deck runs out.
     /// </summary>
     public bool VoidsDiscard { get; init; }
+    /// <summary>This spell removes itself from the game after it resolves; a countered copy still discards.</summary>
+    public bool AnnihilateAfterCast { get; init; }
     /// <summary>
     /// Stationary. This body never declares an attack. It still deals its
     /// strength back when attacked.
@@ -775,6 +909,14 @@ public sealed class CardDef
     /// <summary>When set, the flip is optional and its owner must pay this.</summary>
     public FlipCost? FlipCost { get; init; }
     public StageHooks? StageHooks { get; init; }
+    /// <summary>Candy: this summon is a shop. The printed line lives in Text.</summary>
+    public StoreDef? Store { get; init; }
+    /// <summary>
+    /// Candy's Clearance Sale. While this is its controller's stage, their
+    /// Stores hold 2 stock instead of 1, self-use costs 1 less, and every price
+    /// a buyer pays them drops by 1, to a minimum of 1.
+    /// </summary>
+    public bool StoreBoost { get; init; }
 
     public bool HasFaction(Faction f) => Array.IndexOf(Factions, f) >= 0;
     public override string ToString() => $"{Id} ({Name})";

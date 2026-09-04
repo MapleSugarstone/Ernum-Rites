@@ -22,6 +22,10 @@ export interface WireAction {
   targets?: WireRef[];
   /** Party-only enemy pick. Written only when set, so 2-player replays never carry it. */
   enemy?: number;
+  /** Store negotiation price. */
+  price?: number;
+  /** Store negotiation final-offer flag. */
+  final?: boolean;
 }
 
 export interface ReplayDeck {
@@ -127,6 +131,13 @@ export function actionToWire(a: Action): WireAction {
       };
     case 'DECLARE_ATTACK':
       return { type: a.type, source: refToWire(a.source), target: refToWire(a.target) };
+    case 'USE_STORE':
+    case 'OPEN_STORE':
+      return { type: a.type, source: refToWire(a.source) };
+    case 'STORE_OFFER':
+      return { type: a.type, price: a.price, ...(a.final ? { final: true } : {}) };
+    case 'STORE_COUNTER':
+      return { type: a.type, price: a.price };
     case 'RESOLVE_CHOICE':
       return {
         type: a.type,
@@ -192,6 +203,18 @@ export function actionFromWire(w: WireAction): Action {
         : { type: 'PAY_FLIP', handIndex: w.handIndex, ...enemy };
     case 'DECLINE_FLIP':
       return { type: 'DECLINE_FLIP' };
+    case 'USE_STORE':
+      return { type: 'USE_STORE', source: refFromWire(w.source!) as SourceRef };
+    case 'OPEN_STORE':
+      return { type: 'OPEN_STORE', source: refFromWire(w.source!) as SourceRef };
+    case 'STORE_OFFER':
+      return { type: 'STORE_OFFER', price: w.price ?? 1, ...(w.final ? { final: true } : {}) };
+    case 'STORE_COUNTER':
+      return { type: 'STORE_COUNTER', price: w.price ?? 1 };
+    case 'STORE_ACCEPT':
+      return { type: 'STORE_ACCEPT' };
+    case 'STORE_REJECT':
+      return { type: 'STORE_REJECT' };
     case 'END_TURN':
       return { type: 'END_TURN' };
     case 'CONCEDE':

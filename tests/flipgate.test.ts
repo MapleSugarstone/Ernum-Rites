@@ -39,7 +39,7 @@ function game(): GameState {
   );
   for (const p of s.players) {
     p.hand = [];
-    p.mana = { P: 0, O: 0, R: 0, F: 0, S: 0, C: 0 };
+    p.mana = { P: 0, O: 0, R: 0, F: 0, S: 0, K: 0, C: 0, E: 0 };
   }
   return s;
 }

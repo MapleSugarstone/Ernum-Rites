@@ -63,6 +63,17 @@ public sealed class SummonInstance
 
     public int EnteredTurn { get; set; }
 
+    /// <summary>
+    /// Candy: purchases this Store still holds this turn. Refilled at the start
+    /// of every turn; a purchase or a rejection spends it. Only meaningful on
+    /// bodies whose card prints a Store, and only spent in the TypeScript
+    /// engine, where buying exists.
+    /// </summary>
+    public int StoreStock { get; set; }
+
+    /// <summary>Candy: its controller already ran this Store this turn.</summary>
+    public bool StoreUsed { get; set; }
+
     public int RemainingHp
     {
         get
@@ -90,6 +101,8 @@ public sealed class SummonInstance
             SapLock = SapLock,
             Bestowed = Bestowed,
             EnteredTurn = EnteredTurn,
+            StoreStock = StoreStock,
+            StoreUsed = StoreUsed,
             Override = Override?.Clone(),
             EffectDamageMod = EffectDamageMod,
             StrengthMods = new List<StrengthMod>(StrengthMods),
@@ -138,6 +151,14 @@ public sealed class PlayerState
     public int TurnsTaken { get; set; }
     /// <summary>Times this deck has run dry. Each one costs more than the last.</summary>
     public int DeckOuts { get; set; }
+    /// <summary>Candy: Love tokens held, kept between turns, no cap.</summary>
+    public int Love { get; set; }
+    /// <summary>
+    /// Cards this player has played from hand this turn: summons, supporters,
+    /// spells, fields and traps. Reset at the start of every player's turn.
+    /// Trap: Sugar Crash reads it off the active player.
+    /// </summary>
+    public int PlaysThisTurn { get; set; }
     /// <summary>
     /// A slot this player may not fill until they pay. Oil's curse: the hole a
     /// dead summon leaves stays open, and the leader behind it stays exposed,
@@ -169,6 +190,8 @@ public sealed class PlayerState
             LeaderPlayed = LeaderPlayed,
             TurnsTaken = TurnsTaken,
             DeckOuts = DeckOuts,
+            Love = Love,
+            PlaysThisTurn = PlaysThisTurn,
             ReplaceLocked = ReplaceLocked,
             SpellTax = SpellTax,
             Deck = new List<string>(Deck),
@@ -223,16 +246,50 @@ public sealed class PendingSpell
 }
 
 /// <summary>
-/// One response window at a time: an attack waiting on a trap, or an enemy
-/// spell waiting on a Spell Trap. Exactly one of Battle and Spell is set.
+/// Candy's negotiation, alternating between the two seats until it closes.
+///
+/// The buyer opens it on their own main step, so the seller answers on the
+/// buyer's turn the way a defender answers with a trap. The seller must always
+/// answer an opened Store with a price, so only the buyer may reject, and only
+/// the seller may declare an offer final. <see cref="Pass"/> counts price
+/// messages: odd means the seller's price is on the table, even and nonzero the
+/// buyer's. After pass 4 there are no more counters, only a final offer, an
+/// acceptance or a rejection.
+/// </summary>
+public sealed class PendingStoreWindow
+{
+    public int Seller { get; set; }
+    public int Buyer { get; set; }
+    /// <summary>The shop body. Always a slot summon: leaders print no Stores.</summary>
+    public TargetRef Source { get; set; }
+    /// <summary>Price on the table, -1 until the seller's first offer.</summary>
+    public int Price { get; set; } = -1;
+    public bool Final { get; set; }
+    public int Pass { get; set; }
+    public PendingStoreWindow Clone() => new()
+    {
+        Seller = Seller,
+        Buyer = Buyer,
+        Source = Source,
+        Price = Price,
+        Final = Final,
+        Pass = Pass,
+    };
+}
+
+/// <summary>
+/// One window at a time: an attack waiting on a trap, an enemy spell waiting on
+/// a Spell Trap, or a Store being haggled over. Exactly one of Battle, Spell and
+/// Store is set.
 /// </summary>
 public sealed class Pending
 {
     public int Player { get; set; }
     public PendingBattle? Battle { get; set; }
     public PendingSpell? Spell { get; set; }
+    public PendingStoreWindow? Store { get; set; }
     public Pending Clone() => new()
-    { Player = Player, Battle = Battle?.Clone(), Spell = Spell?.Clone() };
+    { Player = Player, Battle = Battle?.Clone(), Spell = Spell?.Clone(), Store = Store?.Clone() };
 }
 
 public readonly record struct ReplaceSlot(int Player, int Slot);
@@ -258,11 +315,14 @@ public static class Rules
 {
     public const int SummonSlots = 3;
 
-    /// <summary>Five colours plus colourless. Colourless lives at the last index.</summary>
-    public const int ManaKinds = 6;
+    /// <summary>Six colours, then colourless, then Ernum, in that order.</summary>
+    public const int ManaKinds = 8;
 
     /// <summary>Index of the colourless bucket in a mana row.</summary>
-    public const int Colorless = 5;
+    public const int Colorless = 6;
+
+    /// <summary>Index of the Ernum bucket. One of it pays a pip of any kind.</summary>
+    public const int Ernum = 7;
     public const int DebtLimit = 25;
 
     /// <summary>

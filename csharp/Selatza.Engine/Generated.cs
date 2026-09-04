@@ -61,6 +61,122 @@ public static class Generated
     }
 
     /// <summary>
+    /// A copy of any card rebuilt in Robot paying colourless: the frame turns R
+    /// and every pip, coloured and colourless alike, becomes C of the same
+    /// total. New Grad's store draws through it.
+    /// </summary>
+    public static string RobotColorlessCopy(string sourceId)
+    {
+        var src = Registry.Card(sourceId);
+        return Registry.RegisterGenerated(new CardDef
+        {
+            Id = $"gen-grad-{sourceId}",
+            Name = src.Name,
+            Color = Color.R,
+            Color2 = null,
+            Color3 = null,
+            Identity = null,
+            Type = src.Type,
+            Text = src.Text,
+            Cost = ColorlessCost(src.Cost),
+            Strength = src.Strength,
+            Hp = src.Hp,
+            Level = src.Level,
+            Factions = src.Factions,
+            // Neutral is not a colour: ColorsOf returns nothing for it, so a
+            // rebuilt card that keeps the flag brings no colour to a deck and
+            // still pays colourless, whatever its colour field now says.
+            Neutral = false,
+            Redirect = src.Redirect,
+            SpellImmune = src.SpellImmune,
+            EffectDamage = src.EffectDamage,
+            WoundAmplify = src.WoundAmplify,
+            SupporterLock = src.SupporterLock,
+            SpellTrap = src.SpellTrap,
+            SpellEcho = src.SpellEcho,
+            CursePotency = src.CursePotency,
+            MuffleFlips = src.MuffleFlips,
+            Stationary = src.Stationary,
+            Uncollectible = true,
+            Art = src.Art,
+            Artist = src.Artist,
+            Num = "GEN",
+            Powers = Repriced(src.Powers, ColorlessCost),
+            Triggers = src.Triggers,
+            Targets = src.Targets,
+            Effect = src.Effect,
+            Flip = src.Flip,
+            FlipText = src.FlipText,
+            FlipCost = Repriced(src.FlipCost, ColorlessCost),
+            StageHooks = src.StageHooks,
+        });
+    }
+
+    /// <summary>
+    /// A copy of a card that is also a Hedron. Nothing else moves: the frame,
+    /// the cost, the stats and the text side are the source card's, so a body
+    /// that turns into one keeps playing exactly as it did and only its faction
+    /// line grows.
+    /// </summary>
+    public static string HedronCopy(string sourceId)
+    {
+        var src = Registry.Card(sourceId);
+        var factions = (src.Factions ?? Array.Empty<Faction>()).ToList();
+        if (!factions.Contains(Faction.Hedron)) factions.Add(Faction.Hedron);
+        return Registry.RegisterGenerated(new CardDef
+        {
+            Id = $"gen-hedron-{sourceId}",
+            Name = src.Name,
+            Color = src.Color,
+            Color2 = src.Color2,
+            Color3 = src.Color3,
+            Identity = src.Identity,
+            Type = src.Type,
+            Starter = src.Starter,
+            Text = src.Text,
+            Cost = src.Cost,
+            Strength = src.Strength,
+            Hp = src.Hp,
+            Level = src.Level,
+            Factions = factions.ToArray(),
+            Neutral = src.Neutral,
+            Redirect = src.Redirect,
+            Reborn = src.Reborn,
+            Frenzy = src.Frenzy,
+            SpellImmune = src.SpellImmune,
+            EffectDamage = src.EffectDamage,
+            WoundAmplify = src.WoundAmplify,
+            DebtAmplify = src.DebtAmplify,
+            SupporterLock = src.SupporterLock,
+            FreeSpells = src.FreeSpells,
+            SpellTrap = src.SpellTrap,
+            LetSpellResolve = src.LetSpellResolve,
+            SpellEcho = src.SpellEcho,
+            CursePotency = src.CursePotency,
+            MuffleFlips = src.MuffleFlips,
+            VoidsDiscard = src.VoidsDiscard,
+            AnnihilateAfterCast = src.AnnihilateAfterCast,
+            Stationary = src.Stationary,
+            Uncollectible = true,
+            Art = src.Art,
+            Artist = src.Artist,
+            Num = "GEN",
+            Powers = src.Powers,
+            Triggers = src.Triggers,
+            Targets = src.Targets,
+            Effect = src.Effect,
+            Flip = src.Flip,
+            FlipUseful = src.FlipUseful,
+            TrapUseful = src.TrapUseful,
+            FlipText = src.FlipText,
+            FlipCost = src.FlipCost,
+            StageHooks = src.StageHooks,
+            Store = src.Store,
+            StoreBoost = src.StoreBoost,
+        });
+    }
+
+    /// <summary>
     /// The Banana recoloured to match whoever is being handed it, so the gift pays
     /// the colour that player actually spends rather than filling colourless.
     /// </summary>
@@ -221,6 +337,9 @@ public static class Generated
 
     /// <summary>Every colour pip on a cost rewritten as Oil, colourless left alone.</summary>
     private static Cost RobotizedCost(Cost cost) => new(R: ColoredTotal(cost), C: cost.C);
+
+    /// <summary>Every pip on a cost, colourless included, rewritten as colourless.</summary>
+    private static Cost ColorlessCost(Cost cost) => new(C: ColoredTotal(cost) + cost.C);
 
     private static Cost OiledCost(Cost cost) => new(O: ColoredTotal(cost), C: cost.C);
 

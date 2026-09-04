@@ -6,6 +6,14 @@ namespace Selatza;
 /// </summary>
 public sealed class EffectCtx
 {
+    /// <summary>
+    /// Spell Immunity is total: no card's effect touches an immune body, its
+    /// controller's included. The one exemption is the body's own card acting,
+    /// which is how an immune body's printed powers still reach itself. Combat
+    /// damage never comes through these verbs, so the clash is untouched.
+    /// </summary>
+    private bool Blocked(TargetRef t) => Effects.ImmunityBlocks(State, t, Source);
+
     public required GameState State { get; init; }
     public required int Me { get; init; }
     public int Opp => GameState.Other(Me);
@@ -19,18 +27,24 @@ public sealed class EffectCtx
     public void Log(string message) => Effects.Log(State, Me, message);
 
     /// <summary>Damage from a card, so Effect Damage applies.</summary>
-    public void Damage(TargetRef t, int amount) =>
+    public void Damage(TargetRef t, int amount)
+    {
+        if (Blocked(t)) return;
         Effects.DealDamage(State, t, amount + Effects.EffectDamageOf(State, Me));
+    }
 
     /// <summary>Damage that skips Effect Damage, for a cost a card charges itself.</summary>
-    public void RawDamage(TargetRef t, int amount) => Effects.DealDamage(State, t, amount);
+    public void RawDamage(TargetRef t, int amount) { if (Blocked(t)) return; Effects.DealDamage(State, t, amount); }
 
-    public void Wound(TargetRef t, int amount) => Effects.AddWounds(State, t, amount);
+    public void Wound(TargetRef t, int amount) { if (Blocked(t)) return; Effects.AddWounds(State, t, amount); }
     public void Draw(int player, int count) => Effects.DrawCards(State, player, count);
     public void Mill(int player, int count) => Effects.Mill(State, player, count);
-    public void Reinforce(TargetRef t, int count) => Effects.Reinforce(State, t, count);
-    public void GrantEffectDamage(TargetRef t, int amount) =>
+    public void Reinforce(TargetRef t, int count) { if (Blocked(t)) return; Effects.Reinforce(State, t, count); }
+    public void GrantEffectDamage(TargetRef t, int amount)
+    {
+        if (Blocked(t)) return;
         Effects.GrantEffectDamage(State, t, amount);
+    }
 
     /// <summary>
     /// Solar's ramp: the top card of the deck goes straight into the supporter
@@ -57,6 +71,7 @@ public sealed class EffectCtx
     /// <summary>Power Shields, each stopping one instance of damage outright.</summary>
     public void Shield(TargetRef t, int count)
     {
+        if (Blocked(t)) return;
         var s = State.Find(t);
         if (s is null || count <= 0) return;
         s.Shields += count;
@@ -70,7 +85,7 @@ public sealed class EffectCtx
     public void ReturnToHand() => Effects.MarkReturnToHand();
 
     /// <summary>Fish: flipped HP cards come back to their owner's hand.</summary>
-    public int Catch(TargetRef t, int count) => Effects.CatchHp(State, t, count);
+    public int Catch(TargetRef t, int count) => Blocked(t) ? 0 : Effects.CatchHp(State, t, count);
 
     /// <summary>Oil: junk shuffled into a deck, each copy a bad flip waiting to happen.</summary>
     public int Curse(int player, string cardId, int count) =>
@@ -169,10 +184,13 @@ public sealed class EffectCtx
         return null;
     }
 
-    public void BuffStrength(TargetRef t, int amount, ModDuration d) =>
+    public void BuffStrength(TargetRef t, int amount, ModDuration d)
+    {
+        if (Blocked(t)) return;
         Effects.BuffStrength(State, t, amount, d);
-    public void Sap(TargetRef t) { var s = State.Find(t); if (s is not null) s.Sapped = true; }
-    public void Unsap(TargetRef t) { var s = State.Find(t); if (s is not null) s.Sapped = false; }
+    }
+    public void Sap(TargetRef t) { if (Blocked(t)) return; var s = State.Find(t); if (s is not null) s.Sapped = true; }
+    public void Unsap(TargetRef t) { if (Blocked(t)) return; var s = State.Find(t); if (s is not null) s.Sapped = false; }
     public void Dig(int player, int count, Func<CardDef, bool> match,
         string effect = "scry", string prompt = "Take a card", TargetRef? at = null) =>
         Effects.DigForCard(State, player, count, match, Card.Id, effect, prompt, at);
@@ -199,6 +217,7 @@ public sealed class EffectCtx
     public SummonInstance? SummonAt(TargetRef t) => State.Find(t);
     public void Destroy(TargetRef t)
     {
+        if (Blocked(t)) return;
         var s = State.Find(t);
         if (s is not null) Effects.DestroySummon(State, s);
     }
@@ -206,6 +225,7 @@ public sealed class EffectCtx
     /// <summary>Removes a body from play for good: no debt zone, no coming back.</summary>
     public void Annihilate(TargetRef t)
     {
+        if (Blocked(t)) return;
         var s = State.Find(t);
         if (s is not null) Effects.Annihilate(State, s);
     }
@@ -222,7 +242,7 @@ public sealed class EffectCtx
     /// Destroys a body and takes its card as face-down HP on the summon running
     /// this effect. No debt is charged: the card never reaches the debt zone.
     /// </summary>
-    public bool Devour(TargetRef t) => Effects.Devour(State, Source, t);
+    public bool Devour(TargetRef t) => !Blocked(t) && Effects.Devour(State, Source, t);
     public CardDef? ReviveFromDebt(int player, Func<CardDef, bool> match) =>
         Effects.ReviveFromDebt(State, player, match);
 
@@ -301,6 +321,7 @@ public sealed class EffectCtx
 
     public bool StackHp(TargetRef t, int handIndex)
     {
+        if (Blocked(t)) return false;
         var s = State.Find(t);
         var hand = State.Players[Me].Hand;
         if (s is null || handIndex < 0 || handIndex >= hand.Count) return false;
@@ -312,22 +333,26 @@ public sealed class EffectCtx
     }
 
     public int MoveHp(TargetRef from, TargetRef to, int count) =>
-        Effects.MoveHpCards(State, from, to, count);
-    public int Unflip(TargetRef t, int count) => Effects.UnflipHp(State, t, count);
-    public bool Bounce(TargetRef t) => Effects.BounceSummon(State, t);
+        Blocked(from) || Blocked(to) ? 0 : Effects.MoveHpCards(State, from, to, count);
+    public int Unflip(TargetRef t, int count) => Blocked(t) ? 0 : Effects.UnflipHp(State, t, count);
+    public bool Bounce(TargetRef t) => !Blocked(t) && Effects.BounceSummon(State, t);
 
     /// <summary>A body in play goes back into its owner's deck, charging no debt.</summary>
-    public bool ShuffleIntoDeck(TargetRef t) => Effects.ShuffleSummonIntoDeck(State, t);
+    public bool ShuffleIntoDeck(TargetRef t) => !Blocked(t) && Effects.ShuffleSummonIntoDeck(State, t);
 
     /// <summary>A player's whole hand goes back into their deck. Returns how many.</summary>
     public int ShuffleHandIntoDeck(int player) => Effects.ShuffleHandIntoDeck(State, player);
-    public bool Transform(TargetRef t, string cardId) => Effects.TransformSummon(State, t, cardId);
-    public bool TakeControl(TargetRef t) => Effects.TakeControlOf(State, t, Me);
+    public bool Transform(TargetRef t, string cardId) => !Blocked(t) && Effects.TransformSummon(State, t, cardId);
+    public bool TakeControl(TargetRef t) => !Blocked(t) && Effects.TakeControlOf(State, t, Me);
 
     public void AddDebt(int player, int amount, string? reason = null) =>
         Effects.AddDebt(State, player, amount,
             reason ?? $"{State.Players[player].Name} takes {amount} debt.");
     public void ClearDebt(int player, int amount) => Effects.ClearDebt(State, player, amount);
+    /// <summary>Candy: add Love tokens to a player's count.</summary>
+    public void GainLove(int player, int amount) => Effects.GainLove(State, player, amount);
+    /// <summary>Candy: spend every Love token a player holds. Returns how many.</summary>
+    public int SpendLove(int player) => Effects.SpendLove(State, player);
 
     public bool DebtToHp(TargetRef t, int debtIndex)
     {
@@ -371,6 +396,14 @@ public sealed class TrapCheckCtx
 
 public sealed class FlipCtx
 {
+    /// <summary>
+    /// A flip is another card, so it earns no self-exemption: an immune holder
+    /// is out of its reach like everyone else. Moving itself out of the stack
+    /// stays free, since the card acting on itself is not the holder being
+    /// affected.
+    /// </summary>
+    private bool Blocked(TargetRef t) => Effects.ImmunityBlocks(State, t, null);
+
     public required GameState State { get; init; }
     public required int Me { get; init; }
     public int Opp => GameState.Other(Me);
@@ -404,16 +437,23 @@ public sealed class FlipCtx
     public int Depth { get; init; }
 
     public void Log(string message) => Effects.Log(State, Me, message);
-    public void Damage(TargetRef t, int amount) =>
+    public void Damage(TargetRef t, int amount)
+    {
+        if (Blocked(t)) return;
         Effects.DealDamage(State, t, amount + Effects.EffectDamageOf(State, Me), Depth);
-    public void Wound(TargetRef t, int amount) => Effects.AddWounds(State, t, amount, Depth);
+    }
+    public void Wound(TargetRef t, int amount) { if (Blocked(t)) return; Effects.AddWounds(State, t, amount, Depth); }
     public void Draw(int player, int count) => Effects.DrawCards(State, player, count);
     public void Mill(int player, int count) => Effects.Mill(State, player, count);
-    public void Reinforce(TargetRef t, int count) => Effects.Reinforce(State, t, count);
-    public void GrantEffectDamage(TargetRef t, int amount) =>
+    public void Reinforce(TargetRef t, int count) { if (Blocked(t)) return; Effects.Reinforce(State, t, count); }
+    public void GrantEffectDamage(TargetRef t, int amount)
+    {
+        if (Blocked(t)) return;
         Effects.GrantEffectDamage(State, t, amount);
+    }
     public void Shield(TargetRef t, int count)
     {
+        if (Blocked(t)) return;
         var s = State.Find(t);
         if (s is not null && count > 0) s.Shields += count;
     }
@@ -421,7 +461,11 @@ public sealed class FlipCtx
     /// Sends the summon this card was protecting to the debt zone. Free when the
     /// body was going to fall anyway, a real decision when it was not.
     /// </summary>
-    public void DestroyHolder() => Effects.DestroySummon(State, Holder);
+    public void DestroyHolder()
+    {
+        if (Blocked(Effects.RefFor(State, Holder))) return;
+        Effects.DestroySummon(State, Holder);
+    }
 
     /// <summary>This flipped card leaves the body it was protecting for the discard pile.</summary>
     public bool DiscardThis()
@@ -431,6 +475,25 @@ public sealed class FlipCtx
         var gone = Holder.Hp[at];
         Holder.Hp.RemoveAt(at);
         Effects.ToDiscard(State, Holder.Owner, gone.CardId);
+        return true;
+    }
+
+    /// <summary>
+    /// Candy's bounce: the spent card leaves the stack for its owner's hand. The
+    /// damage it absorbed stands, and a body left with nothing at all falls, the
+    /// same way it does after a Catch strips it bare.
+    /// </summary>
+    public bool ReturnThis()
+    {
+        int at = Holder.Hp.FindIndex(h => h.Flipped && h.CardId == Card.Id);
+        if (at < 0) return false;
+        var gone = Holder.Hp[at];
+        Holder.Hp.RemoveAt(at);
+        if (Effects.ToHand(State, Holder.Owner, gone.CardId))
+        {
+            Effects.Log(State, Holder.Owner, $"{Card.Name} returns to hand.");
+        }
+        if (Holder.Hp.Count == 0) Effects.DestroySummon(State, Holder);
         return true;
     }
 
@@ -445,7 +508,7 @@ public sealed class FlipCtx
             $"{Registry.Card(id).Name} is spent straight into the supporter row.");
         return id;
     }
-    public int Catch(TargetRef t, int count) => Effects.CatchHp(State, t, count);
+    public int Catch(TargetRef t, int count) => Blocked(t) ? 0 : Effects.CatchHp(State, t, count);
     public int Curse(int player, string cardId, int count) =>
         Effects.CurseDeck(State, player, cardId, count);
     public void LockReplace(int player, int turns = 1)
@@ -455,15 +518,24 @@ public sealed class FlipCtx
         State.ReplaceQueue.RemoveAll(r => r.Player == player);
         Effects.Log(State, Me, $"{p.Name} cannot fill that slot yet.");
     }
-    public void BuffStrength(TargetRef t, int amount, ModDuration d) =>
+    public void BuffStrength(TargetRef t, int amount, ModDuration d)
+    {
+        if (Blocked(t)) return;
+        BuffInner(t, amount, d);
+    }
+    private void BuffInner(TargetRef t, int amount, ModDuration d) =>
         Effects.BuffStrength(State, t, amount, d);
     public CardDef? ReviveFromDebt(int player, Func<CardDef, bool> match) =>
         Effects.ReviveFromDebt(State, player, match);
-    public int Unflip(TargetRef t, int count) => Effects.UnflipHp(State, t, count);
+    public int Unflip(TargetRef t, int count) => Blocked(t) ? 0 : Effects.UnflipHp(State, t, count);
     public void AddDebt(int player, int amount, string? reason = null) =>
         Effects.AddDebt(State, player, amount,
             reason ?? $"{State.Players[player].Name} takes {amount} debt.");
     public void ClearDebt(int player, int amount) => Effects.ClearDebt(State, player, amount);
+    /// <summary>Candy: add Love tokens to a player's count.</summary>
+    public void GainLove(int player, int amount) => Effects.GainLove(State, player, amount);
+    /// <summary>Candy: spend every Love token a player holds. Returns how many.</summary>
+    public int SpendLove(int player) => Effects.SpendLove(State, player);
     public TargetRef[] SummonsOf(int player, bool includeLeader = false) =>
         Effects.SummonRefsOf(State, player, includeLeader);
     public void ToHand(int player, string cardId) => Effects.ToHand(State, player, cardId);
@@ -475,7 +547,8 @@ public sealed class FlipCtx
 public enum TriggerName
 {
     OnEnter, OnDeath, OnAttack, OnDefend, OnAwake, OnEndTurn, OnOtherDeath,
-    OnSpellCast, OnEnemySpellCast, OnEnemyPower, OnSummonPlayed, OnSurvive,
+    OnSpellCast, OnEnemySpellCast, OnEnemyPower, OnStoreSold, OnSummonPlayed, OnSurvive,
+    OnStoreBought, OnDebtTaken,
 }
 
 public static class Effects
@@ -561,6 +634,20 @@ public static class Effects
     /// <summary>Effect Damage lent to the spell currently resolving.</summary>
     [ThreadStatic]
     private static int _spellBonus;
+
+    /// <summary>
+    /// Spell Immunity is total: no card's effect touches an immune body, its
+    /// controller's included. The exemption is the body's own card acting.
+    /// Returns true when the touch must be skipped, logging the shrug once.
+    /// </summary>
+    public static bool ImmunityBlocks(GameState state, TargetRef t, SummonInstance? source)
+    {
+        if (!t.IsBody) return false;
+        var s = state.Find(t);
+        if (s is null || !Registry.Card(s.CardId).SpellImmune || ReferenceEquals(s, source)) return false;
+        Log(state, s.Owner, $"{Registry.Card(s.CardId).Name} is untouched: Spell Immunity.");
+        return true;
+    }
 
     public static void Log(GameState state, int player, string text) =>
         state.Log.Add(new LogEntry(state.Turn, player, text));
@@ -667,12 +754,29 @@ public static class Effects
         // it is still resolving, and a second bill falling due inside that
         // action is what a tie looks like; EndGame settles who the tie belongs to.
         if (amount <= 0) return;
+        // Loanshark: every gain to every player is 1 bigger per copy in play,
+        // whoever owns the shark and whoever pays the bill.
+        foreach (var pl in state.Players)
+        {
+            foreach (var s in pl.Slots.Append(pl.Leader))
+            {
+                if (s is not null && Registry.Card(s.CardId).DebtAmplify) amount += 1;
+            }
+        }
         var p = state.Players[player];
         p.DebtCount += amount;
         Log(state, player, $"{reason} Debt is now {p.DebtCount}/{Rules.DebtLimit}.");
         if (p.DebtCount >= Rules.DebtLimit)
         {
             EndGame(state, GameState.Other(player), $"{p.Name} reached {Rules.DebtLimit} debt.");
+        }
+        // After the loss check: a bill that ended the game fires nothing.
+        if (state.Winner < 0)
+        {
+            foreach (var s in p.Slots.Append(p.Leader))
+            {
+                if (s is not null) FireTrigger(state, s, TriggerName.OnDebtTaken);
+            }
         }
     }
 
@@ -684,6 +788,28 @@ public static class Effects
         if (paid == 0) return;
         p.DebtCount -= paid;
         Log(state, player, $"{p.Name} pays off {paid} debt, down to {p.DebtCount}/{Rules.DebtLimit}.");
+    }
+
+    /// <summary>Candy: Love tokens are a per-player count, kept between turns, no cap.</summary>
+    public static void GainLove(GameState state, int player, int amount)
+    {
+        if (amount <= 0) return;
+        var p = state.Players[player];
+        p.Love += amount;
+        Log(state, player, $"{p.Name} gains {amount} Love ({p.Love} held).");
+    }
+
+    /// <summary>Candy: a Love line spends the whole count at once. Returns how many.</summary>
+    public static int SpendLove(GameState state, int player)
+    {
+        var p = state.Players[player];
+        int spent = p.Love;
+        if (spent > 0)
+        {
+            p.Love = 0;
+            Log(state, player, $"{p.Name} spends {spent} Love.");
+        }
+        return spent;
     }
 
     /// <summary>
@@ -778,6 +904,14 @@ public static class Effects
             EnteredTurn = state.Turn,
             Override = over,
         };
+        // A shop opens stocked: only self-use is gated on the turn a body
+        // entered, so a store placed mid-turn sells at once.
+        if (Registry.Card(cardId).Store is not null)
+        {
+            var stage = state.Players[owner].Stage;
+            s.StoreStock = stage is not null && Registry.TryCard(stage)?.StoreBoost == true ? 2 : 1;
+            s.StoreUsed = false;
+        }
         return s;
     }
 
@@ -838,6 +972,9 @@ public static class Effects
             TriggerName.OnSpellCast => t.OnSpellCast,
             TriggerName.OnEnemySpellCast => t.OnEnemySpellCast,
             TriggerName.OnEnemyPower => t.OnEnemyPower,
+            TriggerName.OnStoreSold => t.OnStoreSold,
+            TriggerName.OnStoreBought => t.OnStoreBought,
+            TriggerName.OnDebtTaken => t.OnDebtTaken,
             TriggerName.OnSurvive => t.OnSurvive,
             TriggerName.OnSummonPlayed => t.OnSummonPlayed,
             _ => t.OnAwake,
@@ -1809,10 +1946,14 @@ public static class Effects
     {
         var def = Registry.Card(summon.CardId);
         int total = GameState.StrengthOf(summon, def);
+        // Spell Immunity keeps every other card's standing bonus off the body:
+        // no field aura and no other body's aura lands on it. Its own card's
+        // bonus (a body counting for itself) still counts.
+        bool immune = def.SpellImmune;
         for (int controller = 0; controller < 2; controller++)
         {
             var stageId = state.Players[controller].Stage;
-            if (stageId is not null)
+            if (stageId is not null && !immune)
             {
                 var bonus = Registry.TryCard(stageId)?.StageHooks?.StrengthBonus;
                 if (bonus is not null)
@@ -1825,6 +1966,7 @@ public static class Effects
             {
                 var other = state.Find(r);
                 if (other is null) continue;
+                if (immune && !ReferenceEquals(other, summon)) continue;
                 var bonus2 = Registry.TryCard(other.CardId)?.Triggers?.StrengthBonus;
                 if (bonus2 is not null)
                 {

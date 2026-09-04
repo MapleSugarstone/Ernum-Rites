@@ -160,6 +160,12 @@ describe('card manifest', () => {
     flipCost: string;
     triggers: string;
     stage: string;
+    /** Presence only, the way `flip` is. */
+    store: boolean;
+    storeSurcharge: number;
+    storeTargets: number;
+    storeUseful: boolean;
+    storeBoost: boolean;
   }
 
   function triggerList(def: CardDef): string {
@@ -173,6 +179,7 @@ describe('card manifest', () => {
     if (t.onAwake) names.push('awake');
     if (t.onOtherDeath) names.push('otherdeath');
     if (t.onSpellCast) names.push('spellcast');
+    if (t.onStoreSold) names.push('storesold');
     if (t.onSummonPlayed) names.push('played');
     if (t.strengthBonus) names.push('strength');
     return names.join('+');
@@ -183,6 +190,7 @@ describe('card manifest', () => {
     if (!h) return '';
     const names: string[] = [];
     if (h.onAwake) names.push('awake');
+    if (h.onStoreSold) names.push('storesold');
     if (h.strengthBonus) names.push('strength');
     return names.join('+');
   }
@@ -223,6 +231,11 @@ describe('card manifest', () => {
         : '',
       triggers: triggerList(def),
       stage: stageList(def),
+      store: !!def.store,
+      storeSurcharge: def.store?.surcharge ?? 0,
+      storeTargets: def.store?.targets?.length ?? 0,
+      storeUseful: !!def.store?.useful,
+      storeBoost: !!def.storeBoost,
     };
   }
 

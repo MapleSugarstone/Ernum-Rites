@@ -74,6 +74,8 @@ public static class Replays
             Source = GetRef(e, "source") ?? default,
             Target = GetRef(e, "target") ?? default,
             Targets = GetRefs(e, "targets"),
+            Price = GetInt(e, "price"),
+            Final = e.TryGetProperty("final", out var fEl) && fEl.ValueKind == JsonValueKind.True,
             Pick = kind == ActionType.ResolveChoice ? GetRef(e, "target") : null,
             ChoiceIndex = kind == ActionType.ResolveChoice && e.TryGetProperty("index", out var ciEl)
                 && ciEl.ValueKind == System.Text.Json.JsonValueKind.Number
@@ -121,6 +123,17 @@ public static class Replays
             case ActionType.DeclareAttack:
                 sb.Append(",\"source\":").Append(RefToJson(a.Source))
                   .Append(",\"target\":").Append(RefToJson(a.Target));
+                break;
+            case ActionType.UseStore:
+            case ActionType.OpenStore:
+                sb.Append(",\"source\":").Append(RefToJson(a.Source));
+                break;
+            case ActionType.StoreOffer:
+                sb.Append(",\"price\":").Append(a.Price);
+                if (a.Final) sb.Append(",\"final\":true");
+                break;
+            case ActionType.StoreCounter:
+                sb.Append(",\"price\":").Append(a.Price);
                 break;
             case ActionType.ResolveChoice:
                 if (a.Pick is { } pick) sb.Append(",\"target\":").Append(RefToJson(pick));
@@ -259,6 +272,12 @@ public static class Replays
         "DECLINE_REPLACE" => ActionType.DeclineReplace,
         "PAY_FLIP" => ActionType.PayFlip,
         "DECLINE_FLIP" => ActionType.DeclineFlip,
+        "USE_STORE" => ActionType.UseStore,
+        "OPEN_STORE" => ActionType.OpenStore,
+        "STORE_OFFER" => ActionType.StoreOffer,
+        "STORE_COUNTER" => ActionType.StoreCounter,
+        "STORE_ACCEPT" => ActionType.StoreAccept,
+        "STORE_REJECT" => ActionType.StoreReject,
         "END_TURN" => ActionType.EndTurn,
         "CONCEDE" => ActionType.Concede,
         _ => throw new InvalidDataException($"unknown action type {t}"),
@@ -280,6 +299,12 @@ public static class Replays
         ActionType.DeclineReplace => "DECLINE_REPLACE",
         ActionType.PayFlip => "PAY_FLIP",
         ActionType.DeclineFlip => "DECLINE_FLIP",
+        ActionType.UseStore => "USE_STORE",
+        ActionType.OpenStore => "OPEN_STORE",
+        ActionType.StoreOffer => "STORE_OFFER",
+        ActionType.StoreCounter => "STORE_COUNTER",
+        ActionType.StoreAccept => "STORE_ACCEPT",
+        ActionType.StoreReject => "STORE_REJECT",
         ActionType.EndTurn => "END_TURN",
         _ => "CONCEDE",
     };

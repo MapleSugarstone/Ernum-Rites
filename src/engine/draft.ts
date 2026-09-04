@@ -13,16 +13,16 @@ import { allCards, tryCard } from './registry';
 import { randInt, type Rng } from './rng';
 import type { Rarity } from './types';
 
-/** Packs a player opens, and cards in each, so a pool is 120 cards. */
+/** Packs a player opens, and cards in each, so a pool is 140 cards. */
 export const PACK_COUNT = 10;
-export const PACK_SIZE = 12;
+export const PACK_SIZE = 14;
 
 /**
  * How long the whole draft runs. Opening packs and building the deck share one
  * clock rather than getting one each: a player who tears through their packs
  * has earned the time they saved.
  */
-export const DRAFT_SECONDS = 8 * 60;
+export const DRAFT_SECONDS = 15 * 60;
 
 /**
  * When the warning sounds, counted back from the end of the draft clock. It is

@@ -113,16 +113,25 @@ export function enforcedTurnMs(skips: number): number {
  */
 export const PLAY_BONUS_SECONDS = 1.5;
 
-/** The number of plays in one turn after which the bonus reaches 0. */
+/** The number of plays in one turn after which the fading part reaches 0. */
 export const PLAY_BONUS_CARDS = 10;
+
+/** Milliseconds every play pays on top of the fading curve, however deep it is. */
+export const PLAY_BONUS_FLOOR_MS = 1000;
 
 /**
  * Returns the milliseconds added for the nth card played this turn, counting
- * from 1. The count resets each turn, so the next turn starts at the full bonus.
+ * from 1. The count resets each turn, so the next turn starts at the full
+ * bonus. The flat second under the curve means a turn spent playing cards is
+ * never shorter than one spent stalling, however many cards it plays.
  */
 export function playBonusMs(nth: number): number {
-  if (nth < 1 || nth > PLAY_BONUS_CARDS) return 0;
-  return Math.round((PLAY_BONUS_SECONDS * 1000 * (PLAY_BONUS_CARDS - nth + 1)) / PLAY_BONUS_CARDS);
+  if (nth < 1) return 0;
+  const curve =
+    nth > PLAY_BONUS_CARDS
+      ? 0
+      : Math.round((PLAY_BONUS_SECONDS * 1000 * (PLAY_BONUS_CARDS - nth + 1)) / PLAY_BONUS_CARDS);
+  return curve + PLAY_BONUS_FLOOR_MS;
 }
 
 /**

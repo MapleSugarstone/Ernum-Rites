@@ -1,13 +1,16 @@
 /** Card colors. The letter is what appears in mana costs, e.g. "PSS". */
-export type Color = 'P' | 'O' | 'R' | 'F' | 'S';
+export type Color = 'P' | 'O' | 'R' | 'F' | 'S' | 'K';
 /**
  * What a card prints. Neutral is its own colour: it pays with any mana and
  * belongs to no identity, so it is not one of the five and never indexes a
- * mana pool.
+ * mana pool. Ernum is its own colour too, carried by the one card that prints
+ * it: what it pays is Ernum mana, which covers a pip of any colour.
  */
-export type CardColour = Color | 'N';
+export type CardColour = Color | 'N' | 'E';
 
-export const COLORS: Color[] = ['P', 'O', 'R', 'F', 'S'];
+// K sits last so the five original colours keep their positions everywhere a
+// colour indexes something: the digest's mana row, cost strings, frame tables.
+export const COLORS: Color[] = ['P', 'O', 'R', 'F', 'S', 'K'];
 
 export const COLOR_NAME: Record<CardColour, string> = {
   P: 'Pepper',
@@ -15,7 +18,9 @@ export const COLOR_NAME: Record<CardColour, string> = {
   R: 'Robot',
   F: 'Fish',
   S: 'Solar',
+  K: 'Candy',
   N: 'Neutral',
+  E: 'Ernum',
 };
 
 /** Folder name in the art pack, which is also the plain-language colour. */
@@ -25,6 +30,7 @@ export const COLOR_ART: Record<Color, string> = {
   R: 'Green',
   F: 'Blue',
   S: 'Yellow',
+  K: 'Pink',
 };
 
 export type CardType = 'summon' | 'spell' | 'trap' | 'stage';
@@ -45,6 +51,7 @@ export type Faction =
   | 'Star'
   | 'Hedron'
   | 'Grinkle'
+  | 'Saccharine'
   | 'Ernum';
 
 export const FACTIONS: Faction[] = [
@@ -58,6 +65,7 @@ export const FACTIONS: Faction[] = [
   'Star',
   'Hedron',
   'Grinkle',
+  'Saccharine',
   'Ernum',
 ];
 
@@ -153,6 +161,41 @@ export const RARITY_FIXED: Record<string, Rarity> = {
   'm-gpy-obscureslime': 'L',
   'm-grp-horriblemalware': 'L',
   'm-gry-spiritofsolstice': 'L',
+  'm-mb-CandyCraver': 'R',
+  'm-mb-CandyFish': 'R',
+  'm-mb-IcecubeCandy': 'R',
+  'm-mb-TropicalBlueDrink': 'R',
+  'm-mb-loanshark': 'E',
+  'm-mbp-vier': 'L',
+  'm-mbr-saraza': 'L',
+  'm-mby-wellworthit': 'L',
+  'm-mg-AbsurdlySourCandy': 'R',
+  'm-mg-CandyVirus': 'R',
+  'm-mg-CuriousPilgrim': 'R',
+  'm-mg-HedronFragments': 'R',
+  'm-mg-NewGrad': 'E',
+  'm-mgb-codeinfestedsweetling': 'L',
+  'm-mgp-godofmisfortune': 'L',
+  'm-mgr-ransomwareartist': 'L',
+  'm-mgy-thethorn': 'L',
+  'm-mp-LenAphelion': 'E',
+  'm-mp-MarkOfTheFalseKing': 'R',
+  'm-mp-PairOfCritters': 'E',
+  'm-mp-RottenCandy': 'R',
+  'm-mp-SoldBones': 'R',
+  'm-mpr-humanitysdefender': 'L',
+  'm-mpy-sopapli': 'L',
+  'm-mr-AbsurdlySpicyCandy': 'E',
+  'm-mr-CandyAxeman': 'R',
+  'm-mr-DeflateCurrency': 'R',
+  'm-mr-RedSweets': 'L',
+  'm-mr-RedTape': 'R',
+  'm-my-CandySun': 'R',
+  'm-my-LittleGummyBear': 'R',
+  'm-my-MoltenCandyBolt': 'R',
+  'm-my-PinkLemonader': 'L',
+  'm-my-SourSoda': 'R',
+  'm-myr-hellmage': 'L',
   'm-pg-AncientVirus': 'R',
   'm-pg-Cybergore': 'E',
   'm-pg-Doortonowhere': 'R',
@@ -420,6 +463,48 @@ export const RARITY_FIXED: Record<string, Rarity> = {
   'x-s-dummy-1': 'C',
   'x-s-dummy-2': 'C',
   'x-s-dummy-3': 'C',
+  // Candy. Tiers from the character-count rule at the list's first printing.
+  'k1-SugarBug': 'E',
+  'k1-apprentice': 'R',
+  'k1-candymouse': 'R',
+  'k1-gingerbreadgirl': 'C',
+  'k1-icecreambird': 'E',
+  'k1-livingbubbles': 'C',
+  'k1-livingcandy': 'C',
+  'k1-lovecat': 'C',
+  'k1-patheticbonbon': 'R',
+  'k1-sleepybeast': 'E',
+  'k2-Briber': 'C',
+  'k2-CandyGuardSeller': 'C',
+  'k2-CandyWizard': 'R',
+  'k2-GunForHire': 'R',
+  'k2-HotcakeSeller': 'R',
+  'k2-Nurse': 'E',
+  'k2-PrivateDetective': 'R',
+  'k2-Recycler': 'E',
+  'k2-SnoozingGiant': 'R',
+  'k2-spellsell': 'C',
+  'k3-AncientSugar': 'C',
+  'k3-DebtReliever': 'R',
+  'k3-DerangedCandyfolk': 'L',
+  'k3-Eidola': 'C',
+  'k3-Final Unicorn': 'E',
+  'k3-HyperCapitalist': 'E',
+  'k3-InfiniteLove': 'R',
+  'k3-LastLollipop': 'L',
+  'k3-SweetHarmony': 'L',
+  'kh-PinkDeus': 'L',
+  'kx-Candycane': 'C',
+  'kx-DarkCandy': 'L',
+  'kx-FieldClearanceSale': 'R',
+  'kx-GiftOfGiving': 'E',
+  'kx-LineGoesUp': 'C',
+  'kx-Loan': 'L',
+  'kx-LoveForAPrice': 'C',
+  'kx-cuffed': 'R',
+  'kx-trapExpensiveSecurity': 'C',
+  'kx-trapSugarCrash': 'C',
+  'k-candyguard': 'C',
 };
 
 
@@ -432,15 +517,25 @@ export const RARITY_FIXED: Record<string, Rarity> = {
 export const COPY_LIMIT = 2;
 
 /**
- * A mana kind: the five colours, then colourless. Colourless is deliberately not
- * a colour, so it never widens a card's identity.
+ * What a printed cost can ask for: the six colours, then colourless. Colourless
+ * is deliberately not a colour, so it never widens a card's identity.
  */
-export type ManaKind = Color | 'C';
+export type CostKind = Color | 'C';
 
-export const MANA_KINDS: ManaKind[] = [...COLORS, 'C'];
+export const COST_KINDS: CostKind[] = [...COLORS, 'C'];
+
+/**
+ * A mana kind: everything a cost can ask for, then Ernum. Ernum is only ever
+ * generated, never written into a cost, and one of it pays a pip of any kind.
+ * It sits last so the kinds a cost uses keep the indices the digest's mana row
+ * is written in.
+ */
+export type ManaKind = CostKind | 'E';
+
+export const MANA_KINDS: ManaKind[] = [...COST_KINDS, 'E'];
 
 /** A mana cost, e.g. { P: 1, S: 2 } for "PSS", { R: 1, C: 1 } for "RC". */
-export type Cost = Partial<Record<ManaKind, number>>;
+export type Cost = Partial<Record<CostKind, number>>;
 
 export type PlayerIdx = 0 | 1 | 2 | 3;
 
@@ -486,6 +581,33 @@ export interface Power {
   oncePerTurn?: boolean;
   /** Sapping this summon is part of the cost, shown as a symbol on the cost line. */
   sapSelf?: boolean;
+  /**
+   * Candy: a power whose whole text is a Love line spends the pool to do
+   * anything, so with 0 Love it is refused rather than wasting the sap.
+   */
+  needsLove?: boolean;
+  effect: EffectFn;
+}
+
+/**
+ * Candy's shop, printed as a "Store:" line in the card's text. Its controller
+ * may run it once per turn for 2 debt (plus the surcharge), never on the turn
+ * the card entered play. Other players buy it through a price negotiation on
+ * their own turn, and every sale pays the controller 1 Love. The effect always
+ * resolves for whoever used it, controller or buyer, with any target asked of
+ * them through the choice queue after the price is settled.
+ */
+export interface StoreDef {
+  /** Added to the self-use price and to every offered price. */
+  surcharge?: number;
+  /** At most one: a bought target is collected as a deferred choice. */
+  targets?: TargetSpec[];
+  /**
+   * Whether the store could do anything for this user right now. A store that
+   * answers false cannot be used or bought, the way a useless costed flip is
+   * never offered. Absent means always usable.
+   */
+  useful?: (state: import('./state').GameState, user: PlayerIdx) => boolean;
   effect: EffectFn;
 }
 
@@ -555,6 +677,22 @@ export interface Triggers {
    * used it is targets[0] when it is still on the board.
    */
   onEnemyPower?: EffectFn;
+  /**
+   * Candy: when another player buys from one of this card's controller's
+   * Stores. Fires on the seller's side once per accepted purchase.
+   */
+  onStoreSold?: EffectFn;
+  /**
+   * Candy: when this card's controller buys from another player's Store.
+   * Fires on the buyer's side once per accepted purchase; self-use is not a
+   * purchase and does not fire it.
+   */
+  onStoreBought?: EffectFn;
+  /**
+   * When this card's controller takes debt, after the amount lands and only
+   * while the game is still going. Fires once per gain, whatever its size.
+   */
+  onDebtTaken?: EffectFn;
   /** When any summon is played from a hand. The body that landed is targets[0]. */
   onSummonPlayed?: EffectFn;
   /** Frenzy: the first time this body takes damage and lives. */
@@ -575,6 +713,8 @@ export interface StageHooks {
   strengthBonus?: (args: StrengthBonusArgs) => number;
   /** Fires for the stage's own controller; targets[0] is the summon that landed. */
   onSummonPlayed?: (ctx: EffectCtx) => void;
+  /** Candy: when another player buys from the controller's Store. */
+  onStoreSold?: (ctx: EffectCtx) => void;
 }
 
 /**
@@ -659,6 +799,11 @@ export interface CardDef {
    */
   woundAmplify?: boolean;
   /**
+   * While this body is in play, every debt gain to every player is 1 bigger,
+   * once per copy, the controller's own bills included. Loanshark's aura.
+   */
+  debtAmplify?: boolean;
+  /**
    * Supporter Lock. While this card is in play the other player may not face a
    * supporter at all. It forbids rather than reduces, so it beats any allowance
    * they have been given.
@@ -705,6 +850,12 @@ export interface CardDef {
    * reshuffle when the deck runs out.
    */
   voidsDiscard?: boolean;
+  /**
+   * This spell removes itself from the game after it resolves instead of
+   * reaching the discard pile. A countered copy still discards: it was
+   * answered rather than used.
+   */
+  annihilateAfterCast?: boolean;
   rarity?: Rarity;
   /**
    * A card the game creates rather than a deck: curses, fusion products. It
@@ -747,6 +898,14 @@ export interface CardDef {
   trapUseful?: (ctx: TrapCheckCtx) => boolean;
   /** stage only. A stage stays in play and applies these continuously. */
   stageHooks?: StageHooks;
+  /** Candy: this summon is a shop. The printed line lives in `text`. */
+  store?: StoreDef;
+  /**
+   * Candy's Clearance Sale. While this is its controller's stage, their Stores
+   * hold 2 stock instead of 1, self-use costs 1 less, and every price a buyer
+   * pays them drops by 1, to a minimum of 1.
+   */
+  storeBoost?: boolean;
 }
 
 export type EffectFn = (ctx: EffectCtx) => void;
@@ -906,6 +1065,10 @@ export interface EffectCtx {
   addDebt(player: PlayerIdx, amount: number, reason?: string): void;
   /** Pay debt off. Never goes below zero. */
   clearDebt(player: PlayerIdx, amount: number): void;
+  /** Candy: add Love tokens to a player's count. */
+  gainLove(player: PlayerIdx, amount: number): void;
+  /** Candy: spend every Love token a player holds. Returns how many. */
+  spendLove(player: PlayerIdx): number;
   /** Put a card from the debt zone under a summon as face-down HP. */
   debtToHp(target: TargetRef, debtIndex: number): boolean;
   /** How many summons of a faction that player controls, leaders included. */
@@ -942,6 +1105,10 @@ export interface FlipCtx {
   destroyHolder(): void;
   /** This flipped card leaves the body it was protecting for the discard pile. */
   discardThis(): boolean;
+  /** Candy: this flipped card leaves the HP stack for its owner's hand. */
+  returnThis(): boolean;
+  /** Candy: add Love tokens to a player's count. */
+  gainLove(player: PlayerIdx, amount: number): void;
   supporterFromDeck(player: PlayerIdx, sapped?: boolean): string | null;
   buffStrength(target: TargetRef, amount: number, duration: 'turn' | 'permanent'): void;
   reviveFromDebt(player: PlayerIdx, match: (c: CardDef) => boolean): CardDef | null;
@@ -1021,7 +1188,7 @@ export function costColored(cost: Cost | undefined): number {
 
 export function costTotal(cost: Cost | undefined): number {
   if (!cost) return 0;
-  return MANA_KINDS.reduce((n, c) => n + (cost[c] ?? 0), 0);
+  return COST_KINDS.reduce((n, c) => n + (cost[c] ?? 0), 0);
 }
 
 export function parseCost(s: string): Cost {

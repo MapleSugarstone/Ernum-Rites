@@ -24,6 +24,7 @@ runs/
 rarity-snapshot.json
 
 # --- working notes and backups ----------------------------------------------
+CLAUDE.md
 claude-notes/
 card-backups/
 Notes.txt

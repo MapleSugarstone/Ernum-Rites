@@ -1,5 +1,6 @@
 import type { Action, ApplyResult, SourceRef } from './actions';
 import {
+  addDebt,
   assignHp,
   clearOppWanted,
   destroySummon,
@@ -7,6 +8,7 @@ import {
   effectiveStrength,
   flipWouldFire,
   trapWouldFire,
+  gainLove,
   oppWasWanted,
   strengthSourcesOf,
   supporterLocked,
@@ -21,13 +23,14 @@ import {
   sweepReplaceQueue,
   setActingPlayer,
   clearSpellBonus,
+  refFor,
   takeSpellBonus,
   toDiscard,
   toHand,
   type OppMode,
 } from './effects';
 import { card, tryCard } from './registry';
-import { runChoiceResolver } from './choices';
+import { registerChoiceResolver, runChoiceResolver } from './choices';
 import { shuffle } from './rng';
 import {
   allSummons,
@@ -50,16 +53,17 @@ import {
   SUMMON_SLOTS,
   type GameState,
   type PendingSpell,
+  type PendingStore,
   type PlayerState,
   type SummonInstance,
 } from './state';
 import {
   COLORS,
-  MANA_KINDS,
   type ManaKind,
   type CardDef,
   type Cost,
   type PlayerIdx,
+  type StoreDef,
   type TargetRef,
   type TargetSpec,
 } from './types';
@@ -79,6 +83,8 @@ function newPlayer(list: DeckList): PlayerState {
     debt: [],
     discard: [],
     debtCount: 0,
+    love: 0,
+    playsThisTurn: 0,
     supporters: [],
     slots: Array.from({ length: SUMMON_SLOTS }, () => null),
     leader: null,
@@ -182,27 +188,51 @@ export function availableMana(p: PlayerState): Record<ManaKind, number> {
 }
 
 /**
- * Coloured pips have to come from their own colour. A colourless pip takes
- * whatever is left over, colourless mana first and then any colour, which is why
- * it is checked against the surplus rather than against a bucket.
+ * Coloured pips have to come from their own colour, or from Ernum mana, which
+ * covers a pip of any kind. A colourless pip takes whatever is left over,
+ * colourless mana first and then any colour, which is why it is checked against
+ * the surplus rather than against a bucket.
  */
 export function canPay(p: PlayerState, cost: Cost | undefined): boolean {
   if (!cost) return true;
   const avail = availableMana(p);
   let spare = avail.C;
+  let wild = avail.E;
   for (const c of COLORS) {
     const need = cost[c] ?? 0;
-    if (need > avail[c]) return false;
-    spare += avail[c] - need;
+    if (need > avail[c]) {
+      const short = need - avail[c];
+      if (short > wild) return false;
+      wild -= short;
+    } else spare += avail[c] - need;
   }
-  return (cost.C ?? 0) <= spare;
+  return (cost.C ?? 0) <= spare + wild;
 }
 
-/** Spends the pool first, then saps matching supporters. */
+/**
+ * Spends the pool first, then saps matching supporters. Ernum mana pays for
+ * anything, so it is always spent last: every pip takes what only it can take
+ * before the wildcard is touched.
+ */
 function payCost(state: GameState, player: PlayerIdx, cost: Cost | undefined): boolean {
   const p = state.players[player];
   if (!canPay(p, cost)) return false;
   if (!cost) return true;
+  /** Ernum mana, and then Ernum supporters, for a pip nothing else can pay. */
+  const spendWild = (need: number): number => {
+    while (need > 0 && p.mana.E > 0) {
+      p.mana.E -= 1;
+      need -= 1;
+    }
+    while (need > 0) {
+      const s = p.supporters.find((x) => !x.sapped && manaKindFor(p, card(x.cardId)) === 'E');
+      if (!s) break;
+      s.sapped = true;
+      need -= 1;
+    }
+    return need;
+  };
+
   for (const c of COLORS) {
     let need = cost[c] ?? 0;
     while (need > 0 && p.mana[c] > 0) {
@@ -211,10 +241,11 @@ function payCost(state: GameState, player: PlayerIdx, cost: Cost | undefined): b
     }
     while (need > 0) {
       const s = p.supporters.find((x) => !x.sapped && manaKindFor(p, card(x.cardId)) === c);
-      if (!s) return false;
+      if (!s) break;
       s.sapped = true;
       need -= 1;
     }
+    if (spendWild(need) > 0) return false;
   }
 
   // Colourless takes whatever is spare: the colourless pool first, so coloured
@@ -230,19 +261,19 @@ function payCost(state: GameState, player: PlayerIdx, cost: Cost | undefined): b
     s.sapped = true;
     generic -= 1;
   }
-  for (const k of MANA_KINDS) {
-    while (generic > 0 && p.mana[k] > 0) {
-      p.mana[k] -= 1;
+  for (const c of COLORS) {
+    while (generic > 0 && p.mana[c] > 0) {
+      p.mana[c] -= 1;
       generic -= 1;
     }
   }
   while (generic > 0) {
-    const s = p.supporters.find((x) => !x.sapped);
-    if (!s) return false;
+    const s = p.supporters.find((x) => !x.sapped && manaKindFor(p, card(x.cardId)) !== 'E');
+    if (!s) break;
     s.sapped = true;
     generic -= 1;
   }
-  return true;
+  return spendWild(generic) === 0;
 }
 
 // --- turn structure ---------------------------------------------------------
@@ -256,6 +287,19 @@ function startTurn(state: GameState, player: PlayerIdx): void {
   if (p.replaceLocked > 0) p.replaceLocked -= 1;
   p.supportersLeft = 1;
   p.mana = emptyMana();
+  p.playsThisTurn = 0;
+  // Every shop restocks at the start of every turn, whoever's turn it is: the
+  // stock is the once-per-buyer rule made visible, and the buyer changes with
+  // the turn. Self-use resets on the same clock, which only bites on the
+  // owner's own turns anyway.
+  for (const pl of state.players) {
+    for (const s of [...pl.slots, pl.leader]) {
+      if (!s) continue;
+      if (!storeOf(s, card(s.cardId))) continue;
+      s.storeStock = storeBoosted(state, s.owner) ? 2 : 1;
+      s.storeUsed = false;
+    }
+  }
   log(state, player, `${p.name} begins turn ${p.turnsTaken}.`);
 
   if (!p.leaderPlayed) {
@@ -327,20 +371,26 @@ function sidesFor(state: GameState, spec: TargetSpec, me: PlayerIdx): PlayerIdx[
 
 /**
  * Everything a target spec may legally choose. `source` is the card doing the
- * asking, which decides two things: a spell or trap cannot choose a Spell Immune
- * body, and neither can choose past a Redirection body on the far side.
+ * asking, which decides two things: no card's effect may choose a Spell Immune
+ * body (the body's own powers excepted), and none may choose past a
+ * Redirection body on the far side.
  */
 export function targetCandidates(
   state: GameState,
   me: PlayerIdx,
   spec: TargetSpec,
-  source?: CardDef,
+  // Kept in the signature for its callers even though immunity no longer
+  // reads the card type: the asking body is what decides the exemption now.
+  _source?: CardDef,
+  asker?: SummonInstance | null,
 ): TargetRef[] {
   const out: TargetRef[] = [];
-  const bySpell = source?.type === 'spell' || source?.type === 'trap';
   const push = (ref: TargetRef, def: ReturnType<typeof card> | null, summon: SummonInstance | null) => {
     const isBody = ref.kind === 'summon' || ref.kind === 'leader';
-    if (isBody && bySpell && !spellCanTarget(state, ref)) return;
+    // Spell Immunity is total: no card's effect may choose an immune body,
+    // its controller's included. The one exemption is the body itself asking,
+    // which is how an immune body's own powers still reach it.
+    if (isBody && summon && card(summon.cardId).spellImmune && summon !== asker) return;
     if (isBody && ref.player !== me) {
       const forced = redirectTargets(state, ref.player);
       if (forced.length && !forced.some((f) => sameRef(f, ref))) return;
@@ -430,6 +480,7 @@ function validateTargets(
   specs: TargetSpec[] | undefined,
   refs: TargetRef[],
   source?: CardDef,
+  asker?: SummonInstance | null,
 ): string | null {
   const list = specs ?? [];
   if (refs.length > list.length) return 'Too many targets.';
@@ -440,7 +491,7 @@ function validateTargets(
       if (!spec.optional) return `Missing target: ${spec.label}.`;
       continue;
     }
-    const ok = targetCandidates(state, me, spec, source).some((c) => sameRef(c, ref));
+    const ok = targetCandidates(state, me, spec, source, asker).some((c) => sameRef(c, ref));
     if (!ok) return `Illegal target for ${spec.label}.`;
     // No card reads the same body twice, so a repeated pick is always a misclick.
     if (ref.kind === 'summon' || ref.kind === 'leader') {
@@ -474,11 +525,7 @@ export function redirectTargets(state: GameState, player: PlayerIdx): TargetRef[
   return out;
 }
 
-/** Whether a spell or trap may choose this body at all. */
-export function spellCanTarget(state: GameState, ref: TargetRef): boolean {
-  const s = findSummon(state, ref);
-  return !s || !card(s.cardId).spellImmune;
-}
+
 
 export function legalAttackTargets(state: GameState, source: SourceRef): TargetRef[] {
   const player = source.player;
@@ -529,6 +576,139 @@ export function readyAttackers(state: GameState, player: PlayerIdx): SourceRef[]
   return out;
 }
 
+// --- stores -----------------------------------------------------------------
+
+/** The Store a body's card prints, or null when it was played as something else. */
+export function storeOf(s: SummonInstance, def: CardDef): StoreDef | null {
+  return s.override ? null : (def.store ?? null);
+}
+
+/** Whether this player's stage doubles their shops and discounts their prices. */
+export function storeBoosted(state: GameState, player: PlayerIdx): boolean {
+  const id = state.players[player].stage;
+  return !!(id && tryCard(id)?.storeBoost);
+}
+
+/** What running your own Store costs. Clearance Sale takes 1 off, floor 1. */
+export function storeSelfPrice(state: GameState, owner: PlayerIdx, store: StoreDef): number {
+  return Math.max(1, 2 + (store.surcharge ?? 0) - (storeBoosted(state, owner) ? 1 : 0));
+}
+
+/** The slider a negotiation runs on: 1 to 4 plus the Store's surcharge. */
+export function storePriceBounds(store: StoreDef): { min: number; max: number } {
+  const s = store.surcharge ?? 0;
+  return { min: 1 + s, max: 4 + s };
+}
+
+/**
+ * Why this player cannot use or open the Store on this body right now, or null
+ * when they can. Shared by self-use, opening, the client's rings and the bot.
+ */
+export function storeBlockers(
+  state: GameState,
+  user: PlayerIdx,
+  source: SourceRef,
+): string | null {
+  const summon = findSummon(state, source);
+  if (!summon) return 'No summon there.';
+  const def = card(summon.cardId);
+  const store = storeOf(summon, def);
+  if (!store) return `${def.name} is not a Store.`;
+  if (summon.owner === user) {
+    if (summon.enteredTurn >= state.turn) return 'A Store cannot be run the turn it opens.';
+    if (summon.storeUsed) return 'Already used this turn.';
+  } else {
+    if (state.players[summon.owner].eliminated) return 'That player is out of the game.';
+    if ((summon.storeStock ?? 0) <= 0) return 'That Store is closed this turn.';
+  }
+  if (store.useful && !store.useful(state, user)) return 'That Store has nothing for you.';
+  return null;
+}
+
+/**
+ * A Store's effect always resolves for its user, controller and buyer alike.
+ * A target is asked of the user through the choice queue once the price is
+ * settled, which is what lets the seller accept a counter without holding the
+ * buyer's pick, and it collapses to an instant pick with one candidate.
+ */
+function resolveStoreEffect(
+  state: GameState,
+  user: PlayerIdx,
+  summon: SummonInstance,
+  def: CardDef,
+  store: StoreDef,
+): void {
+  const spec = store.targets?.[0];
+  if (!spec) {
+    store.effect(makeEffectCtx(state, user, summon, def, []));
+    return;
+  }
+  const refs = targetCandidates(state, user, spec, def, summon);
+  const choice = {
+    player: user,
+    source: def.id,
+    effect: 'store-effect',
+    prompt: `Choose ${spec.label}.`,
+    refs,
+    at: refFor(state, summon),
+  };
+  if (refs.length === 0) {
+    runChoiceResolver(state, choice, {});
+    return;
+  }
+  if (refs.length === 1) {
+    runChoiceResolver(state, choice, { ref: refs[0] });
+    return;
+  }
+  state.choiceQueue.push(choice);
+}
+
+registerChoiceResolver('store-effect', (state, choice, pick) => {
+  const def = card(choice.source);
+  if (!def.store) return;
+  const src = choice.at ? findSummon(state, choice.at) : null;
+  def.store.effect(
+    makeEffectCtx(state, choice.player, src, def, pick.ref ? [pick.ref] : []),
+  );
+});
+
+/** Close the window, charge the buyer, pay the seller, run the effect. */
+function resolveStorePurchase(state: GameState, w: PendingStore): void {
+  state.pending = null;
+  const summon = findSummon(state, w.source);
+  if (!summon) return;
+  const def = card(summon.cardId);
+  const store = storeOf(summon, def);
+  if (!store) return;
+  summon.storeStock = Math.max(0, (summon.storeStock ?? 1) - 1);
+  const paid = Math.max(1, (w.price ?? 1) - (storeBoosted(state, w.seller) ? 1 : 0));
+  addDebt(
+    state,
+    w.buyer,
+    paid,
+    `${state.players[w.buyer].name} buys from ${def.name}'s Store for ${paid} debt.`,
+  );
+  if (state.winner !== null) return;
+  gainLove(state, w.seller, 1);
+  // A party buyer eliminated by the price paid for nothing. The sale stood.
+  if (!state.players[w.buyer].eliminated) {
+    resolveStoreEffect(state, w.buyer, summon, def, store);
+  }
+  if (state.winner !== null) return;
+  const seller = state.players[w.seller];
+  for (const s of [...seller.slots, seller.leader]) {
+    if (s) fireTrigger(state, s, 'onStoreSold');
+  }
+  const stageDef = seller.stage ? tryCard(seller.stage) : undefined;
+  const hook = stageDef?.stageHooks?.onStoreSold;
+  if (stageDef && hook) hook(makeEffectCtx(state, w.seller, null, stageDef, []));
+  if (state.winner !== null) return;
+  const buyer = state.players[w.buyer];
+  for (const s of [...buyer.slots, buyer.leader]) {
+    if (s) fireTrigger(state, s, 'onStoreBought');
+  }
+}
+
 export function powerBlockers(
   state: GameState,
   player: PlayerIdx,
@@ -545,6 +725,7 @@ export function powerBlockers(
   if (power.oncePerTurn && (summon.powerUses[power.name] ?? 0) > 0) {
     return 'Already used this turn.';
   }
+  if (power.needsLove && state.players[player].love <= 0) return 'No Love to spend.';
   if (!canPay(state.players[player], power.cost)) return 'Not enough mana.';
   return null;
 }
@@ -604,12 +785,21 @@ function resolveSpell(
   } finally {
     clearSpellBonus();
   }
-  toDiscard(state, caster, id);
-  if (state.winner !== null) return;
   const p = state.players[caster];
-  // The spell is already in the discard pile, so its index there is how the
-  // other sides' triggers get told which one was cast.
-  const cast: TargetRef = { kind: 'discard', player: caster, index: p.discard.length - 1 };
+  const before = p.discard.length;
+  if (def.annihilateAfterCast) {
+    log(state, caster, `${def.name} is annihilated.`);
+  } else {
+    toDiscard(state, caster, id);
+  }
+  if (state.winner !== null) return;
+  // The spell's discard index is how the other sides' triggers get told which
+  // one was cast. A spell that never landed there (annihilated after cast, or
+  // voided by an aura) offers no ref rather than pointing at the old top.
+  const cast: TargetRef | null =
+    p.discard.length > before
+      ? { kind: 'discard', player: caster, index: p.discard.length - 1 }
+      : null;
   // One round of answers per cast. An echo is a second cast rather than a
   // louder first one, so a card that answers a cast answers both, and the
   // rounds run after the discard because that is what names the spell.
@@ -620,7 +810,7 @@ function resolveSpell(
     for (const foeIdx of livingOpponents(state, caster)) {
       const foe = state.players[foeIdx];
       for (const s of [...foe.slots, foe.leader]) {
-        if (s) fireTrigger(state, s, 'onEnemySpellCast', [cast]);
+        if (s) fireTrigger(state, s, 'onEnemySpellCast', cast ? [cast] : []);
       }
     }
   }
@@ -688,6 +878,7 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
       const id = me.hand[action.handIndex];
       if (!id) return 'No card at that hand index.';
       me.hand.splice(action.handIndex, 1);
+      me.playsThisTurn += 1;
       me.supporters.push({ cardId: id, sapped: false });
       me.supportersLeft -= 1;
       log(state, actor, `${me.name} faces ${card(id).name} as a supporter.`);
@@ -828,33 +1019,48 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
       if (!canPay(me, paid)) return 'Not enough mana.';
       payCost(state, actor, paid);
       me.hand.splice(action.handIndex, 1);
+      me.playsThisTurn += 1;
       log(state, actor, `${me.name} casts ${def.name}.`);
-      // Every living enemy holding a Spell Trap gets a window, one at a time in
-      // turn order. With one opponent this is the same single window as ever.
+      // Every living enemy holding a Spell Trap that could actually answer this
+      // cast gets a window, one at a time in turn order. The pending is staged
+      // before the question is asked, because a trap's printed gate (Sugar
+      // Crash's play count) reads the spell it would be answering; a holder
+      // whose trap cannot fire gets no window and gives nothing away.
+      const win: Extract<GameState['pending'], { kind: 'response' }> = {
+        kind: 'response',
+        player: actor,
+        battle: null,
+        spell: {
+          caster: actor,
+          cardId: id,
+          targets: action.targets,
+          ...(action.enemy !== undefined ? { enemy: action.enemy } : {}),
+        },
+      };
+      state.pending = win;
       const holders = livingOpponents(state, actor).filter((foe) =>
-        state.players[foe].hand.some((h) => card(h).type === 'trap' && card(h).spellTrap),
+        state.players[foe].hand.some((h) => {
+          const trap = card(h);
+          return trap.type === 'trap' && !!trap.spellTrap && trapWouldFire(state, foe, trap);
+        }),
       );
       if (holders.length > 0) {
         // The pick is asked for now rather than after the response windows: a
         // scratch run of the resolution says whether the card will want one.
         if (mode?.kind === 'track') {
           clearOppWanted();
-          resolveSpell(structuredClone(state), actor, id, action.targets, mode);
-          if (oppWasWanted()) return NEEDS_ENEMY;
+          const scratch = structuredClone(state);
+          scratch.pending = null;
+          resolveSpell(scratch, actor, id, action.targets, mode);
+          if (oppWasWanted()) {
+            state.pending = null;
+            return NEEDS_ENEMY;
+          }
         }
-        state.pending = {
-          kind: 'response',
-          player: holders[0],
-          battle: null,
-          spell: {
-            caster: actor,
-            cardId: id,
-            targets: action.targets,
-            ...(action.enemy !== undefined ? { enemy: action.enemy } : {}),
-          },
-          ...(holders.length > 1 ? { queue: holders.slice(1) } : {}),
-        };
+        win.player = holders[0];
+        if (holders.length > 1) win.queue = holders.slice(1);
       } else {
+        state.pending = null;
         clearOppWanted();
         resolveSpell(state, actor, id, action.targets, mode);
         if (mode?.kind === 'track' && oppWasWanted()) return NEEDS_ENEMY;
@@ -876,6 +1082,7 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
       if (!canPay(me, paid)) return 'Not enough mana.';
       payCost(state, actor, paid);
       me.hand.splice(action.handIndex, 1);
+      me.playsThisTurn += 1;
       if (me.stage) toDiscard(state, actor, me.stage);
       me.stage = id;
       log(state, actor, `${me.name} sets the stage: ${def.name}.`);
@@ -892,7 +1099,7 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
       const summon = findSummon(state, action.source)!;
       const def = card(summon.cardId);
       const power = powersOf(summon, def)[action.powerIndex];
-      const bad = validateTargets(state, actor, power.targets, action.targets);
+      const bad = validateTargets(state, actor, power.targets, action.targets, def, summon);
       if (bad) return bad;
       const badEnemy = enemyPickError(state, actor, action.enemy);
       if (badEnemy) return badEnemy;
@@ -969,6 +1176,7 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
     case 'CAST_TRAP': {
       const pending = state.pending;
       if (!pending || pending.player !== actor) return 'No response window is open.';
+      if (pending.kind === 'store') return 'Settle the Store window first.';
       // Springing the trap resolves the clash, and a flip revealed on the way in
       // is owed its answer before the blow it gates can land.
       if (state.flipQueue.length > 0) return 'Settle the flipped card first.';
@@ -993,6 +1201,7 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
       if (!canPay(me, paid)) return 'Not enough mana.';
       payCost(state, actor, paid);
       me.hand.splice(action.handIndex, 1);
+      me.playsThisTurn += 1;
       log(state, actor, `${me.name} springs ${def.name}.`);
       if (pending.battle) {
         pending.battle.trapUsed = true;
@@ -1060,6 +1269,7 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
       if (!state.pending || state.pending.player !== actor) {
         return 'No response window is open.';
       }
+      if (state.pending.kind === 'store') return 'Settle the Store window first.';
       // Passing resolves the clash, so a flip still gating that blow comes first.
       if (state.flipQueue.length > 0) return 'Settle the flipped card first.';
       // A window only opens for a player already holding a trap that answers it,
@@ -1086,6 +1296,134 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
       } else {
         resolvePendingBattle(state);
       }
+      return null;
+    }
+
+    case 'USE_STORE': {
+      const blocked = mainPhaseBlocker(state);
+      if (blocked) return blocked;
+      const summon = findSummon(state, action.source);
+      if (!summon) return 'No summon there.';
+      if (summon.owner !== actor) return 'Not your Store: open it and haggle.';
+      const why = storeBlockers(state, actor, action.source);
+      if (why) return why;
+      const def = card(summon.cardId);
+      const store = storeOf(summon, def)!;
+      summon.storeUsed = true;
+      const price = storeSelfPrice(state, actor, store);
+      addDebt(state, actor, price, `${me.name} runs ${def.name}'s Store for ${price} debt.`);
+      if (state.winner !== null) return null;
+      resolveStoreEffect(state, actor, summon, def, store);
+      return null;
+    }
+
+    case 'OPEN_STORE': {
+      const blocked = mainPhaseBlocker(state);
+      if (blocked) return blocked;
+      if (state.active !== actor) return 'Not your turn.';
+      const summon = findSummon(state, action.source);
+      if (!summon) return 'No summon there.';
+      if (summon.owner === actor) return 'Run your own Store instead of haggling with it.';
+      const why = storeBlockers(state, actor, action.source);
+      if (why) return why;
+      log(state, actor, `${me.name} opens ${card(summon.cardId).name}'s Store.`);
+      state.pending = {
+        kind: 'store',
+        player: summon.owner,
+        seller: summon.owner,
+        buyer: actor,
+        source: action.source,
+        final: false,
+        pass: 0,
+        battle: null,
+        spell: null,
+      };
+      return null;
+    }
+
+    case 'STORE_OFFER': {
+      const w = state.pending;
+      if (!w || w.kind !== 'store' || w.player !== actor) return 'No Store window is open.';
+      if (actor !== w.seller) return 'Only the seller sets prices.';
+      if (w.pass % 2 === 1) return 'Your price is already on the table.';
+      const summon = findSummon(state, w.source);
+      if (!summon) {
+        state.pending = null;
+        return null;
+      }
+      const def = card(summon.cardId);
+      const store = storeOf(summon, def)!;
+      const { min, max } = storePriceBounds(store);
+      if (!Number.isInteger(action.price) || action.price < min || action.price > max) {
+        return `The price must be ${min} to ${max}.`;
+      }
+      // The user's cap: an opening offer plus three counters, and after that
+      // the seller may only declare the price final.
+      if (w.pass >= 4 && !action.final) return 'Only a final offer now.';
+      w.price = action.price;
+      w.final = !!action.final;
+      w.pass += 1;
+      w.player = w.buyer;
+      log(
+        state,
+        actor,
+        `${me.name} offers ${def.name}'s Store for ${action.price} debt${w.final ? ', final' : ''}.`,
+      );
+      return null;
+    }
+
+    case 'STORE_COUNTER': {
+      const w = state.pending;
+      if (!w || w.kind !== 'store' || w.player !== actor) return 'No Store window is open.';
+      if (actor !== w.buyer) return 'Only the buyer counters.';
+      if (w.pass % 2 === 0) return 'Nothing to counter yet.';
+      if (w.final) return 'That was a final offer: accept or reject.';
+      if (w.pass >= 4) return 'No more counters: accept or reject.';
+      const summon = findSummon(state, w.source);
+      if (!summon) {
+        state.pending = null;
+        return null;
+      }
+      const store = storeOf(summon, card(summon.cardId))!;
+      const { min, max } = storePriceBounds(store);
+      if (!Number.isInteger(action.price) || action.price < min || action.price > max) {
+        return `The price must be ${min} to ${max}.`;
+      }
+      if (action.price === w.price) return 'That is the price on the table: accept it.';
+      w.price = action.price;
+      w.pass += 1;
+      w.player = w.seller;
+      log(state, actor, `${me.name} counters at ${action.price} debt.`);
+      return null;
+    }
+
+    case 'STORE_ACCEPT': {
+      const w = state.pending;
+      if (!w || w.kind !== 'store' || w.player !== actor) return 'No Store window is open.';
+      if (w.price === undefined) return 'No price is on the table.';
+      // You accept the other side's price: the buyer an offer, the seller a
+      // counter. Odd passes are the seller's price, even ones the buyer's.
+      const theirPrice = actor === w.seller ? w.pass % 2 === 0 : w.pass % 2 === 1;
+      if (!theirPrice) return 'That is your own price.';
+      log(state, actor, `${me.name} accepts ${w.price} debt.`);
+      resolveStorePurchase(state, w);
+      return null;
+    }
+
+    case 'STORE_REJECT': {
+      const w = state.pending;
+      if (!w || w.kind !== 'store' || w.player !== actor) return 'No Store window is open.';
+      // The seller must always name a price: a buyer can always buy at the
+      // slider's top, so only the buyer may walk away.
+      if (actor !== w.buyer) return 'The seller must name a price.';
+      const summon = findSummon(state, w.source);
+      if (summon) summon.storeStock = 0;
+      state.pending = null;
+      log(
+        state,
+        actor,
+        `${me.name} walks away${summon ? ` from ${card(summon.cardId).name}'s Store` : ''}.`,
+      );
       return null;
     }
 
@@ -1144,6 +1482,7 @@ function placeSummon(
   if (badTarget) return badTarget;
 
   me.hand.splice(handIndex, 1);
+  me.playsThisTurn += 1;
   const summon = newSummon(state, id, actor);
   me.slots[slot] = summon;
   const wanted = def.hp ?? 0;
@@ -1189,7 +1528,16 @@ function sweepEliminated(state: GameState): void {
   // the turn to a player who may in turn be eliminated, at most once a seat.
   for (let guard = 0; guard < 8 && !isOver(state); guard++) {
     const pending = state.pending;
-    if (pending && state.players[pending.player].eliminated) {
+    // A Store window with either party knocked out closes as a rejection.
+    if (
+      pending?.kind === 'store' &&
+      (state.players[pending.seller].eliminated || state.players[pending.buyer].eliminated)
+    ) {
+      state.pending = null;
+      log(state, null, 'The Store window closes: one side of it is out of the game.');
+      continue;
+    }
+    if (pending && pending.kind !== 'store' && state.players[pending.player].eliminated) {
       if (pending.spell) {
         const rest = (pending.queue ?? []).filter((q) => !state.players[q].eliminated);
         if (rest.length > 0) {

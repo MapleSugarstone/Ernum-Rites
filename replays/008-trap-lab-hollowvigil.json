@@ -1,0 +1,42 @@
+{
+  "format": 1,
+  "label": "trap-lab-vs-hollowvigil-857832",
+  "seed": 857832,
+  "startingPlayer": 0,
+  "decks": [
+    {"name": "Trap Lab (P1)", "leaderId": "x-hero-dummy-warden", "cards": ["fx-scooba","fx-scooba","m-rb-sordidmark","m-rb-sordidmark","ox-lazyeye","ox-lazyeye","px-banner","px-banner","rx-stundevice","rx-stundevice","sx-hollowring","sx-hollowring","x-f-bolt","x-f-bolt","x-f-dummy-1","x-f-dummy-1","x-f-dummy-2","x-f-dummy-2","x-f-dummy-3","x-f-dummy-3","x-o-bolt","x-o-bolt","x-o-dummy-1","x-o-dummy-1","x-o-dummy-2","x-o-dummy-2","x-o-dummy-3","x-o-dummy-3","x-p-bolt","x-p-bolt","x-p-dummy-1","x-p-dummy-1","x-p-dummy-2","x-p-dummy-2","x-p-dummy-3","x-p-dummy-3","x-r-dummy-1","x-r-dummy-1","x-r-dummy-2","x-r-dummy-2","x-r-dummy-3","x-r-dummy-3","x-s-dummy-1","x-s-dummy-1","x-s-dummy-2","x-s-dummy-2","x-s-dummy-3","x-s-dummy-3"]},
+    {"name": "Rain God (P2)", "leaderId": "o3-raingod", "cards": ["o2-slime","o2-slime","n1-mammal","n1-mammal","n3-Seam","n3-Seam","o2-boneknown","o2-boneknown","o3-fungal","o3-fungal","n3-AcolyteofGrinkle","n3-AcolyteofGrinkle","o3-thelake","o3-thelake","ox-mysterycabin","ox-mysterycabin","n1-weirdBird","n1-weirdBird","n3-GrinkleBeast","n3-GrinkleBeast","o3-bighatsalze","o3-bighatsalze","n3-Relica","n3-Relica","ox-graft","ox-graft","ox-campfire","ox-campfire","ox-lazyeye","ox-lazyeye","o1-skeleton","o1-skeleton","o2-stabber","o2-stabber","o2-thecount","o2-thecount","o3-wickerman","o3-wickerman","n2-SecretLetter","n2-SecretLetter","n2-UngratefulBeast","n2-UngratefulBeast","o1-jacklebox","o1-jacklebox","o2-evilflower","o2-evilflower","o2-witch","o2-witch"]}
+  ],
+  "setupDigest": "1b2582674e77f6d9",
+  "steps": [
+    {"actor": 0, "action": {"type":"PLAY_SUMMON","handIndex":3,"slot":1,"targets":[]}, "digest": "1efa3f4eb43aa42f"},
+    {"actor": 0, "action": {"type":"PLAY_SUPPORTER","handIndex":0}, "digest": "d6906954ddf71e42"},
+    {"actor": 0, "action": {"type":"PLAY_SUMMON","handIndex":0,"slot":0,"targets":[]}, "digest": "c2ed03757f45268e"},
+    {"actor": 0, "action": {"type":"PLAY_SUMMON","handIndex":1,"slot":2,"targets":[]}, "digest": "abaee56e34bd6d1a"},
+    {"actor": 0, "action": {"type":"END_TURN"}, "digest": "cedb17aa486d5a19"},
+    {"actor": 1, "action": {"type":"PLAY_SUMMON","handIndex":3,"slot":1,"targets":[]}, "digest": "44f039869cdf50df"},
+    {"actor": 1, "action": {"type":"PLAY_SUMMON","handIndex":1,"slot":2,"targets":[]}, "digest": "b0065fa85b38558d"},
+    {"actor": 1, "action": {"type":"PLAY_SUMMON","handIndex":3,"slot":0,"targets":[]}, "digest": "f0b2ff0f1c36be65"},
+    {"actor": 1, "action": {"type":"PLAY_SUPPORTER","handIndex":1}, "digest": "3bf1a65d94501040"},
+    {"actor": 1, "action": {"type":"CAST_SPELL","handIndex":2,"targets":[{"kind":"summon","player":1,"index":0},{"kind":"summon","player":1,"index":1}]}, "digest": "516d8533f586e9e6"},
+    {"actor": 1, "action": {"type":"END_TURN"}, "digest": "8e8eae2a7aedcd6f"},
+    {"actor": 0, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":0,"index":0},"target":{"kind":"summon","player":1,"index":1}}, "digest": "990f580f80bfccce"},
+    {"actor": 0, "action": {"type":"PLAY_SUMMON","handIndex":2,"slot":0,"targets":[]}, "digest": "f927b72f5be0ebfa"},
+    {"actor": 0, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":0,"index":1},"target":{"kind":"summon","player":1,"index":1}}, "digest": "788ecb4e48be40f2"},
+    {"actor": 0, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":0,"index":0},"target":{"kind":"summon","player":1,"index":2}}, "digest": "43a25f795e6da1a9"},
+    {"actor": 1, "action": {"type":"REPLACE_SUMMON","handIndex":1,"targets":[]}, "digest": "605265b913923ed1"},
+    {"actor": 0, "action": {"type":"PLAY_SUPPORTER","handIndex":0}, "digest": "23442a9b60a63675"},
+    {"actor": 0, "action": {"type":"END_TURN"}, "digest": "bbc6ce0ffe90b6ec"},
+    {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":1,"index":1},"target":{"kind":"summon","player":0,"index":1}}, "digest": "4a724d81e4179c42"},
+    {"actor": 0, "action": {"type":"PASS_RESPONSE"}, "digest": "e5d4426bf0c32419"},
+    {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":1,"index":0},"target":{"kind":"leader","player":0,"index":0}}, "digest": "f085e47c724cfc03"},
+    {"actor": 0, "action": {"type":"PASS_RESPONSE"}, "digest": "488e01e3ec451add"},
+    {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":1,"index":1},"target":{"kind":"leader","player":0,"index":0}}, "digest": "02f3d17e89281891"},
+    {"actor": 0, "action": {"type":"PASS_RESPONSE"}, "digest": "f8caa5b229618bf1"},
+    {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"leader","player":1,"index":0},"target":{"kind":"leader","player":0,"index":0}}, "digest": "fbda66bc27bca8f1"},
+    {"actor": 0, "action": {"type":"PASS_RESPONSE"}, "digest": "183deb3a9f29a659"}
+  ],
+  "finalDigest": "183deb3a9f29a659",
+  "winner": 1,
+  "winReason": "Trap Lab (P1) lost their leader."
+}

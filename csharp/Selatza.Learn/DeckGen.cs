@@ -28,6 +28,13 @@ public enum LeaderPool
     /// </summary>
     Contested,
     /// <summary>
+    /// Contested, with two more opinions. Humanity's Defender leads despite its
+    /// Redirection, since its whole design is the leader seat. Level 1 bodies
+    /// whose text is empty or a lone Battlecry sit out: a vanilla or a one-shot
+    /// makes a leader with nothing ongoing, and their seats read as noise.
+    /// </summary>
+    Contested2,
+    /// <summary>
     /// Contested, and level 2 or better.
     /// 
     /// A level 1 leader is a 6 HP body once the doubling is applied, and the
@@ -86,6 +93,7 @@ public static class DeckGen
                 // Neutral is spelled two ways, as a colour and as a flag, and a
                 // card may use either.
                 LeaderPool.Contested => !d.Neutral && d.Color != Color.N && !d.Redirect,
+                LeaderPool.Contested2 => Contested2(d),
                 LeaderPool.ContestedSturdy =>
                     !d.Neutral && d.Color != Color.N && !d.Redirect && d.Level >= 2,
                 _ => true,
@@ -94,6 +102,31 @@ public static class DeckGen
         }
         return outList;
     }
+
+    /// <summary>The Contested2 cut, one card at a time. See the enum for the reasoning.</summary>
+    private static bool Contested2(CardDef d)
+    {
+        // The one Redirection leader whose design is the seat itself.
+        if (d.Id == "m-mpr-humanitysdefender") return true;
+        if (d.Neutral || d.Color == Color.N || d.Redirect) return false;
+        if (d.Level == 1)
+        {
+            string text = d.Text ?? "";
+            if (text.Length == 0) return false;
+            if (text.StartsWith("Battlecry:") && !HasOngoingText(text)) return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Whether rules text says anything past a one-shot Battlecry. The markers
+    /// are the sentence openers the set actually prints for standing effects,
+    /// checked against the cards rather than derived from grammar.
+    /// </summary>
+    private static bool HasOngoingText(string text) =>
+        text.Contains("Store:") || text.Contains("Deathrattle:") || text.Contains("Strike:")
+        || text.Contains("At the") || text.Contains("Whenever") || text.Contains("While")
+        || text.Contains("have +") || text.Contains("has +") || text.Contains("Redirection");
 
     public static string RandomLeader(LeaderPool pool, Gauss rng)
     {
@@ -160,7 +193,7 @@ public static class DeckGen
     /// <summary>Colours the leader's own powers need paying in, which the deck has to supply.</summary>
     public static bool[] DemandedColors(string leaderId)
     {
-        var demanded = new bool[5];
+        var demanded = new bool[Colors.All.Length];
         var def = Registry.TryCard(leaderId);
         if (def is null) return demanded;
         foreach (var p in def.Powers ?? Array.Empty<Power>())

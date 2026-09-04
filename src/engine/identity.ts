@@ -11,6 +11,9 @@ export function colorsOf(def: CardDef): Color[] {
   // and every deck may run it.
   if (def.color === 'N' || def.neutral) return [];
   if (def.identity && def.identity.length) return def.identity;
+  // Ernum is not one of the six, so a card printed in it brings whatever identity
+  // it spells out and nothing more.
+  if (def.color === 'E') return [];
   const out: Color[] = [def.color];
   if (def.color2) out.push(def.color2);
   if (def.color3) out.push(def.color3);

@@ -51,6 +51,24 @@ export function robotCopy(sourceId: string): string {
 }
 
 /**
+ * A copy of a card that is also a Hedron. Nothing else moves: the frame, the
+ * cost, the stats and the text side are the source card's, so a body that turns
+ * into one keeps playing exactly as it did and only its faction line grows.
+ */
+export function hedronCopy(sourceId: string): string {
+  const src = card(sourceId);
+  const factions: Faction[] = [...(src.factions ?? [])];
+  if (!factions.includes('Hedron')) factions.push('Hedron');
+  return registerGenerated({
+    ...src,
+    id: `gen-hedron-${sourceId}`,
+    factions,
+    uncollectible: true,
+    num: 'GEN',
+  });
+}
+
+/**
  * A body pulled out of a debt pile and rebuilt in Oil: one bigger in both stats,
  * Spirit added to its faction line, and every colour pip on its Powers now O.
  */
@@ -131,6 +149,40 @@ function repriced(powers: Power[] | undefined, reprice: (c: Cost | undefined) =>
 
 function repricedFlip(flip: FlipCost | undefined, reprice: (c: Cost | undefined) => Cost) {
   return flip ? { ...flip, mana: reprice(flip.mana) } : undefined;
+}
+
+/**
+ * A copy of any card rebuilt in Robot paying colourless: the frame turns R and
+ * every pip, coloured and colourless alike, becomes C of the same total. New
+ * Grad's store draws through it, so a card lifted off any deck is payable by
+ * whoever bought the draw.
+ */
+export function robotColorlessCopy(sourceId: string): string {
+  const src = card(sourceId);
+  return registerGenerated({
+    ...src,
+    id: `gen-grad-${sourceId}`,
+    color: 'R',
+    // Neutral is not a colour: colorsOf returns nothing for it, so a rebuilt
+    // card that keeps the flag brings no colour to a deck and still pays
+    // colourless, whatever its colour field now says.
+    neutral: undefined,
+    artTint: 'robot',
+    color2: undefined,
+    color3: undefined,
+    identity: undefined,
+    cost: colorlessCost(src.cost),
+    powers: repriced(src.powers, colorlessCost),
+    flipCost: repricedFlip(src.flipCost, colorlessCost),
+    uncollectible: true,
+    num: 'GEN',
+  });
+}
+
+/** Every pip on a cost, colourless included, rewritten as colourless. */
+function colorlessCost(cost: Cost | undefined): Cost {
+  const total = coloredTotal(cost) + (cost?.C ?? 0);
+  return total ? { C: total } : {};
 }
 
 /**
@@ -510,6 +562,8 @@ export function livingSummon(
 function rebuild(id: string): void {
   const simple: Array<[string, (src: string) => string]> = [
     ['gen-hack-', robotCopy],
+    ['gen-hedron-', hedronCopy],
+    ['gen-grad-', robotColorlessCopy],
     ['gen-raise-', oilRaise],
     ['gen-oil-', oilCopy],
     ['gen-malware-', malwareCopy],

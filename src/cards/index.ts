@@ -6,6 +6,7 @@ import { blueCards } from './blue';
 import { greenCards } from './green';
 import { mixedCards } from './mixed';
 import { neutralCards } from './neutral';
+import { pinkCards } from './pink';
 import { placeholderCards } from './placeholder';
 import { purpleCards } from './purple';
 import { redCards } from './red';
@@ -18,6 +19,7 @@ export const allCardSets = [
   greenCards,
   blueCards,
   yellowCards,
+  pinkCards,
   mixedCards,
   tripleCards,
   neutralCards,
@@ -31,6 +33,7 @@ registerCards([
   ...greenCards,
   ...blueCards,
   ...yellowCards,
+  ...pinkCards,
   ...mixedCards,
   ...tripleCards,
   ...neutralCards,
@@ -218,6 +221,38 @@ export const starterDecks: StarterDeck[] = [
       ['o1-jacklebox', 2],
       ['o2-evilflower', 2],
       ['o2-witch', 2],
+    ]),
+  },
+  {
+    key: 'sweetshop',
+    name: 'Pink Deus',
+    blurb: 'Candy storefronts that sell services for debt and cash the Love in.',
+    leaderId: 'kh-PinkDeus',
+    cards: build([
+      ['k1-SugarBug', 2],
+      ['k1-apprentice', 2],
+      ['k1-candymouse', 2],
+      ['k3-SweetHarmony', 2],
+      ['k1-icecreambird', 2],
+      ['n2-Smithee', 2],
+      ['k1-sleepybeast', 2],
+      ['k1-patheticbonbon', 2],
+      ['k2-CandyWizard', 2],
+      ['k2-Nurse', 2],
+      ['k2-PrivateDetective', 2],
+      ['k2-SnoozingGiant', 2],
+      ['k2-spellsell', 2],
+      ['k2-GunForHire', 2],
+      ['k3-DebtReliever', 2],
+      ['k3-DerangedCandyfolk', 2],
+      ['kx-trapExpensiveSecurity', 2],
+      ['k3-Final Unicorn', 2],
+      ['kh-PinkDeus', 2],
+      ['n1-BucketGuardian', 2],
+      ['kx-DarkCandy', 2],
+      ['kx-Loan', 2],
+      ['kx-cuffed', 2],
+      ['k3-LastLollipop', 2],
     ]),
   },
 ];

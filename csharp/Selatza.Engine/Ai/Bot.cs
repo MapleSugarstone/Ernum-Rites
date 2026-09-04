@@ -49,6 +49,12 @@ public sealed class BotWeights
     public double Reply = 0.6;
     /// <summary>What opening a response window costs when they certainly hold a trap.</summary>
     public double TrapWindow = 12;
+    /// <summary>
+    /// Per Love token held. Slightly good: below a card in hand, because a token
+    /// only pays off through a Love line, but above zero so a seller counts the
+    /// token a sale earns and a Love engine reads as progress.
+    /// </summary>
+    public double Love = 0.6;
 
     public static readonly BotWeights Default = new();
 }
@@ -78,28 +84,37 @@ public static class Bot
     /// <summary>Draw steps the deck-out bill is projected over.</summary>
     private const int FatigueLookahead = Rules.DrawPerTurn * 3;
     private const int MaxCombos = 48;
+
+    /// <summary>
+    /// A cheaper search for balance runs, about a tenth of the work: a narrower
+    /// beam over a shorter turn, a much smaller apply budget, and rollouts
+    /// trimmed to match. Off by default, so the shipped bot is unchanged.
+    /// Set once at startup rather than per game: it is read from every thread.
+    /// </summary>
+    public static bool Light { get; set; }
+
     /// <summary>Positions the turn search carries from one action to the next.</summary>
-    private const int BeamWidth = 12;
+    private static int BeamWidth => Light ? 3 : 12;
     /// <summary>Actions deep one turn is searched.</summary>
-    private const int MaxTurnDepth = 10;
+    private static int MaxTurnDepth => Light ? 5 : 10;
     /// <summary>Applies the turn search spends before it settles for its best line.</summary>
-    private const int SearchBudget = 6000;
+    private static int SearchBudget => Light ? 400 : 6000;
     /// <summary>Actions the clock rollout plays out before it gives up on a kill.</summary>
-    private const int MaxBurnSteps = 60;
+    private static int MaxBurnSteps => Light ? 14 : 60;
     /// <summary>Actions the same rollout spends building up before it starts swinging.</summary>
-    private const int MaxSetupSteps = 30;
+    private static int MaxSetupSteps => Light ? 6 : 30;
     /// <summary>Actions it spends building up when it is only measuring a threat.</summary>
-    private const int MaxThreatSetup = 10;
+    private static int MaxThreatSetup => Light ? 2 : 10;
     /// <summary>Actions that rollout plays out when it is only measuring a threat.</summary>
-    private const int MaxThreatSteps = 24;
+    private static int MaxThreatSteps => Light ? 6 : 24;
     /// <summary>End-of-turn positions the opponent's reply is played out against.</summary>
-    private const int ThreatLeaves = 6;
+    private static int ThreatLeaves => Light ? 1 : 6;
     /// <summary>Actions the opponent is given to answer a position with.</summary>
-    private const int MaxReplySteps = 14;
+    private static int MaxReplySteps => Light ? 4 : 14;
     /// <summary>Actions deep the exhaustive kill search will look.</summary>
     private const int LethalDepth = 3;
     /// <summary>Applies that search spends before it gives up.</summary>
-    private const int LethalBudget = 2500;
+    private static int LethalBudget => Light ? 200 : 2500;
     /// <summary>
     /// How far short of a kill the rollout may come and still be worth an
     /// exhaustive check. The rollout takes the largest hit available at every
@@ -113,6 +128,37 @@ public static class Bot
     private static IEnumerable<int> LivingOpponents(GameState state, int me)
     {
         yield return GameState.Other(me);
+    }
+
+    /// <summary>
+    /// A body's strength as the evaluator should count it. Turn-length attack
+    /// mods on a body that cannot swing before they expire are points that will
+    /// never be used: nothing attacks a player on their own turn, so a sapped,
+    /// Stationary or first-turn body spends the whole buff idle.
+    /// </summary>
+    private static int ScoredStrength(GameState state, SummonInstance s)
+    {
+        int full = Effects.EffectiveStrength(state, s);
+        if (s.Owner != state.Active) return full;
+        var def = Registry.Card(s.CardId);
+        bool idle = s.Sapped || s.Rooted || def.Stationary
+            || state.Players[s.Owner].TurnsTaken <= 1;
+        if (!idle) return full;
+        bool hasTurnMods = false;
+        foreach (var m in s.StrengthMods)
+        {
+            if (m.Duration == ModDuration.Turn) { hasTurnMods = true; break; }
+        }
+        if (!hasTurnMods) return full;
+        // Rebuild the printed-plus-permanent core the way StrengthOf does,
+        // keeping its floor at zero, and keep the standing auras.
+        int auras = full - GameState.StrengthOf(s, def);
+        int core = s.Override?.Strength ?? def.Strength;
+        foreach (var m in s.StrengthMods)
+        {
+            if (m.Duration != ModDuration.Turn) core += m.Amount;
+        }
+        return Math.Max(0, core) + auras;
     }
 
     public static double Evaluate(GameState state, int me, BotWeights? w = null)
@@ -137,11 +183,12 @@ public static class Bot
 
             double cliff = p.DebtCount >= Rules.DebtLimit - 2 ? w.DebtCliff : 0;
             score -= sign * (w.Debt * p.DebtCount + cliff);
+            score += sign * w.Love * p.Love;
 
             foreach (var s in p.Slots)
             {
                 if (s is null) continue;
-                score += sign * (w.Strength * Effects.EffectiveStrength(state, s)
+                score += sign * (w.Strength * ScoredStrength(state, s)
                     + w.Hp * s.RemainingHp
                     + w.Level * GameState.LevelOf(s, Registry.Card(s.CardId))
                     - w.Wound * s.Wounds);
@@ -181,13 +228,140 @@ public static class Bot
     /// <summary>
     /// An attack that opens a trap window is judged on what happens after the
     /// window closes, assuming the trap is not sprung; otherwise the bot sees no
-    /// change and never swings at anyone holding a trap.
+    /// change and never swings at anyone holding a trap. A Store window closes
+    /// the other way, by playing both sides' policies forward until the deal is
+    /// struck or refused, so the search reads a settled price rather than an
+    /// open negotiation.
     /// </summary>
-    private static GameState Settle(GameState state)
+    private static GameState Settle(GameState state, BotWeights? w = null)
     {
         if (state.Pending is null) return state;
+        if (state.Pending.Store is not null) return SettleStore(state, w ?? BotWeights.Default);
         var res = Engine.Apply(state, state.Pending.Player, GameAction.PassResponse());
         return res.Ok ? res.State! : state;
+    }
+
+    // --- the Store negotiation --------------------------------------------------
+
+    /// <summary>
+    /// Evaluator points the bot will trade for one debt inside a Store window,
+    /// which is one HP card. Deliberately far below <c>w.Debt</c>: that weight
+    /// prices debt as a loss clock twenty-five points long, and a buyer holding
+    /// to it would refuse every price the slider can offer.
+    /// </summary>
+    private const double PricePoints = 2.5;
+
+    /// <summary>Debt short of the limit at which no purchase is worth making.</summary>
+    private const int DebtSafety = 2;
+
+    /// <summary>Passes a settled negotiation cannot exceed: the cap plus both closes.</summary>
+    private const int MaxStorePasses = 8;
+
+    /// <summary>
+    /// The whole negotiation, from whatever pass it stands at. Both policies are
+    /// deterministic and the pass cap bounds the loop, so this always closes.
+    /// </summary>
+    private static GameState SettleStore(GameState state, BotWeights w)
+    {
+        var s = state;
+        for (int i = 0; i < MaxStorePasses && s.Pending?.Store is not null; i++)
+        {
+            int actor = s.Pending.Player;
+            if (StoreAnswer(s, actor, w) is not { } act) break;
+            var res = Engine.Apply(s, actor, act);
+            if (!res.Ok) break;
+            s = res.State!;
+        }
+        return s;
+    }
+
+    /// <summary>
+    /// This seat's answer to an open Store window, or null when the window is
+    /// not theirs to answer.
+    ///
+    /// A policy rather than a search, because the evaluator cannot price an offer
+    /// that only pays off if the other side takes it. The seller asks one over
+    /// what it will settle for and takes any counter that meets the floor; the
+    /// buyer haggles once and then pays anything up to what the effect is worth.
+    /// </summary>
+    public static GameAction? StoreAnswer(GameState state, int me, BotWeights? w = null)
+    {
+        if (state.Pending?.Store is not { } win || state.Pending.Player != me) return null;
+        w ??= BotWeights.Default;
+        var summon = state.Find(win.Source);
+        var store = summon is null ? null : Engine.StoreOf(summon, Registry.Card(summon.CardId));
+        var (min, max) = store is null ? (1, 4) : Engine.StorePriceBounds(store);
+
+        if (me == win.Seller)
+        {
+            // Ask one over the floor and expect to be haggled down to it.
+            int ask = Math.Min(max, min + 2);
+            int floor = Math.Min(max, min + 1);
+            if (win.Pass == 0) return GameAction.StoreOffer(ask);
+            // An even pass means the buyer's counter is on the table.
+            if (win.Pass % 2 == 0 && win.Price >= floor) return GameAction.StoreAccept();
+            // The seller has no walk-away, so at the cap the floor goes out final.
+            if (win.Pass >= 4) return GameAction.StoreOffer(floor, final: true);
+            return GameAction.StoreOffer(floor);
+        }
+
+        // The buyer only ever answers a price, so an even pass is not a position
+        // the reducer can hand them. Walking away is legal from any of them.
+        if (win.Pass % 2 == 0) return GameAction.StoreReject();
+        int worth = StoreWorth(state, me, win, w);
+        var buyer = state.Players[me];
+        int paid = Math.Max(1, win.Price - (Engine.StoreBoosted(state, win.Seller) ? 1 : 0));
+        if (worth < min || buyer.DebtCount + paid >= Rules.DebtLimit - DebtSafety)
+        {
+            return GameAction.StoreReject();
+        }
+        // Haggle once, at the bottom of the slider, before saying yes to
+        // anything: a price worth paying is still worth paying one less. After
+        // that the answer is yes or no, because a second round of it only costs
+        // the search actions.
+        if (win.Pass == 1 && !win.Final && win.Price > min) return GameAction.StoreCounter(min);
+        if (win.Price <= worth) return GameAction.StoreAccept();
+        return GameAction.StoreReject();
+    }
+
+    /// <summary>
+    /// The most debt this buyer will pay for what is on offer, on the slider's
+    /// scale. Read by closing the deal on a copy of the state and adding back
+    /// the debt that copy paid, so the number prices the effect alone.
+    /// </summary>
+    private static int StoreWorth(GameState state, int me, PendingStoreWindow win, BotWeights w)
+    {
+        var res = Engine.Apply(state, me, GameAction.StoreAccept());
+        if (!res.Ok) return 0;
+        var after = SettleChoices(res.State!, me, w);
+        if (after.Winner >= 0 && after.Winner != me) return 0;
+        int paid = Math.Max(1, win.Price - (Engine.StoreBoosted(state, win.Seller) ? 1 : 0));
+        double gain = Evaluate(after, me, w) - Evaluate(state, me, w) + paid * w.Debt;
+        if (gain <= 0) return 0;
+        return (int)Math.Floor(gain / PricePoints);
+    }
+
+    /// <summary>
+    /// Answer whatever decision a bought effect queued for its buyer, greedily.
+    /// A Store collects at most one target, so one pass is the whole of it.
+    /// </summary>
+    private static GameState SettleChoices(GameState state, int me, BotWeights w)
+    {
+        if (state.ChoiceQueue.Count == 0 || state.ChoiceQueue[0].Player != me) return state;
+        GameState? best = null;
+        double bestScore = double.NegativeInfinity;
+        foreach (var action in CandidateActions(state, me))
+        {
+            var res = Engine.Apply(state, me, action);
+            if (!res.Ok) continue;
+            double score = Evaluate(res.State!, me, w);
+            if (score > bestScore)
+            {
+                bestScore = score;
+                best = res.State!;
+            }
+        }
+        return best ?? state;
     }
 
     private static List<TargetRef[]> TargetCombos(GameState state, int me, TargetSpec[]? specs,
@@ -270,6 +444,13 @@ public static class Bot
         if (state.Pending is not null)
         {
             if (state.Pending.Player != me) return acts;
+            // A Store window has one answer rather than a slider full of them:
+            // every price the search could try is a position it cannot score.
+            if (state.Pending.Store is not null)
+            {
+                if (StoreAnswer(state, me) is { } only) acts.Add(only);
+                return acts;
+            }
             bool wantsSpellTrap = state.Pending!.Spell is not null;
             for (int i = 0; i < p.Hand.Count; i++)
             {
@@ -370,6 +551,30 @@ public static class Bot
             }
         }
 
+        // Candy: run your own Store for debt, or open a haggle over someone
+        // else's. What the haggle settles at is decided by the policy above.
+        // The leader seat sells too: any body may lead, a shopkeeper included.
+        for (int pl = 0; pl < state.Players.Length; pl++)
+        {
+            var slots = state.Players[pl].Slots;
+            for (int slot = 0; slot <= slots.Length; slot++)
+            {
+                TargetRef src;
+                if (slot < slots.Length)
+                {
+                    if (slots[slot] is null) continue;
+                    src = TargetRef.Summon(pl, slot);
+                }
+                else
+                {
+                    if (state.Players[pl].Leader is null) continue;
+                    src = TargetRef.Leader(pl);
+                }
+                if (Engine.StoreBlockers(state, me, src) is not null) continue;
+                acts.Add(pl == me ? GameAction.UseStore(src) : GameAction.OpenStore(src));
+            }
+        }
+
         foreach (var attacker in Engine.ReadyAttackers(state, me))
         {
             foreach (var target in Engine.LegalAttackTargets(state, attacker))
@@ -384,6 +589,16 @@ public static class Bot
     private static GameAction PassAction(GameState state)
     {
         if (state.FlipQueue.Count > 0) return GameAction.DeclineFlip();
+        if (state.Pending?.Store is { } win)
+        {
+            if (state.Pending.Player == win.Buyer) return GameAction.StoreReject();
+            // A silent seller has said the guaranteed ceiling: the top of the
+            // slider, final. The seller has no walk-away.
+            var shop = state.Find(win.Source);
+            var store = shop is null ? null : Engine.StoreOf(shop, Registry.Card(shop.CardId));
+            int max = store is null ? 4 : Engine.StorePriceBounds(store).Max;
+            return GameAction.StoreOffer(max, final: true);
+        }
         if (state.Pending is not null) return GameAction.PassResponse();
         if (state.ChoiceQueue.Count > 0)
         {
@@ -695,7 +910,7 @@ public static class Bot
             {
                 var res = Engine.Apply(cur, me, action);
                 if (!res.Ok) continue;
-                var after = Settle(res.State!);
+                var after = Settle(res.State!, w);
                 if (after.Winner == me)
                 {
                     line.Add(action);
@@ -729,7 +944,7 @@ public static class Bot
             {
                 var res = Engine.Apply(cur, me, action);
                 if (!res.Ok) continue;
-                var after = Settle(res.State!);
+                var after = Settle(res.State!, w);
                 if (after.Winner == me)
                 {
                     line.Add(action);
@@ -838,7 +1053,7 @@ public static class Bot
             {
                 var res = Engine.Apply(s, foe, action);
                 if (!res.Ok) continue;
-                var after = Settle(res.State!);
+                var after = Settle(res.State!, w);
                 double score = Evaluate(after, foe, w);
                 if (score > best + 1e-6)
                 {
@@ -920,7 +1135,7 @@ public static class Bot
                     var res = Engine.Apply(node.State, me, action);
                     spent++;
                     if (!res.Ok) continue;
-                    var after = Settle(res.State!);
+                    var after = Settle(res.State!, w);
                     var line = new List<GameAction>(node.Line) { action };
                     if (after.Winner == me)
                     {
@@ -1064,6 +1279,16 @@ public static class Bot
     public static GameAction ChooseAction(GameState state, int me, BotWeights? w = null)
     {
         w ??= BotWeights.Default;
+
+        // Haggling is answered from the policy before any search: a price only
+        // pays off if the other side takes it, which is not something the
+        // evaluator can score.
+        if (state.Pending?.Store is not null && StoreAnswer(state, me, w) is { } haggle)
+        {
+            _plan = null;
+            return haggle;
+        }
+
         var pass = PassAction(state);
 
         // In a response window, standing still means letting the attack resolve,
@@ -1079,7 +1304,7 @@ public static class Bot
             {
                 var res = Engine.Apply(state, me, action);
                 if (!res.Ok) continue;
-                double score = Evaluate(Settle(res.State!), me, w);
+                double score = Evaluate(Settle(res.State!, w), me, w);
                 if (score > bar + 1e-6)
                 {
                     bar = score;

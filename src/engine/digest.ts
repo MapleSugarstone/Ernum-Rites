@@ -10,7 +10,10 @@ import { MANA_KINDS, type PlayerIdx, type TargetRef } from './types';
  * excluded on purpose: wording is cosmetic, and uid allocation order is not
  * observable in play.
  */
-export const DIGEST_FORMAT = 'v3';
+// v4: a sixth mana kind (Candy), Love and plays-this-turn on every player,
+// Store stock on summons, and the Store negotiation window.
+// v5: a seventh mana kind, Ernum, which pays for a pip of any colour.
+export const DIGEST_FORMAT = 'v5';
 
 const PHASE_NAME = { awake: 'awake', draw: 'draw', main: 'main', end: 'end' } as const;
 
@@ -62,6 +65,8 @@ function summonString(s: SummonInstance | null | undefined): string {
     s.isLeader ? 1 : 0,
     s.owner,
     s.effectDamageMod,
+    s.storeStock ?? 0,
+    s.storeUsed ? 1 : 0,
   ].join('~');
 }
 
@@ -85,6 +90,8 @@ function playerString(state: GameState, idx: PlayerIdx): string {
     `:F${p.supportersLeft}.${p.leaderPlayed ? 1 : 0}` +
     `:N${p.turnsTaken}` +
     `:O${p.deckOuts}` +
+    `:V${p.love}` +
+    `:Y${p.playsThisTurn}` +
     `:L${p.replaceLocked}` +
     `:T${p.spellTax}` +
     `:G${p.stage ?? '-'}` +
@@ -114,7 +121,12 @@ export function digestOf(state: GameState): string {
 
   out += '|PEND:';
   if (!state.pending) out += '-';
-  else if (state.pending.battle) {
+  else if (state.pending.kind === 'store') {
+    const w = state.pending;
+    out +=
+      `${w.player}:B:${w.seller}:${w.buyer}:${refString(w.source)}:` +
+      `${w.price ?? -1}:${w.pass}:${w.final ? 1 : 0}`;
+  } else if (state.pending.battle) {
     out +=
       `${state.pending.player}:` +
       `${refString(state.pending.battle.attacker)}:` +

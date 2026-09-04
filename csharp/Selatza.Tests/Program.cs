@@ -143,6 +143,8 @@ public static class Program
         CardsAndDecks();
         BotTests();
         Keywords();
+        Stores();
+        Immunity();
         TripleLegends();
         DigestAndReplay();
         Learning.Run();
@@ -1759,6 +1761,125 @@ public static class Program
         return s;
     }
 
+    /// <summary>Candy's price negotiation, from opening the shop to walking away.</summary>
+    private static void Immunity()
+    {
+        // Hateful Jelly: 2/4, Spell Immunity, the smallest printed immune body.
+        const string Jelly = "m-bp-hatefuljely";
+
+        Harness.Test("total immunity keeps every card effect off the body", () =>
+        {
+            var s = Game();
+            s = Place(s, 0, Jelly, 0);
+            var jelly = TargetRef.Summon(0, 0);
+            var body = s.Players[0].Slots[0]!;
+
+            // An untargeted sweep from the other side skips it.
+            int before = body.RemainingHp;
+            var ctx = new EffectCtx { State = s, Me = 1, Card = Registry.Card("kx-DarkCandy") };
+            ctx.Damage(jelly, 3);
+            Harness.Eq(before, body.RemainingHp, "effect damage is shrugged off");
+
+            // Its own side's card cannot heal it either.
+            body.Hp[0].Flipped = true;
+            var heal = new EffectCtx { State = s, Me = 0, Card = Registry.Card("m-yb-skypaint") };
+            heal.Unflip(jelly, 4);
+            Harness.Eq(before - 1, body.RemainingHp, "its own side's heal is refused");
+
+            // The body's own card still reaches itself through targeting.
+            var spec = new TargetSpec { Kind = TargetKind.Summon, Side = Side.Ally, Label = "x" };
+            var own = Engine.TargetCandidates(s, 0, spec, Registry.Card(Jelly), body);
+            Harness.Eq(true, own.Contains(jelly), "the asker exemption holds");
+            var other = Engine.TargetCandidates(s, 0, spec, Registry.Card("m-yb-skypaint"));
+            Harness.Eq(false, other.Contains(jelly), "other cards cannot choose it");
+
+            // A field aura no longer lands on it.
+            s.Players[1].Stage = "m-pg-Doortonowhere";
+            Harness.Eq(2, Effects.EffectiveStrength(s, body), "enemy field aura is dropped");
+        });
+    }
+
+    private static void Stores()
+    {
+        // Store: Draw 2 cards, no surcharge and no target, so the slider is 1 to 4.
+        const string Shop = "k1-apprentice";
+        // Draws its controller a card whenever another player buys from them.
+        const string Capitalist = "k3-HyperCapitalist";
+
+        Harness.Test("a store negotiation charges the buyer and pays the seller", () =>
+        {
+            var s = Game();
+            s = PassTo(s, 1);
+            s = Place(s, 1, Shop, 0);
+            s = Place(s, 1, Capitalist, 1);
+            s = Place(s, 1, Shop, 2);
+            s = PassTo(s, 0);
+            Harness.Eq(1, s.Players[1].Slots[0]!.StoreStock, "every shop restocks each turn");
+
+            // Room for the two cards the shop sells, under the hand limit.
+            s.Players[0].Hand.RemoveRange(0, 4);
+            int buyerHand = s.Players[0].Hand.Count;
+            int sellerHand = s.Players[1].Hand.Count;
+            int buyerDebt = s.Players[0].DebtCount;
+
+            s = Must(s, 0, GameAction.OpenStore(Src(1, 0)));
+            Harness.Eq(1, s.Pending!.Player, "the seller names the price first");
+            Harness.Eq(0, s.Pending!.Store!.Buyer);
+            Harness.Contains("Settle the Store window first.",
+                Engine.Apply(s, 1, GameAction.PassResponse()).Error);
+
+            s = Must(s, 1, GameAction.StoreOffer(3));
+            Harness.Eq(0, s.Pending!.Player, "the buyer answers the offer");
+            s = Must(s, 0, GameAction.StoreCounter(2));
+            Harness.Eq(1, s.Pending!.Player, "the counter goes back to the seller");
+            s = Must(s, 1, GameAction.StoreAccept());
+
+            Harness.True(s.Pending is null, "the window closed on the deal");
+            Harness.Eq(buyerDebt + 2, s.Players[0].DebtCount, "the buyer took the agreed price as debt");
+            Harness.Eq(1, s.Players[1].Love, "the seller took 1 Love");
+            Harness.Eq(0, s.Players[1].Slots[0]!.StoreStock, "the stock token is spent");
+            Harness.Eq(buyerHand + 2, s.Players[0].Hand.Count, "the effect resolved for the buyer");
+            Harness.Eq(sellerHand + 1, s.Players[1].Hand.Count, "onStoreSold fired on the seller");
+            Harness.Contains("That Store is closed this turn.",
+                Engine.Apply(s, 0, GameAction.OpenStore(Src(1, 0))).Error);
+
+            // The second shop, walked away from rather than bought out.
+            int debt = s.Players[0].DebtCount;
+            s = Must(s, 0, GameAction.OpenStore(Src(1, 2)));
+            s = Must(s, 1, GameAction.StoreOffer(4, final: true));
+            Harness.Contains("That was a final offer",
+                Engine.Apply(s, 0, GameAction.StoreCounter(1)).Error);
+            s = Must(s, 0, GameAction.StoreReject());
+            Harness.True(s.Pending is null, "walking away closes the window");
+            Harness.Eq(debt, s.Players[0].DebtCount, "a rejection costs the buyer nothing");
+            Harness.Eq(1, s.Players[1].Love, "and pays the seller nothing");
+            Harness.Eq(0, s.Players[1].Slots[2]!.StoreStock, "the refused shop is shut for the turn");
+            Harness.Contains("That Store is closed this turn.",
+                Engine.Apply(s, 0, GameAction.OpenStore(Src(1, 2))).Error);
+        });
+
+        Harness.Test("the bots open a store worth buying from and haggle it closed", () =>
+        {
+            // Store: Heal 3 debt, the one shop both sides always profit from.
+            var s = Game();
+            s = PassTo(s, 1);
+            s = Place(s, 1, "k3-DebtReliever", 0);
+            s = PassTo(s, 0);
+            s.Players[0].DebtCount = 8;
+
+            Bot.ClearPlan();
+            for (int guard = 0; !s.IsOver && s.Active == 0 && s.Players[1].Love == 0; guard++)
+            {
+                if (guard > 60) throw new Exception("the turn never finished");
+                int actor = s.CurrentActor;
+                s = Must(s, actor, Bot.ChooseAction(s, actor));
+            }
+            Harness.Eq(1, s.Players[1].Love, "the search opened the shop and the deal closed");
+            Harness.True(s.Players[0].DebtCount < 8,
+                $"the buyer healed more than it paid, ended on {s.Players[0].DebtCount}");
+        });
+    }
+
     /// <summary>The ten three-colour legends and the engine hooks they needed.</summary>
     private static void TripleLegends()
     {
@@ -1773,12 +1894,13 @@ public static class Program
         {
             // Registry.All also holds cards minted during play, and a Malware
             // copy carries three colours, so the printed set has to be filtered.
-            // Level 3 is what makes a triple one of the ten legends; a triple at
-            // any other level is an ordinary card the set may print freely.
+            // Level 3 is what makes a triple a legend; a triple at any other
+            // level is an ordinary card the set may print freely. Six colours
+            // make twenty combinations, and every one now has its legend.
             var triples = Registry.All.Where(d => d.Color3 is not null && d.Num != "GEN").ToList();
             var legends = triples.Where(d => d.Level == 3).ToList();
-            Harness.Eq(10, legends.Count, "one legend per combination");
-            Harness.Eq(10, legends.Select(d => Identity.ColorsOf(d).Distinct()
+            Harness.Eq(20, legends.Count, "one legend per combination");
+            Harness.Eq(20, legends.Select(d => Identity.ColorsOf(d).Distinct()
                 .OrderBy(x => x).Aggregate("", (a, x) => a + x)).Distinct().Count(),
                 "and no combination twice");
             foreach (var d in legends) Harness.Eq(Rarity.L, d.Rarity, d.Id);
@@ -1802,6 +1924,17 @@ public static class Program
                 ("m-grp-horriblemalware", Color.R),
                 ("m-gry-spiritofsolstice", Color.P),
                 ("m-ryp-livingcurse", Color.P),
+                // Most Candy trios frame Candy; Vier wears Fish and the Sweetling Robot.
+                ("m-mbp-vier", Color.F),
+                ("m-mbr-saraza", Color.K),
+                ("m-mby-wellworthit", Color.K),
+                ("m-mgb-codeinfestedsweetling", Color.R),
+                ("m-mgp-godofmisfortune", Color.K),
+                ("m-mgr-ransomwareartist", Color.K),
+                ("m-mgy-thethorn", Color.K),
+                ("m-mpr-humanitysdefender", Color.K),
+                ("m-mpy-sopapli", Color.K),
+                ("m-myr-hellmage", Color.K),
             };
             var s = Game();
             foreach (var (id, color) in frames)

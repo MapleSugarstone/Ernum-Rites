@@ -3,11 +3,14 @@ import { allDecks } from '../src/cards';
 import type { Action, SourceRef } from '../src/engine/actions';
 import {
   applyAction,
+  availableMana,
+  canPay,
   createGame,
   effectiveStrength,
   costFor,
   legalAttackTargets,
   manaKindFor,
+  storeBlockers,
   targetCandidates,
   type DeckList,
 } from '../src/engine/engine';
@@ -41,7 +44,13 @@ import {
   remainingHp,
   type GameState,
 } from '../src/engine/state';
-import { costToString, type Color, type PlayerIdx, type TargetRef } from '../src/engine/types';
+import {
+  costToString,
+  type Color,
+  type ManaKind,
+  type PlayerIdx,
+  type TargetRef,
+} from '../src/engine/types';
 
 // Vanilla dummies keep the combat maths obvious: L1 is 1/2, L2 2/4, L3 3/6.
 const D1 = 'x-r-dummy-1';
@@ -435,6 +444,96 @@ describe('wounds', () => {
     const target = s.players[0].slots[0]!;
     expect(remainingHp(target)).toBe(4);
     expect(target.wounds).toBe(1);
+  });
+});
+
+describe('total spell immunity', () => {
+  // Hateful Jelly is the smallest printed immune body: 2/4, Spell Immunity.
+  const JELLY = 'm-bp-hatefuljely';
+
+  it('keeps every card effect off an immune body, its own side included', () => {
+    let s = game();
+    s = place(s, 0, JELLY, 0);
+    s = place(s, 0, D3, 1);
+    const jelly = { kind: 'summon', player: 0, slot: 0 } as const;
+
+    // Its own side's heal spell cannot choose it.
+    s.players[0].slots[0]!.hp[0].flipped = true;
+    s.players[0].supporters.push(
+      { cardId: 's1-fluterat', sapped: false },
+      { cardId: 'f1-basicfish', sapped: false },
+    );
+    const idx = give(s, 0, 'm-yb-skypaint');
+    const res = applyAction(s, 0, { type: 'CAST_SPELL', handIndex: idx, targets: [jelly] });
+    expect(res.ok).toBe(false);
+    s.players[0].hand.pop();
+
+    // An untargeted sweep from the other side skips it and hits its neighbour.
+    s = must(s, 0, { type: 'END_TURN' });
+    const before = remainingHp(s.players[0].slots[0]!);
+    const ctx = makeEffectCtx(s, 1, null, card('kx-DarkCandy'), []);
+    ctx.damage(jelly, 3);
+    ctx.damage({ kind: 'summon', player: 0, slot: 1 }, 1);
+    expect(remainingHp(s.players[0].slots[0]!)).toBe(before);
+    expect(remainingHp(s.players[0].slots[1]!)).toBeLessThan(5);
+  });
+
+  it('lets the immune body itself keep asking, and drops every other aura', () => {
+    let s = game();
+    s = place(s, 0, JELLY, 0);
+    const jellyBody = s.players[0].slots[0]!;
+    // The asker exemption: the body's own card still finds itself.
+    const spec = { kind: 'summon', side: 'ally', label: 'x' } as const;
+    const own = targetCandidates(s, 0, spec, card(JELLY), jellyBody);
+    expect(own.some((r) => r.kind === 'summon' && r.slot === 0)).toBe(true);
+    const other = targetCandidates(s, 0, spec, card('m-yb-skypaint'));
+    expect(other.some((r) => r.kind === 'summon' && r.slot === 0)).toBe(false);
+
+    // A field that lowers every enemy's attack no longer reaches it.
+    s.players[1].stage = 'm-pg-Doortonowhere';
+    expect(effectiveStrength(s, jellyBody)).toBe(2);
+  });
+});
+
+describe('a store placed mid-turn', () => {
+  it('sells to the active player at once: only self-use waits a turn', () => {
+    let s = game();
+    // The enemy's shop arrives during MY turn, the way a replacement does.
+    const placed = putSummonDirect(s, 1, 'k1-apprentice', 0, {
+      asPrinted: true,
+      strength: 3,
+      color: 'K',
+      hp: 3,
+    });
+    expect(placed).toBeTruthy();
+    const src = { kind: 'summon', player: 1, slot: 0 } as const;
+    expect(storeBlockers(s, 0, src)).toBeNull();
+    s = must(s, 0, { type: 'OPEN_STORE', source: src });
+    expect(s.pending?.kind).toBe('store');
+    // The owner's own use still waits: it entered this turn.
+    expect(storeBlockers(s, 1, src)).toBeTruthy();
+  });
+});
+
+describe('a spell that annihilates itself', () => {
+  it('resolves Cuffed, then removes it from the game instead of discarding it', () => {
+    let s = game();
+    s = passTo(s, 1);
+    s = place(s, 1, D1, 0);
+    s = passTo(s, 0);
+    s.players[0].supporters.push(
+      { cardId: 'k1-SugarBug', sapped: false },
+      { cardId: 'k1-SugarBug', sapped: false },
+    );
+    const idx = give(s, 0, 'kx-cuffed');
+    s = must(s, 0, {
+      type: 'CAST_SPELL',
+      handIndex: idx,
+      targets: [{ kind: 'summon', player: 1, slot: 0 }],
+    });
+    expect(s.players[1].slots[0]!.rooted).toBe(true);
+    expect(s.players[0].discard).not.toContain('kx-cuffed');
+    expect(s.players[0].hand).not.toContain('kx-cuffed');
   });
 });
 
@@ -1020,7 +1119,7 @@ describe("Chipcrunch's flip", () => {
       { cardId: D1, sapped: false },
       { cardId: OIL, sapped: false },
     ];
-    s.players[1].mana = { P: 2, O: 0, R: 1, F: 0, S: 0, C: 3 };
+    s.players[1].mana = { P: 2, O: 0, R: 1, F: 0, S: 0, K: 0, C: 3, E: 0 };
     dealDamage(s, { kind: 'summon', player: 0, slot: 0 }, 1);
     expect(s.players[0].slots[0]!.hp[0].flipped).toBe(true);
     // The pool goes the moment it flips; the sap waits on a pick.
@@ -1038,7 +1137,7 @@ describe("Chipcrunch's flip", () => {
     let s = game();
     s = place(s, 0, D2, 0);
     armour(s, 0, 0, 'r1-chipcrunch');
-    s.players[1].mana = { P: 1, O: 0, R: 0, F: 0, S: 0, C: 0 };
+    s.players[1].mana = { P: 1, O: 0, R: 0, F: 0, S: 0, K: 0, C: 0, E: 0 };
     dealDamage(s, { kind: 'summon', player: 0, slot: 0 }, 1);
     expect(s.players[1].mana.P).toBe(0);
   });
@@ -1177,7 +1276,7 @@ describe('awkward interactions the fuzzer went looking for', () => {
     s = passTo(s, 1);
     s.players[1].debt.push('px-firebolt');
     s = passTo(s, 0);
-    s.players[0].mana = { P: 9, O: 9, R: 9, F: 9, S: 9, C: 9 };
+    s.players[0].mana = { P: 9, O: 9, R: 9, F: 9, S: 9, K: 0, C: 9, E: 0 };
     const res = applyAction(s, 0, {
       type: 'ACTIVATE_POWER',
       source: src(0, 0),
@@ -1201,7 +1300,7 @@ describe('awkward interactions the fuzzer went looking for', () => {
     s = place(s, 0, 'r2-forklift', 0);
     s.players[0].supporters = [{ cardId: 'n-banana', sapped: false }];
     s = passTo(s, 0);
-    s.players[0].mana = { P: 9, O: 9, R: 9, F: 9, S: 9, C: 9 };
+    s.players[0].mana = { P: 9, O: 9, R: 9, F: 9, S: 9, K: 0, C: 9, E: 0 };
     s = must(s, 0, {
       type: 'ACTIVATE_POWER',
       source: src(0, 0),
@@ -1548,7 +1647,7 @@ describe('card triggers', () => {
     s = place(s, 1, D3, 0);
     s = place(s, 1, D1, 1);
     s = passTo(s, 0);
-    s.players[0].mana = { P: 0, O: 0, R: 0, F: 0, S: 6, C: 0 };
+    s.players[0].mana = { P: 0, O: 0, R: 0, F: 0, S: 6, K: 0, C: 0, E: 0 };
     s = must(s, 0, { type: 'ACTIVATE_POWER', source: src(0, 0), powerIndex: 0, targets: [] });
     expect(s.players[1].slots.filter(Boolean)).toHaveLength(0);
     // It pays for the sweep with itself, so the slot it stood in is empty too.
@@ -1575,14 +1674,15 @@ describe('triple-colour legends', () => {
   const BOLT = 'x-p-bolt';
 
   it('prints one level 3 legend per three-colour combination', () => {
-    // Level 3 is what makes a triple one of the ten legends; a triple at any
-    // other level is an ordinary card the set may print freely.
+    // Level 3 is what makes a triple a legend; a triple at any other level is
+    // an ordinary card the set may print freely. Six colours make twenty
+    // combinations, and every one of them now has its legend.
     const triples = allCards().filter((d) => d.color3);
     const legends = triples.filter((d) => d.level === 3);
-    expect(legends).toHaveLength(10);
+    expect(legends).toHaveLength(20);
     expect(new Set(legends.map((d) => [...new Set(colorsOf(d))].sort().join('')))).toHaveProperty(
       'size',
-      10,
+      20,
     );
     for (const d of legends) expect(d.rarity).toBe('L');
     for (const d of triples) expect(new Set(colorsOf(d)).size).toBe(3);
@@ -1600,6 +1700,17 @@ describe('triple-colour legends', () => {
       'm-grp-horriblemalware': 'R',
       'm-gry-spiritofsolstice': 'P',
       'm-ryp-livingcurse': 'P',
+      // Most Candy trios frame Candy; Vier wears Fish and the Sweetling Robot.
+      'm-mbp-vier': 'F',
+      'm-mbr-saraza': 'K',
+      'm-mby-wellworthit': 'K',
+      'm-mgb-codeinfestedsweetling': 'R',
+      'm-mgp-godofmisfortune': 'K',
+      'm-mgr-ransomwareartist': 'K',
+      'm-mgy-thethorn': 'K',
+      'm-mpr-humanitysdefender': 'K',
+      'm-mpy-sopapli': 'K',
+      'm-myr-hellmage': 'K',
     };
     const s = game();
     for (const [id, color] of Object.entries(frames)) {
@@ -1629,7 +1740,7 @@ describe('triple-colour legends', () => {
       handIndex: bolt,
       targets: [{ kind: 'summon', player: 1, slot: 0 }],
     });
-    expect(s.players[0].mana).toEqual({ P: 0, O: 0, R: 0, F: 0, S: 0, C: 0 });
+    expect(s.players[0].mana).toEqual({ P: 0, O: 0, R: 0, F: 0, S: 0, K: 0, C: 0, E: 0 });
   });
 
   it('leaves Overknower in a slot paying full price, because it is a summon it controls', () => {
@@ -1647,7 +1758,7 @@ describe('triple-colour legends', () => {
     // Lightbolbe prints 2 HP now, so it is softened to one first.
     dealDamage(s, { kind: 'summon', player: 1, slot: 0 }, card('r1-lightbolbe').hp! - 1);
     s = passTo(s, 0);
-    s.players[0].mana = { P: 1, O: 1, R: 1, F: 0, S: 0, C: 0 };
+    s.players[0].mana = { P: 1, O: 1, R: 1, F: 0, S: 0, K: 0, C: 0, E: 0 };
     s = must(s, 0, {
       type: 'ACTIVATE_POWER',
       source: src(0, 0),
@@ -1684,7 +1795,7 @@ describe('triple-colour legends', () => {
     s = passTo(s, 0);
     const theirDeck = s.players[1].deck.length;
     const top = s.players[1].deck[0];
-    s.players[0].mana = { P: 1, O: 0, R: 1, F: 1, S: 0, C: 0 };
+    s.players[0].mana = { P: 1, O: 0, R: 1, F: 1, S: 0, K: 0, C: 0, E: 0 };
     s = must(s, 0, { type: 'ACTIVATE_POWER', source: src(0, 0), powerIndex: 0, targets: [] });
     expect(s.choiceQueue[0].cards).toHaveLength(5);
     s = must(s, 0, { type: 'RESOLVE_CHOICE', index: 0 });
@@ -1700,7 +1811,7 @@ describe('triple-colour legends', () => {
     s = passTo(s, 1);
     s = place(s, 1, D1, 0);
     const before = s.players[0].hand.length;
-    s.players[1].mana = { P: 1, O: 0, R: 0, F: 0, S: 0, C: 0 };
+    s.players[1].mana = { P: 1, O: 0, R: 0, F: 0, S: 0, K: 0, C: 0, E: 0 };
     s = must(s, 1, {
       type: 'CAST_SPELL',
       handIndex: give(s, 1, BOLT),
@@ -1718,7 +1829,7 @@ describe('triple-colour legends', () => {
     s = place(s, 0, 'm-bpy-bananamage', 0);
     s = passTo(s, 0);
     const debt = s.players[1].debtCount;
-    s.players[0].mana = { P: 0, O: 0, R: 0, F: 0, S: 1, C: 0 };
+    s.players[0].mana = { P: 0, O: 0, R: 0, F: 0, S: 1, K: 0, C: 0, E: 0 };
     s = must(s, 0, { type: 'ACTIVATE_POWER', source: src(0, 0), powerIndex: 0, targets: [] });
     expect(s.players[1].supporters).toHaveLength(1);
     // The Dummy Warden is Robot, so the gift is a Robot Banana, not a colourless one:
@@ -1763,7 +1874,7 @@ describe('triple-colour legends', () => {
     s = must(s, 1, { type: 'PLAY_SUPPORTER', handIndex: give(s, 1, SOLAR) });
     s = passTo(s, 0);
     const supporter = s.players[1].supporters[0].cardId;
-    s.players[0].mana = { P: 0, O: 1, R: 2, F: 0, S: 1, C: 0 };
+    s.players[0].mana = { P: 0, O: 1, R: 2, F: 0, S: 1, K: 0, C: 0, E: 0 };
     s = must(s, 0, {
       type: 'ACTIVATE_POWER',
       source: src(0, 0),
@@ -1784,7 +1895,7 @@ describe('triple-colour legends', () => {
     const before = s.players[0].slots[1]!.hp.length;
     const spent = remainingHp(s.players[0].slots[1]!);
     const deck = s.players[0].deck.length;
-    s.players[0].mana = { P: 0, O: 0, R: 1, F: 1, S: 1, C: 0 };
+    s.players[0].mana = { P: 0, O: 0, R: 1, F: 1, S: 1, K: 0, C: 0, E: 0 };
     s = must(s, 0, {
       type: 'ACTIVATE_POWER',
       source: src(0, 0),
@@ -1807,7 +1918,7 @@ describe('triple-colour legends', () => {
     s = passTo(s, 1);
     s = place(s, 1, D3, 0);
     s = passTo(s, 0);
-    s.players[0].mana = { P: 3, O: 3, R: 0, F: 3, S: 0, C: 0 };
+    s.players[0].mana = { P: 3, O: 3, R: 0, F: 3, S: 0, K: 0, C: 0, E: 0 };
     s = must(s, 0, { type: 'ACTIVATE_POWER', source: src(0, 0), powerIndex: 0, targets: [] });
     expect(s.winner).toBe(0);
   });
@@ -1896,5 +2007,54 @@ describe('Drowned Wanderer', () => {
     expect(effectiveStrength(s, landed!), 'printed attack plus one')
       .toBe((printed.strength ?? 0) + 1);
     expect(remainingHp(landed!), 'printed HP plus one').toBe((printed.hp ?? 1) + 1);
+  });
+});
+
+describe('Ernum mana', () => {
+  const pool = (over: Partial<Record<ManaKind, number>> = {}): Record<ManaKind, number> => ({
+    P: 0,
+    O: 0,
+    R: 0,
+    F: 0,
+    S: 0,
+    K: 0,
+    C: 0,
+    E: 0,
+    ...over,
+  });
+
+  it('is what Ernum pays when it is faced as a supporter', () => {
+    const s = game();
+    s.players[0].supporters = [{ cardId: 'm-ernum', sapped: false }];
+    expect(manaKindFor(s.players[0], card('m-ernum'))).toBe('E');
+    expect(availableMana(s.players[0]).E).toBe(1);
+  });
+
+  it('covers a pip of any colour, one pip per mana', () => {
+    const p = game().players[0];
+    p.mana = pool({ E: 2 });
+    expect(canPay(p, { P: 1, S: 1 })).toBe(true);
+    expect(canPay(p, { C: 2 })).toBe(true);
+    expect(canPay(p, { P: 2 })).toBe(true);
+    expect(canPay(p, { P: 1, S: 1, C: 1 })).toBe(false);
+  });
+
+  it('is the last mana spent when something else could pay', () => {
+    let s = game();
+    s = place(s, 0, 'r2-hobbyist', 0);
+    s = passTo(s, 0);
+    s.players[0].mana = pool({ R: 1, E: 1 });
+    s = must(s, 0, { type: 'ACTIVATE_POWER', source: src(0, 0), powerIndex: 0, targets: [] });
+    expect(s.players[0].mana.R).toBe(0);
+    expect(s.players[0].mana.E).toBe(1);
+  });
+
+  it('pays the pip on its own when nothing else can', () => {
+    let s = game();
+    s = place(s, 0, 'r2-hobbyist', 0);
+    s = passTo(s, 0);
+    s.players[0].mana = pool({ E: 1 });
+    s = must(s, 0, { type: 'ACTIVATE_POWER', source: src(0, 0), powerIndex: 0, targets: [] });
+    expect(s.players[0].mana.E).toBe(0);
   });
 });

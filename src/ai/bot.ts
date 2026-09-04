@@ -9,6 +9,10 @@ import {
   legalAttackTargets,
   powerBlockers,
   readyAttackers,
+  storeBlockers,
+  storeBoosted,
+  storeOf,
+  storePriceBounds,
   targetCandidates,
 } from '../engine/engine';
 import { deckIdentity, isLegalUnder } from '../engine/identity';
@@ -24,7 +28,10 @@ import {
   powersOf,
   refIsGone,
   remainingHp,
+  strengthOf,
   type GameState,
+  type PendingStore,
+  type SummonInstance,
 } from '../engine/state';
 import {
   COPY_LIMIT,
@@ -104,6 +111,12 @@ export interface BotWeights {
   reply: number;
   /** What opening a response window costs when they are certainly holding a trap. */
   trapWindow: number;
+  /**
+   * Per Love token held. Slightly good: below a card in hand, because a token
+   * only pays off through a Love line, but above zero so a seller counts the
+   * token a sale earns and a Love engine reads as progress.
+   */
+  love: number;
 }
 
 export const defaultWeights: BotWeights = {
@@ -126,6 +139,7 @@ export const defaultWeights: BotWeights = {
   standingKill: 60,
   reply: 0.6,
   trapWindow: 12,
+  love: 0.6,
 };
 
 const DECK_VALUE_CAP = 20;
@@ -135,6 +149,32 @@ const LEADER_CLIFF_AT = 6;
 const OUTS_CAP = 6;
 /** Draw steps the deck-out bill is projected over. */
 const FATIGUE_LOOKAHEAD = DRAW_PER_TURN * 3;
+
+/**
+ * A body's strength as the evaluator should count it. Turn-length attack mods
+ * on a body that cannot swing before they expire are points that will never be
+ * used: nothing attacks a player on their own turn, so a sapped, Stationary or
+ * first-turn body spends the whole buff idle. Without this the bot happily
+ * cast Candy Cane on bodies with no swing left in them.
+ */
+function scoredStrength(state: GameState, s: SummonInstance): number {
+  const full = effectiveStrength(state, s);
+  if (s.owner !== state.active) return full;
+  const def = card(s.cardId);
+  const idle =
+    s.sapped ||
+    s.rooted ||
+    !!def.stationary ||
+    state.players[s.owner].turnsTaken <= 1;
+  if (!idle || !s.strengthMods.some((m) => m.duration === 'turn')) return full;
+  // Rebuild the printed-plus-permanent core the way strengthOf does, keeping
+  // its floor at zero, and keep the standing auras, which outlive the turn.
+  const auras = full - strengthOf(s, def);
+  const base = s.override ? s.override.strength : (def.strength ?? 0);
+  let perm = 0;
+  for (const m of s.strengthMods) if (m.duration !== 'turn') perm += m.amount;
+  return Math.max(0, base + perm) + auras;
+}
 
 export function evaluate(state: GameState, me: PlayerIdx, w = defaultWeights): number {
   if (state.winner === me) return 1e9;
@@ -157,12 +197,13 @@ export function evaluate(state: GameState, me: PlayerIdx, w = defaultWeights): n
 
     const cliff = p.debtCount >= debtLimitOf(state) - 2 ? w.debtCliff : 0;
     score -= sign * (w.debt * p.debtCount + cliff);
+    score += sign * w.love * p.love;
 
     for (const s of p.slots) {
       if (!s) continue;
       score +=
         sign *
-        (w.strength * effectiveStrength(state, s) +
+        (w.strength * scoredStrength(state, s) +
           w.hp * remainingHp(s) +
           w.level * levelOf(s, card(s.cardId)) -
           w.wound * s.wounds);
@@ -196,13 +237,392 @@ export function evaluate(state: GameState, me: PlayerIdx, w = defaultWeights): n
   return score;
 }
 
+// --- stores ------------------------------------------------------------------
+
+/** How near the debt limit a seller has to be before it deals at the floor. */
+const SELLER_PRESSURE = 4;
+/** Deferred picks a priced sale answers before it is scored. */
+const SALE_PICKS = 2;
+/** A hard stop on playing a negotiation forward. The five-pass cap ends it first. */
+const HAGGLE_STEPS = 8;
+
+/** The slider a window runs on, and 1 to 4 when its shop has left the board. */
+function windowBounds(state: GameState, win: PendingStore): { min: number; max: number } {
+  const body = findSummon(state, win.source);
+  const store = body ? storeOf(body, card(body.cardId)) : null;
+  return store ? storePriceBounds(store) : { min: 1, max: 4 };
+}
+
+/** The debt a price actually charges, after the seller's Clearance Sale. */
+function pricePaid(state: GameState, win: PendingStore, price: number): number {
+  return Math.max(1, price - (storeBoosted(state, win.seller) ? 1 : 0));
+}
+
+/**
+ * What the evaluator charges `side` for carrying `amount` more debt, or credits
+ * it for carrying that much less. Infinite once the amount reaches the limit,
+ * because that is a loss rather than a price.
+ */
+function debtCost(state: GameState, side: PlayerIdx, amount: number, w: BotWeights): number {
+  const limit = debtLimitOf(state);
+  const was = state.players[side].debtCount;
+  // Healing stops at nothing owed, the way clearDebt does.
+  const now = Math.max(0, was + amount);
+  if (now >= limit) return Number.POSITIVE_INFINITY;
+  const panic = (n: number) => (n >= limit - 2 ? w.debtCliff : 0);
+  return w.debt * (now - was) + panic(now) - panic(was);
+}
+
+/**
+ * What a debt point buys.
+ *
+ * The evaluator scores an effect where it lands rather than where it is played.
+ * Two cards bought into hand score three points and are worth a body apiece the
+ * moment a slot takes them, so a policy that charged the standing price of a
+ * debt point against that sitting score refused every trade the colour sells. A
+ * shop has to be worth a card in hand for every point of debt it charges, which
+ * prices the draw-two shop at the 2 debt its owner pays to run it. The turn
+ * search charges the rest: a line that opens a shop is scored by the evaluator
+ * at the price it settled at, so cards bought and never played still lose to
+ * standing still. Debt the effect itself moves is never lifted, because a debt
+ * point healed is worth exactly a debt point paid.
+ */
+function tradeLift(w: BotWeights): number {
+  return w.hand > 0 ? w.debt / w.hand : 1;
+}
+
+/** What a sale is worth to each side, with every price taken back out of it. */
+interface SaleWorth {
+  /** The effect to the buyer, with the debt it moves taken out. */
+  board: number;
+  /** The same sale to the seller, on the same terms. */
+  seller: number;
+  /** Debt the effect takes off the buyer, before anything is charged for it. */
+  healed: number;
+  /** The shop is gone, or the cheapest price on the slider ends the buyer. */
+  dead: boolean;
+}
+
+/**
+ * Close the window at the cheapest price on a copy of the board and read both
+ * sides' books off the evaluator.
+ *
+ * Every price is taken back out of both deltas, so one simulation prices every
+ * rung of the slider: the evaluator charges debt at a known rate, and what is
+ * left over is the effect. The buyer's deferred pick is answered greedily
+ * first, otherwise every shop that asks for a target reads as doing nothing.
+ */
+function saleWorth(state: GameState, win: PendingStore, w: BotWeights): SaleWorth {
+  const dead: SaleWorth = { board: 0, seller: 0, healed: 0, dead: true };
+  const body = findSummon(state, win.source);
+  const store = body ? storeOf(body, card(body.cardId)) : null;
+  if (!store || isOver(state)) return dead;
+
+  const { min } = storePriceBounds(store);
+  const paid = pricePaid(state, win, min);
+  if (!Number.isFinite(debtCost(state, win.buyer, paid, w))) return dead;
+
+  const sim = structuredClone(state);
+  sim.pending = { ...win, player: win.buyer, price: min, pass: 1, final: true };
+  const res = applyAction(sim, win.buyer, { type: 'STORE_ACCEPT' });
+  if (!res.ok) return dead;
+  const closed = answerPicks(res.state, w);
+
+  // The price went on before the effect ran, so what the buyer owes now is the
+  // price less whatever the effect took back off.
+  const moved = closed.players[win.buyer].debtCount - state.players[win.buyer].debtCount;
+  const swing = debtCost(state, win.buyer, moved, w);
+  // A sale that ends the buyer prices at nothing rather than at infinity, which
+  // would read to them as a shop worth any price at all.
+  if (!Number.isFinite(swing)) return dead;
+  return {
+    board: evaluate(closed, win.buyer, w) - evaluate(state, win.buyer, w) + swing,
+    seller: evaluate(closed, win.seller, w) - evaluate(state, win.seller, w) - swing,
+    healed: paid - moved,
+    dead: false,
+  };
+}
+
+/**
+ * What the buyer's debt ends up doing at a price, which is what the two sides
+ * are haggling over: a cost to the buyer and the same number as a gain to the
+ * seller. Negative when the effect heals more than the price charges.
+ */
+function priceSwing(
+  state: GameState,
+  win: PendingStore,
+  worth: SaleWorth,
+  price: number,
+  w: BotWeights,
+): number {
+  return debtCost(state, win.buyer, pricePaid(state, win, price) - worth.healed, w);
+}
+
+/**
+ * What each shop on the table sells for, priced once per decision.
+ *
+ * Every search in the bot tries opening every shop it can reach, from hundreds
+ * of positions, and pricing one costs a simulated purchase and four passes of
+ * the evaluator. What a shop sells is worth about the same in the middle of a
+ * turn as at the top of it, so the price is read once and stands for the whole
+ * decision. The two things that do move inside a turn are read live rather than
+ * cached: a shop with nothing left to do for its buyer is dropped by
+ * `storeBlockers`, and a price is charged against the debt the buyer stands at
+ * when it is named.
+ */
+const shopPrices = new Map<string, SaleWorth>();
+/** Settled deals, which also turn on the debt each side is carrying. */
+const shopDeals = new Map<string, number | null>();
+
+function shopKey(win: PendingStore): string {
+  const at = win.source;
+  return `${win.seller}/${win.buyer}/${at.kind}/${'player' in at ? at.player : ''}/${'slot' in at ? at.slot : ''}`;
+}
+
+function worthOf(state: GameState, win: PendingStore, w: BotWeights): SaleWorth {
+  const key = shopKey(win);
+  const hit = shopPrices.get(key);
+  if (hit) return hit;
+  const worth = saleWorth(state, win, w);
+  shopPrices.set(key, worth);
+  return worth;
+}
+
+/**
+ * The deal the two policies reach, held for the decision.
+ *
+ * Every node of every search asks this of every shop it can reach, both to
+ * decide whether opening one is worth a candidate and to close the window once
+ * it has. Only the two debt counts move it once the shop is priced, so they are
+ * what the answer is filed under.
+ */
+function dealOn(state: GameState, win: PendingStore, worth: SaleWorth, w: BotWeights): number | null {
+  const key = `${shopKey(win)}#${state.players[win.buyer].debtCount}#${state.players[win.seller].debtCount}`;
+  const hit = shopDeals.get(key);
+  if (hit !== undefined) return hit;
+  const deal = settledPrice(state, win, worth, w);
+  shopDeals.set(key, deal);
+  return deal;
+}
+
+/** Answer whatever pick a resolving effect queued, greedily, for its owner. */
+function answerPicks(state: GameState, w: BotWeights): GameState {
+  let s = state;
+  for (let i = 0; i < SALE_PICKS && s.choiceQueue.length > 0 && !isOver(s); i++) {
+    const who = s.choiceQueue[0].player;
+    let best: GameState | null = null;
+    let bestScore = Number.NEGATIVE_INFINITY;
+    for (const action of candidateActions(s, who, w)) {
+      const res = applyAction(s, who, action);
+      if (!res.ok) continue;
+      const score = evaluate(res.state, who, w);
+      if (score > bestScore) {
+        bestScore = score;
+        best = res.state;
+      }
+    }
+    if (!best) break;
+    s = best;
+  }
+  return s;
+}
+
+/** Every price the seller's policy turns on, read off one sale. */
+interface SellerBook {
+  /** The opening price, 2 over the floor unless the sale is worth more. */
+  ask: number;
+  /** The price it settles at, and the least it names once the passes run out. */
+  take: number;
+  /** The cheapest rung the sale is worth making at, which is usually the floor. */
+  least: number;
+  /** Near enough the debt limit to take the floor for a sale that helps. */
+  pressed: boolean;
+  gain: (price: number) => number;
+}
+
+function sellerBook(
+  state: GameState,
+  win: PendingStore,
+  worth: SaleWorth,
+  w: BotWeights,
+): SellerBook {
+  const { min, max } = windowBounds(state, win);
+  const gain = (price: number) => worth.seller + priceSwing(state, win, worth, price, w);
+  let least = min;
+  while (least < max && gain(least) <= 0) least++;
+  return {
+    ask: Math.max(Math.min(max, min + 2), least),
+    take: Math.max(Math.min(max, min + 1), least),
+    least,
+    pressed: state.players[win.seller].debtCount >= debtLimitOf(state) - SELLER_PRESSURE,
+    gain,
+  };
+}
+
+/**
+ * The seller's answer.
+ *
+ * Ask 2 over the floor and expect to be countered, take anything from 1 over
+ * the floor, and once the passes run out name 1 over the floor as final rather
+ * than restating the ask at a buyer who has already refused it twice. A price
+ * the evaluator says the sale loses money at is never offered or taken however
+ * the passes fall, which is what stops a shop that heals the buyer's debt being
+ * sold for less than it heals, and a seller near the debt limit takes the floor
+ * when the sale still reads as a gain.
+ */
+function sellerMove(state: GameState, win: PendingStore, worth: SaleWorth, w: BotWeights): Action {
+  const book = sellerBook(state, win, worth, w);
+  if (win.pass === 0) return { type: 'STORE_OFFER', price: book.ask, final: false };
+  if (win.pass >= 4) return { type: 'STORE_OFFER', price: book.take, final: true };
+
+  const price = win.price;
+  if (price !== undefined && book.gain(price) > 0) {
+    if (price >= book.take) return { type: 'STORE_ACCEPT' };
+    if (book.pressed && price >= book.least) return { type: 'STORE_ACCEPT' };
+  }
+  return { type: 'STORE_OFFER', price: book.take, final: false };
+}
+
+/** The dearest rung still worth paying for. Absent, and no price is. */
+function buyerCeiling(
+  state: GameState,
+  win: PendingStore,
+  worth: SaleWorth,
+  w: BotWeights,
+): number | null {
+  if (worth.dead) return null;
+  const { min, max } = windowBounds(state, win);
+  const lifted = tradeLift(w) * worth.board;
+  for (let p = max; p >= min; p--) {
+    if (lifted >= priceSwing(state, win, worth, p, w)) return p;
+  }
+  return null;
+}
+
+/**
+ * The buyer's answer.
+ *
+ * Counter at the floor on the first answer and expect to pay more: the seller
+ * cannot walk away, so the pass costs nothing but the pass. After that take any
+ * price the effect is worth, up to the top of the slider for a shop worth that
+ * much, and name the highest price that is worth it when the seller's is above
+ * it. Walk away only when even the floor is more than the effect is worth.
+ */
+function buyerMove(state: GameState, win: PendingStore, worth: SaleWorth, w: BotWeights): Action {
+  const { min } = windowBounds(state, win);
+  if (win.price === undefined) return { type: 'STORE_REJECT' };
+  const price = win.price;
+  const ceiling = buyerCeiling(state, win, worth, w);
+  if (ceiling === null) return { type: 'STORE_REJECT' };
+
+  const canCounter = !win.final && win.pass < 4 && win.pass % 2 === 1;
+  if (canCounter && win.pass <= 1 && price > min) return { type: 'STORE_COUNTER', price: min };
+  if (price <= ceiling) return { type: 'STORE_ACCEPT' };
+  if (canCounter) return { type: 'STORE_COUNTER', price: ceiling };
+  return { type: 'STORE_REJECT' };
+}
+
+/**
+ * What the side the window is waiting on does about it. Always legal for that
+ * side, whatever the board looks like, because a stalled negotiation stalls the
+ * game: only the buyer may walk away and the seller has to name a price.
+ */
+export function storeMove(
+  state: GameState,
+  win: PendingStore,
+  w: BotWeights = defaultWeights,
+  worth: SaleWorth = worthOf(state, win, w),
+): Action {
+  if (win.player === win.seller) {
+    // Nothing left to price: name the ceiling and let the buyer walk away.
+    if (worth.dead && win.pass > 0) {
+      return { type: 'STORE_OFFER', price: windowBounds(state, win).max, final: true };
+    }
+    return sellerMove(state, win, worth, w);
+  }
+  return buyerMove(state, win, worth, w);
+}
+
+/**
+ * The price the two policies reach from an unopened window, or null when the
+ * buyer walks away.
+ *
+ * Both ladders are deterministic and neither reads anything an offer changes,
+ * so the whole negotiation comes to this one comparison: the seller opens 2
+ * over the floor, the buyer counters at the floor, and the deal is the seller's
+ * settling price unless the buyer cannot afford it or the seller is pressed
+ * enough to take the floor.
+ */
+function settledPrice(
+  state: GameState,
+  win: PendingStore,
+  worth: SaleWorth,
+  w: BotWeights,
+): number | null {
+  const ceiling = buyerCeiling(state, win, worth, w);
+  if (ceiling === null) return null;
+  const book = sellerBook(state, win, worth, w);
+  const { min } = windowBounds(state, win);
+  if (book.pressed && book.gain(min) > 0) return min;
+  return book.take <= ceiling ? book.take : null;
+}
+
+/**
+ * Play a negotiation out to its close under both sides' policies.
+ *
+ * A search that walks into a Store window and stops there values the candidate
+ * that opened it at the board as it stood, which is what a shop nobody has
+ * bought from looks like, so opening one always read as standing still.
+ *
+ * From the top of a window the settlement is two actions rather than the five
+ * the ladders would spend reaching it, because the price they reach is known
+ * without playing them and the board a search hands back is the same one either
+ * way. A window found part-way through is played out pass by pass, bounded by
+ * the engine's own cap.
+ */
+function settleStore(state: GameState, w: BotWeights): GameState {
+  const open = state.pending;
+  if (!open || open.kind !== 'store') return state;
+  const worth = worthOf(state, open, w);
+
+  if (open.pass === 0) {
+    const deal = dealOn(state, open, worth, w);
+    const book = sellerBook(state, open, worth, w);
+    const priced = applyAction(state, open.seller, {
+      type: 'STORE_OFFER',
+      price: deal ?? book.take,
+      final: true,
+    });
+    if (priced.ok) {
+      if (!priced.state.pending) return priced.state;
+      const closed = applyAction(priced.state, open.buyer, {
+        type: deal === null ? 'STORE_REJECT' : 'STORE_ACCEPT',
+      });
+      if (closed.ok) return closed.state;
+    }
+  }
+
+  let s = state;
+  for (let step = 0; step < HAGGLE_STEPS; step++) {
+    const win = s.pending;
+    if (!win || win.kind !== 'store') break;
+    const res = applyAction(s, win.player, storeMove(s, win, w, worth));
+    if (!res.ok) break;
+    s = res.state;
+  }
+  return s;
+}
+
 /**
  * An attack that opens a trap window is judged on what happens after the window
  * closes, otherwise the bot sees no change and never swings at anyone holding a
- * trap. It assumes the trap is not sprung.
+ * trap. It assumes the trap is not sprung. A Store window closes on the two
+ * deterministic haggling policies instead, so the candidate that opened it is
+ * valued by the deal it settles at.
  */
-function settle(state: GameState): GameState {
+function settle(state: GameState, w: BotWeights = defaultWeights): GameState {
   if (!state.pending) return state;
+  if (state.pending.kind === 'store') return settleStore(state, w);
   const res = applyAction(state, state.pending.player, { type: 'PASS_RESPONSE' });
   return res.ok ? res.state : state;
 }
@@ -345,7 +765,11 @@ function enterCombos(state: GameState, me: PlayerIdx, def: CardDef): TargetRef[]
 }
 
 /** Every action the bot could legally take right now, excluding the pass. */
-export function candidateActions(state: GameState, me: PlayerIdx): Action[] {
+export function candidateActions(
+  state: GameState,
+  me: PlayerIdx,
+  w: BotWeights = defaultWeights,
+): Action[] {
   const acts: Action[] = [];
   const p = state.players[me];
 
@@ -367,6 +791,30 @@ export function candidateActions(state: GameState, me: PlayerIdx): Action[] {
 
   if (state.pending) {
     if (state.pending.player !== me) return acts;
+    if (state.pending.kind === 'store') {
+      const win = state.pending;
+      const { min, max } = windowBounds(state, win);
+      if (me === win.seller) {
+        // The seller must always answer with a price, and may take a counter.
+        if (win.pass % 2 !== 0) return acts;
+        const rungs = new Set([min, Math.min(max, min + 1), Math.min(max, min + 2)]);
+        for (const price of rungs) {
+          acts.push({ type: 'STORE_OFFER', price, final: win.pass >= 4 });
+        }
+        if (win.pass > 0 && win.price !== undefined) acts.push({ type: 'STORE_ACCEPT' });
+      } else {
+        if (win.pass % 2 !== 1) return acts;
+        if (win.price !== undefined) acts.push({ type: 'STORE_ACCEPT' });
+        if (win.price !== undefined && !win.final && win.pass < 4) {
+          const rungs = new Set([min, Math.max(min, win.price - 1)]);
+          for (const price of rungs) {
+            if (price !== win.price) acts.push({ type: 'STORE_COUNTER', price });
+          }
+        }
+        acts.push({ type: 'STORE_REJECT' });
+      }
+      return acts;
+    }
     const wantsSpellTrap = !!state.pending.spell;
     p.hand.forEach((id, handIndex) => {
       const def = card(id);
@@ -447,6 +895,41 @@ export function candidateActions(state: GameState, me: PlayerIdx): Action[] {
     });
   }
 
+  // Stores: run your own for debt, or open a haggle over someone else's. An
+  // opening the two policies would not settle is left out: the window it opens
+  // ends in a rejection, and a search that carried that outcome forward would
+  // walk the rest of the turn twice, once against every shop it refused.
+  for (let pl = 0 as PlayerIdx; pl < state.players.length; pl++) {
+    const p = state.players[pl];
+    const seats: (SourceRef | null)[] = p.slots.map((s, slot) =>
+      s ? { kind: 'summon', player: pl, slot } : null,
+    );
+    // The leader seat sells too: any body may lead, a shopkeeper included.
+    if (p.leader) seats.push({ kind: 'leader', player: pl });
+    for (const src of seats) {
+      if (!src) continue;
+      if (storeBlockers(state, me, src)) continue;
+      if (pl === me) {
+        acts.push({ type: 'USE_STORE', source: src });
+        continue;
+      }
+      const win: PendingStore = {
+        kind: 'store',
+        player: pl,
+        seller: pl,
+        buyer: me,
+        source: src,
+        final: false,
+        pass: 0,
+        battle: null,
+        spell: null,
+      };
+      const worth = worthOf(state, win, w);
+      if (dealOn(state, win, worth, w) === null) continue;
+      acts.push({ type: 'OPEN_STORE', source: src });
+    }
+  }
+
   for (const attacker of readyAttackers(state, me)) {
     for (const target of legalAttackTargets(state, attacker)) {
       acts.push({ type: 'DECLARE_ATTACK', source: attacker, target });
@@ -459,6 +942,9 @@ export function candidateActions(state: GameState, me: PlayerIdx): Action[] {
 /** The action taken when nothing on offer beats standing still. */
 function passAction(state: GameState): Action {
   if (state.flipQueue.length > 0) return { type: 'DECLINE_FLIP' };
+  // Standing still is not on offer inside a negotiation: the buyer walks away
+  // or the seller names a price, so the policy answers for whichever it is.
+  if (state.pending?.kind === 'store') return storeMove(state, state.pending);
   if (state.pending) return { type: 'PASS_RESPONSE' };
   if (state.choiceQueue.length > 0) {
     const ch = state.choiceQueue[0];
@@ -749,10 +1235,10 @@ function burn(
     let pickState: GameState | null = null;
     let best = potential(cur, me);
 
-    for (const action of candidateActions(cur, me)) {
+    for (const action of candidateActions(cur, me, w)) {
       const res = applyAction(cur, me, action);
       if (!res.ok) continue;
-      const after = settle(res.state);
+      const after = settle(res.state, w);
       if (after.winner === me) {
         return { state: after, line: [...line, action], damage: worstDrop(after) };
       }
@@ -778,10 +1264,10 @@ function burn(
     let bestGain = Number.NEGATIVE_INFINITY;
     let bestBoard = Number.NEGATIVE_INFINITY;
 
-    for (const action of candidateActions(cur, me)) {
+    for (const action of candidateActions(cur, me, w)) {
       const res = applyAction(cur, me, action);
       if (!res.ok) continue;
-      const after = settle(res.state);
+      const after = settle(res.state, w);
       if (after.winner === me) {
         return { state: after, line: [...line, action], damage: worstDrop(after) };
       }
@@ -885,10 +1371,10 @@ function replyOf(state: GameState, foe: PlayerIdx, w: BotWeights): GameState {
     const standingStill = evaluate(s, foe, w);
     let pick: GameState | null = null;
     let best = standingStill;
-    for (const action of candidateActions(s, foe)) {
+    for (const action of candidateActions(s, foe, w)) {
       const res = applyAction(s, foe, action);
       if (!res.ok) continue;
-      const after = settle(res.state);
+      const after = settle(res.state, w);
       const score = evaluate(after, foe, w);
       if (score > best + 1e-6) {
         best = score;
@@ -962,19 +1448,22 @@ function searchTurn(state: GameState, me: PlayerIdx, w: BotWeights, reads: Enemy
   for (let depth = 0; depth < limits.maxTurnDepth && spent < limits.searchBudget; depth++) {
     const next: Leaf[] = [];
     for (const node of level) {
-      for (const action of candidateActions(node.state, me)) {
+      for (const action of candidateActions(node.state, me, w)) {
         if (spent >= limits.searchBudget) break;
         const res = applyAction(node.state, me, action);
         spent++;
         if (!res.ok) continue;
-        const after = settle(res.state);
+        const after = settle(res.state, w);
         const line = [...node.line, action];
         if (after.winner === me) return [{ state: after, line, risk: 0, score: WIN }];
         // Settling assumed the trap was not sprung. This is what that assumption
-        // is worth, charged once for every window the line opened.
+        // is worth, charged once for every window the line opened. A Store
+        // window is not one of them: nothing can be cast into a negotiation.
         const risk =
           node.risk +
-          (res.state.pending ? w.trapWindow * trapRisk(res.state, reads) : 0);
+          (res.state.pending && res.state.pending.kind !== 'store'
+            ? w.trapWindow * trapRisk(res.state, reads)
+            : 0);
         const leaf: Leaf = { state: after, line, risk, score: evaluate(after, me, w) - risk };
         leaves.push(leaf);
         if (turnGoesOn(after, me)) next.push(leaf);
@@ -1052,6 +1541,8 @@ let plan: Plan | null = null;
 /** Forget the planned turn. Exposed so a test can time one decision on its own. */
 export function clearPlan(): void {
   plan = null;
+  shopPrices.clear();
+  shopDeals.clear();
 }
 
 /** The next action of the standing plan, or null if there is nothing to follow. */
@@ -1099,6 +1590,20 @@ export function chooseAction(
   me: PlayerIdx,
   w: BotWeights = defaultWeights,
 ): Action {
+  // Shops are priced against the board this decision is made on and the price
+  // stands for the whole of it, searches included.
+  shopPrices.clear();
+  shopDeals.clear();
+
+  // Haggling is a policy rather than a search: the evaluator cannot price an
+  // offer that only pays off if the other side takes it, and a one-ply loop
+  // over the window reads every counter as a wasted action. The policy answers
+  // for whichever side the window waits on, so it is always legal to send.
+  if (state.pending?.kind === 'store') {
+    plan = null;
+    return storeMove(state, state.pending, w);
+  }
+
   const pass = passAction(state);
 
   // In a response window, standing still means letting the attack resolve, so
@@ -1109,10 +1614,10 @@ export function chooseAction(
     const passed = applyAction(state, me, pass);
     let best = pass;
     let bestScore = evaluate(passed.ok ? passed.state : state, me, w);
-    for (const action of candidateActions(state, me)) {
+    for (const action of candidateActions(state, me, w)) {
       const res = applyAction(state, me, action);
       if (!res.ok) continue;
-      const score = evaluate(settle(res.state), me, w);
+      const score = evaluate(settle(res.state, w), me, w);
       if (score > bestScore + 1e-6) {
         bestScore = score;
         best = action;

@@ -259,8 +259,8 @@ describe('a room reads its settings off its own name', () => {
 });
 
 describe('the draft clock', () => {
-  it('runs eight minutes', () => {
-    expect(DRAFT_SECONDS).toBe(480);
+  it('runs fifteen minutes', () => {
+    expect(DRAFT_SECONDS).toBe(900);
   });
 });
 

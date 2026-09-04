@@ -23,6 +23,18 @@ public static class Triple
     private static readonly TripleKit Grp = new("GRP", Color.R, Color.P, Color.O);
     private static readonly TripleKit Gry = new("GRY", Color.P, Color.R, Color.S);
     private static readonly TripleKit Ryp = new("RYP", Color.P, Color.O, Color.S);
+    // The Candy legends. Every trio that carries Candy frames it, so all ten of
+    // these pay Candy when they are faced as supporters.
+    private static readonly TripleKit Mbp = new("MBP", Color.F, Color.K, Color.O);
+    private static readonly TripleKit Mbr = new("MBR", Color.K, Color.F, Color.P);
+    private static readonly TripleKit Mby = new("MBY", Color.K, Color.F, Color.S);
+    private static readonly TripleKit Mgb = new("MGB", Color.R, Color.K, Color.F);
+    private static readonly TripleKit Mgp = new("MGP", Color.K, Color.R, Color.O);
+    private static readonly TripleKit Mgr = new("MGR", Color.K, Color.R, Color.P);
+    private static readonly TripleKit Mgy = new("MGY", Color.K, Color.R, Color.S);
+    private static readonly TripleKit Mpr = new("MPR", Color.K, Color.O, Color.P);
+    private static readonly TripleKit Mpy = new("MPY", Color.K, Color.O, Color.S);
+    private static readonly TripleKit Myr = new("MYR", Color.K, Color.S, Color.P);
 
     /// <summary>
     /// The supporter Banana Mage hands across the table. Neutral, so it pays
@@ -367,6 +379,248 @@ public static class Triple
                         c.Choose("deal-1", c.SummonsOf(c.Opp), "Which enemy summon takes 1?");
                     }
                 },
+            })),
+
+        // --- the Candy legends -------------------------------------------------
+        Mbp.Summon("Vier", "Vier", F(Faction.Mortal, Faction.Scholar), str: 4, hp: 3,
+            text: "At the end of your turn, gain 1 Love for each enemy summon with a Wound.",
+            triggers: new Triggers
+            {
+                OnEndTurn = c =>
+                {
+                    int n = 0;
+                    foreach (var r in c.SummonsOf(c.Opp))
+                    {
+                        if (c.SummonAt(r) is { Wounds: > 0 }) n++;
+                    }
+                    if (n > 0) c.GainLove(c.Me, n);
+                },
+            },
+            powers: Powers(
+                new Power
+                {
+                    Name = "Slice",
+                    Cost = default,
+                    Text = "Put 2 Wounds on an enemy summon.",
+                    SapSelf = true,
+                    Targets = Specs(Enemy()),
+                    Effect = c => c.Wound(c.Target(0), 2),
+                },
+                new Power
+                {
+                    Name = "Eviscerate",
+                    Cost = new Cost(K: 1, F: 1, O: 1),
+                    Text = "Deal 2 to any character. Love: +1 damage per 3 spent.",
+                    SapSelf = true,
+                    Targets = Specs(AnyOrLeader("a character")),
+                    Effect = c =>
+                    {
+                        int spent = c.SpendLove(c.Me);
+                        c.Damage(c.Target(0), 2 + spent / 3);
+                    },
+                })),
+
+        Mbr.Summon("Saraza", "Saraza", F(Faction.Mortal), str: 2, hp: 2,
+            text: "Has +1 attack for each Love you hold.",
+            triggers: new Triggers
+            {
+                StrengthBonus = a =>
+                {
+                    if (a.Summon.CardId != "m-mbr-saraza" || a.Summon.Owner != a.Controller) return 0;
+                    return a.State.Players[a.Controller].Love;
+                },
+            },
+            powers: Powers(new Power
+            {
+                Name = "Dead or Alive",
+                Cost = new Cost(K: 1, F: 1, P: 1),
+                Text = "Deal 2 to a summon and gain 2 Love.",
+                SapSelf = true,
+                Targets = Specs(Any()),
+                Effect = c =>
+                {
+                    c.Damage(c.Target(0), 2);
+                    c.GainLove(c.Me, 2);
+                },
+            })),
+
+        Mby.Summon("WellWorthit", "Well Worth It", F(Faction.Spirit), str: 2, hp: 6,
+            text: "Whenever you take debt, gain 1 Love.",
+            triggers: new Triggers { OnDebtTaken = c => c.GainLove(c.Me, 1) },
+            powers: Powers(new Power
+            {
+                Name = "Treat Yourself",
+                Cost = new Cost(K: 1, F: 1, S: 1),
+                Text = "Heal 3 debt, then heal your leader for 3.",
+                SapSelf = true,
+                Effect = c =>
+                {
+                    c.ClearDebt(c.Me, 3);
+                    c.Unflip(TargetRef.Leader(c.Me), 3);
+                },
+            })),
+
+        Mgb.Summon("CodeInfestedSweetling", "Code-Infested Sweetling",
+            F(Faction.Saccharine, Faction.Machine), str: 1, hp: 1,
+            text: "Whenever an ally dies, gain 2 Love.",
+            triggers: new Triggers
+            {
+                OnOtherDeath = c =>
+                {
+                    if (c.State.DyingOwner != c.Me) return;
+                    c.GainLove(c.Me, 2);
+                },
+            },
+            powers: Powers(new Power
+            {
+                Name = "Sugar Patch",
+                Cost = new Cost(K: 1, R: 1, F: 1),
+                Text = "Your other allies gain a Power Shield. Love: +1 Power Shield per 3 spent.",
+                SapSelf = true,
+                Effect = c =>
+                {
+                    int spent = c.SpendLove(c.Me);
+                    int count = 1 + spent / 3;
+                    foreach (var r in c.SummonsOf(c.Me, true))
+                    {
+                        var s = c.SummonAt(r);
+                        if (s is null || ReferenceEquals(s, c.Source)) continue;
+                        c.Shield(r, count);
+                    }
+                },
+            })),
+
+        Mgp.Summon("GodOfMisfortune", "God of Misfortune", F(Faction.Spirit), str: 2, hp: 6,
+            text: "At the start of your turn, Scry 6 for any card, then every player takes 1 debt.",
+            triggers: new Triggers
+            {
+                OnAwake = c =>
+                {
+                    c.Dig(c.Me, 6, _ => true);
+                    c.AddDebt(c.Me, 1, "Misfortune finds everyone.");
+                    c.AddDebt(c.Opp, 1, "Misfortune finds everyone.");
+                },
+            },
+            powers: Powers(new Power
+            {
+                Name = "Misfortune",
+                Cost = new Cost(K: 1, R: 1, O: 1),
+                Text = "Move 1 of your debt onto every other player.",
+                SapSelf = true,
+                Effect = c =>
+                {
+                    if (c.State.Players[c.Me].DebtCount == 0)
+                    {
+                        c.Log("Nothing owed, nothing to pass on.");
+                        return;
+                    }
+                    c.ClearDebt(c.Me, 1);
+                    c.AddDebt(c.Opp, 1, "The reckoning changes hands.");
+                },
+            })),
+
+        Mgr.Summon("RansomwareArtist", "Ransomware Artist",
+            F(Faction.Mortal, Faction.Machine), str: 1, hp: 2,
+            text: "Store: Heal 6 debt, then Mill 10.",
+            store: new StoreDef
+            {
+                Useful = (state, user) => state.Players[user].DebtCount > 0,
+                Effect = c =>
+                {
+                    c.ClearDebt(c.Me, 6);
+                    c.Mill(c.Me, 10);
+                },
+            },
+            powers: Powers(new Power
+            {
+                Name = "Extort",
+                Cost = new Cost(K: 1, R: 1, P: 1),
+                Text = "Deal 2 debt and gain 1 Love.",
+                SapSelf = true,
+                Effect = c =>
+                {
+                    c.AddDebt(c.Opp, 2, "The ransom is due.");
+                    c.GainLove(c.Me, 1);
+                },
+            })),
+
+        Mgy.Summon("TheThorn", "The Thorn", F(Faction.Ernum), str: 3, hp: 2,
+            text: "Store: A character gains a Power Shield. "
+                + "Whenever you play a Hedron, deal 1 to an enemy summon.",
+            store: new StoreDef
+            {
+                Targets = Specs(AnyOrLeader("a character")),
+                Effect = c => { if (c.TargetOrNull(0) is { } t) c.Shield(t, 1); },
+            },
+            triggers: new Triggers
+            {
+                OnSummonPlayed = c =>
+                {
+                    var played = c.SummonAt(c.Target(0));
+                    if (played is null || played.Owner != c.Me) return;
+                    if (!Registry.Card(played.CardId).HasFaction(Faction.Hedron)) return;
+                    c.Choose("deal-1", c.SummonsOf(c.Opp), "Deal 1 to which enemy summon?");
+                },
+            },
+            powers: Powers(new Power
+            {
+                // Three pips across three colours is the brake, so this one does not sap.
+                Name = "Skewer",
+                Cost = new Cost(K: 1, R: 1, S: 1),
+                Text = "Deal 5 to a summon.",
+                Targets = Specs(Any()),
+                Effect = c => c.Damage(c.Target(0), 5),
+            })),
+
+        Mpr.Summon("HumanitysDefender", "Humanity's Defender",
+            F(Faction.Mortal, Faction.Spirit), str: 3, hp: 10,
+            redirect: true,
+            text: "Redirection. Your other Mortals have +1 attack.",
+            triggers: new Triggers
+            {
+                StrengthBonus = a => a.Summon.Owner == a.Controller
+                    && a.Def.HasFaction(Faction.Mortal)
+                    && a.Summon.CardId != "m-mpr-humanitysdefender" ? 1 : 0,
+            },
+            powers: Powers(new Power
+            {
+                Name = "Last Stand",
+                Cost = new Cost(K: 1, O: 1, P: 1),
+                Text = "Heal your leader for 10.",
+                SapSelf = true,
+                Effect = c => c.Unflip(TargetRef.Leader(c.Me), 10),
+            })),
+
+        Mpy.Summon("Sopapli", "Sopapli", F(Faction.Spirit), str: 1, hp: 7,
+            text: "At the start of your turn, gain 1 Love.",
+            triggers: new Triggers { OnAwake = c => c.GainLove(c.Me, 1) },
+            powers: Powers(new Power
+            {
+                Name = "Tranquility",
+                Cost = new Cost(K: 1, O: 1, S: 1),
+                Text = "Heal every character for 2.",
+                SapSelf = true,
+                Effect = c =>
+                {
+                    foreach (var r in c.SummonsOf(c.Me, true)) c.Unflip(r, 2);
+                    foreach (var r in c.SummonsOf(c.Opp, true)) c.Unflip(r, 2);
+                },
+            })),
+
+        Myr.Summon("Hellmage", "Hellmage", F(Faction.Spirit), str: 2, hp: 3,
+            effectDamage: 1,
+            text: "Effect Damage +1. At the end of your turn, every enemy character heals 1.",
+            triggers: new Triggers
+            {
+                OnEndTurn = c => { foreach (var r in c.SummonsOf(c.Opp, true)) c.Unflip(r, 1); },
+            },
+            powers: Powers(new Power
+            {
+                Name = "Hellfire",
+                Cost = new Cost(K: 1, S: 1, P: 1),
+                Text = "Deal 2 to every enemy character.",
+                SapSelf = true,
+                Effect = c => { foreach (var r in c.SummonsOf(c.Opp, true)) c.Damage(r, 2); },
             })),
     };
 

@@ -22,8 +22,12 @@ public sealed class Encoder
     /// <summary>Leader plus the summon slots, one side of the table.</summary>
     public const int PerSide = 1 + Rules.SummonSlots;
     public const int Entities = 2 * PerSide;
-    public const int EntityChannels = 26 + 2 * Rules.SummonSlots;
-    public const int ScalarCount = 84;
+    // The per-colour one-hot writes one channel per entry of Colors.All, so
+    // this grew with the sixth colour.
+    public const int EntityChannels = 27 + 2 * Rules.SummonSlots;
+    // Four scalar rows write one value per entry of Colors.All (both mana
+    // pools and both identities), so this grew by four with the sixth colour.
+    public const int ScalarCount = 88;
 
     private readonly int _me;
     private readonly int _enemy;

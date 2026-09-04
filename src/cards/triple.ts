@@ -6,6 +6,7 @@ import {
   colorOf,
   findSummon,
   levelOf,
+  livingOpponents,
   otherPlayer,
   powersOf,
   remainingHp,
@@ -32,6 +33,19 @@ const gpy = tripleKit('GPY', 'O', 'R', 'S');
 const grp = tripleKit('GRP', 'R', 'P', 'O');
 const gry = tripleKit('GRY', 'P', 'R', 'S');
 const ryp = tripleKit('RYP', 'P', 'O', 'S');
+// The Candy legends. Most frame Candy and pay it as supporters; Vier wears
+// Fish and Code-Infested Sweetling wears Robot, the way Screener wears Robot
+// inside BGR.
+const mbp = tripleKit('MBP', 'F', 'K', 'O');
+const mbr = tripleKit('MBR', 'K', 'F', 'P');
+const mby = tripleKit('MBY', 'K', 'F', 'S');
+const mgb = tripleKit('MGB', 'R', 'K', 'F');
+const mgp = tripleKit('MGP', 'K', 'R', 'O');
+const mgr = tripleKit('MGR', 'K', 'R', 'P');
+const mgy = tripleKit('MGY', 'K', 'R', 'S');
+const mpr = tripleKit('MPR', 'K', 'O', 'P');
+const mpy = tripleKit('MPY', 'K', 'O', 'S');
+const myr = tripleKit('MYR', 'K', 'S', 'P');
 
 /**
  * The supporter Banana Mage hands across the table. Neutral, so it pays
@@ -371,6 +385,284 @@ export const tripleCards: CardDef[] = [
           }
           for (let i = 0; i < spells; i++) {
             c.choose('deal-1', c.summonsOf(c.opp), 'Which enemy summon takes 1?');
+          }
+        },
+      },
+    ],
+  }),
+
+  // --- the Candy legends -----------------------------------------------------
+  mbp.summon('Vier', 'Vier', ['Mortal', 'Scholar'], {
+    str: 4,
+    hp: 3,
+    text: 'At the end of your turn, gain 1 Love for each enemy summon with a Wound.',
+    triggers: {
+      onEndTurn: (c) => {
+        let n = 0;
+        for (const foe of livingOpponents(c.state, c.me)) {
+          for (const ref of c.summonsOf(foe)) {
+            const s = c.summonAt(ref);
+            if (s && s.wounds > 0) n++;
+          }
+        }
+        if (n > 0) c.gainLove(c.me, n);
+      },
+    },
+    powers: [
+      {
+        name: 'Slice',
+        cost: {},
+        text: 'Put 2 Wounds on an enemy summon.',
+        sapSelf: true,
+        targets: [T.enemy()],
+        effect: (c) => c.wound(c.targets[0], 2),
+      },
+      {
+        name: 'Eviscerate',
+        cost: { K: 1, F: 1, O: 1 },
+        text: 'Deal 2 to any character. Love: +1 damage per 3 spent.',
+        sapSelf: true,
+        targets: [T.anyOrLeader('a character')],
+        effect: (c) => {
+          const spent = c.spendLove(c.me);
+          c.damage(c.targets[0], 2 + Math.floor(spent / 3));
+        },
+      },
+    ],
+  }),
+
+  mbr.summon('Saraza', 'Saraza', ['Mortal'], {
+    str: 2,
+    hp: 2,
+    text: 'Has +1 attack for each Love you hold.',
+    triggers: {
+      strengthBonus: ({ state, controller, summon }) => {
+        if (summon.cardId !== 'm-mbr-saraza' || summon.owner !== controller) return 0;
+        return state.players[controller].love;
+      },
+    },
+    powers: [
+      {
+        name: 'Dead or Alive',
+        cost: { K: 1, F: 1, P: 1 },
+        text: 'Deal 2 to a summon and gain 2 Love.',
+        sapSelf: true,
+        targets: [T.any()],
+        effect: (c) => {
+          c.damage(c.targets[0], 2);
+          c.gainLove(c.me, 2);
+        },
+      },
+    ],
+  }),
+
+  mby.summon('WellWorthit', 'Well Worth It', ['Spirit'], {
+    str: 2,
+    hp: 6,
+    text: 'Whenever you take debt, gain 1 Love.',
+    triggers: {
+      onDebtTaken: (c) => c.gainLove(c.me, 1),
+    },
+    powers: [
+      {
+        name: 'Treat Yourself',
+        cost: { K: 1, F: 1, S: 1 },
+        text: 'Heal 3 debt, then heal your leader for 3.',
+        sapSelf: true,
+        effect: (c) => {
+          c.clearDebt(c.me, 3);
+          c.unflip({ kind: 'leader', player: c.me }, 3);
+        },
+      },
+    ],
+  }),
+
+  mgb.summon('CodeInfestedSweetling', 'Code-Infested Sweetling', ['Saccharine', 'Machine'], {
+    str: 1,
+    hp: 1,
+    text: 'Whenever an ally dies, gain 2 Love.',
+    triggers: {
+      onOtherDeath: (c) => {
+        if (c.state.dyingOwner !== c.me) return;
+        c.gainLove(c.me, 2);
+      },
+    },
+    powers: [
+      {
+        name: 'Sugar Patch',
+        cost: { K: 1, R: 1, F: 1 },
+        text: 'Your other allies gain a Power Shield. Love: +1 Power Shield per 3 spent.',
+        sapSelf: true,
+        effect: (c) => {
+          const spent = c.spendLove(c.me);
+          const count = 1 + Math.floor(spent / 3);
+          for (const ref of c.summonsOf(c.me, true)) {
+            const s = c.summonAt(ref);
+            if (!s || s === c.source) continue;
+            c.shield(ref, count);
+          }
+        },
+      },
+    ],
+  }),
+
+  mgp.summon('GodOfMisfortune', 'God of Misfortune', ['Spirit'], {
+    str: 2,
+    hp: 6,
+    text: 'At the start of your turn, Scry 6 for any card, then every player takes 1 debt.',
+    triggers: {
+      onAwake: (c) => {
+        c.dig(c.me, 6, () => true);
+        for (const p of [c.me, ...livingOpponents(c.state, c.me)]) {
+          c.addDebt(p, 1, 'Misfortune finds everyone.');
+        }
+      },
+    },
+    powers: [
+      {
+        name: 'Misfortune',
+        cost: { K: 1, R: 1, O: 1 },
+        text: 'Move 1 of your debt onto every other player.',
+        sapSelf: true,
+        effect: (c) => {
+          if (c.state.players[c.me].debtCount === 0) {
+            c.log('Nothing owed, nothing to pass on.');
+            return;
+          }
+          for (const foe of livingOpponents(c.state, c.me)) {
+            c.clearDebt(c.me, 1);
+            c.addDebt(foe, 1, 'The reckoning changes hands.');
+          }
+        },
+      },
+    ],
+  }),
+
+  mgr.summon('RansomwareArtist', 'Ransomware Artist', ['Mortal', 'Machine'], {
+    str: 1,
+    hp: 2,
+    text: 'Store: Heal 6 debt, then Mill 10.',
+    store: {
+      useful: (state, user) => state.players[user].debtCount > 0,
+      effect: (c) => {
+        c.clearDebt(c.me, 6);
+        c.mill(c.me, 10);
+      },
+    },
+    powers: [
+      {
+        name: 'Extort',
+        cost: { K: 1, R: 1, P: 1 },
+        text: 'Deal 2 debt and gain 1 Love.',
+        sapSelf: true,
+        effect: (c) => {
+          c.addDebt(c.opp, 2, 'The ransom is due.');
+          c.gainLove(c.me, 1);
+        },
+      },
+    ],
+  }),
+
+  mgy.summon('TheThorn', 'The Thorn', ['Ernum'], {
+    str: 3,
+    hp: 2,
+    text:
+      'Store: A character gains a Power Shield. ' +
+      'Whenever you play a Hedron, deal 1 to an enemy summon.',
+    store: {
+      targets: [T.anyOrLeader('a character')],
+      effect: (c) => {
+        if (c.targets[0]) c.shield(c.targets[0], 1);
+      },
+    },
+    triggers: {
+      onSummonPlayed: (c) => {
+        const played = c.summonAt(c.targets[0]);
+        if (!played || played.owner !== c.me) return;
+        if (!card(played.cardId).factions?.includes('Hedron')) return;
+        const refs = livingOpponents(c.state, c.me).flatMap((foe) => c.summonsOf(foe));
+        c.choose('deal-1', refs, 'Deal 1 to which enemy summon?');
+      },
+    },
+    powers: [
+      {
+        // Three pips across three colours is the brake, so this one does not sap.
+        name: 'Skewer',
+        cost: { K: 1, R: 1, S: 1 },
+        text: 'Deal 5 to a summon.',
+        targets: [T.any()],
+        effect: (c) => c.damage(c.targets[0], 5),
+      },
+    ],
+  }),
+
+  mpr.summon("HumanitysDefender", "Humanity's Defender", ['Mortal', 'Spirit'], {
+    str: 3,
+    hp: 10,
+    redirect: true,
+    text: 'Redirection. Your other Mortals have +1 attack.',
+    triggers: {
+      strengthBonus: ({ controller, summon, def }) =>
+        summon.owner === controller &&
+        def.factions?.includes('Mortal') &&
+        summon.cardId !== 'm-mpr-humanitysdefender'
+          ? 1
+          : 0,
+    },
+    powers: [
+      {
+        name: 'Last Stand',
+        cost: { K: 1, O: 1, P: 1 },
+        text: 'Heal your leader for 10.',
+        sapSelf: true,
+        effect: (c) => c.unflip({ kind: 'leader', player: c.me }, 10),
+      },
+    ],
+  }),
+
+  mpy.summon('Sopapli', 'Sopapli', ['Spirit'], {
+    str: 1,
+    hp: 7,
+    text: 'At the start of your turn, gain 1 Love.',
+    triggers: {
+      onAwake: (c) => c.gainLove(c.me, 1),
+    },
+    powers: [
+      {
+        name: 'Tranquility',
+        cost: { K: 1, O: 1, S: 1 },
+        text: 'Heal every character for 2.',
+        sapSelf: true,
+        effect: (c) => {
+          for (const p of [c.me, ...livingOpponents(c.state, c.me)]) {
+            for (const ref of c.summonsOf(p, true)) c.unflip(ref, 2);
+          }
+        },
+      },
+    ],
+  }),
+
+  myr.summon('Hellmage', 'Hellmage', ['Spirit'], {
+    str: 2,
+    hp: 3,
+    effectDamage: 1,
+    text: 'Effect Damage +1. At the end of your turn, every enemy character heals 1.',
+    triggers: {
+      onEndTurn: (c) => {
+        for (const foe of livingOpponents(c.state, c.me)) {
+          for (const ref of c.summonsOf(foe, true)) c.unflip(ref, 1);
+        }
+      },
+    },
+    powers: [
+      {
+        name: 'Hellfire',
+        cost: { K: 1, S: 1, P: 1 },
+        text: 'Deal 2 to every enemy character.',
+        sapSelf: true,
+        effect: (c) => {
+          for (const foe of livingOpponents(c.state, c.me)) {
+            for (const ref of c.summonsOf(foe, true)) c.damage(ref, 2);
           }
         },
       },

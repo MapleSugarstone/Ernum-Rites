@@ -3,9 +3,21 @@ import { registerChoiceResolver } from '../engine/choices';
 import { findSummon } from '../engine/state';
 import { log, toHand } from '../engine/effects';
 import { effectiveStrength } from '../engine/effects';
-import { fusedRecomp, livingSummon, pepperRobotCopy } from '../engine/generated';
-import { battleAttacker, battleDefender, levelOf, remainingHp } from '../engine/state';
-import { costTotal, type CardDef } from '../engine/types';
+import {
+  fusedRecomp,
+  hedronCopy,
+  livingSummon,
+  pepperRobotCopy,
+  robotColorlessCopy,
+} from '../engine/generated';
+import {
+  battleAttacker,
+  battleDefender,
+  levelOf,
+  livingOpponents,
+  remainingHp,
+} from '../engine/state';
+import { costTotal, type CardDef, type TargetSpec } from '../engine/types';
 import { T, artPath, dualKit, selfRef } from './build';
 
 // Dual-colour cards are where the factions actually pay off.
@@ -19,6 +31,28 @@ const yb = dualKit('YB', 'S', 'F');
 const yg = dualKit('YG', 'S', 'R');
 const yp = dualKit('YP', 'S', 'O');
 const yr = dualKit('YR', 'S', 'P');
+// Candy pairs with each of the other five. The frame is Candy on most of
+// them, so the folder letter leads with M and the kit reads K first.
+const mb = dualKit('MB', 'K', 'F');
+const mg = dualKit('MG', 'K', 'R');
+const mp = dualKit('MP', 'K', 'O');
+const mr = dualKit('MR', 'K', 'P');
+const my = dualKit('MY', 'K', 'S');
+// Reversed frames on the same folders: the folder names the art, the kit
+// names the colours, so Loanshark prints Fish and Red Sweets prints Pepper.
+const bm = dualKit('MB', 'F', 'K');
+const rm = dualKit('MR', 'P', 'K');
+
+/** A character with something to heal, which is the only one worth pointing at. */
+function damagedCharacter(label: string): TargetSpec {
+  return {
+    kind: 'summon',
+    side: 'any',
+    includeLeader: true,
+    label,
+    filter: (a) => !!a.summon && a.summon.hp.some((h) => h.flipped),
+  };
+}
 
 /**
  * The five-colour leader. Its art sits outside the Mixed tree and it carries
@@ -26,12 +60,14 @@ const yr = dualKit('YR', 'S', 'P');
  * rather than run through a pair kit.
  *
  * A leader whose identity is every colour makes every card legal in its deck,
- * which is the point: the ritual has to be paid in all five.
+ * which is the point: the ritual has to be paid in all five. What it prints is
+ * Ernum, a colour of its own, so facing it as a supporter pays Ernum mana and
+ * that one covers a pip of any colour.
  */
 const ernum: CardDef = {
   id: 'm-ernum',
   name: 'Ernum',
-  color: 'P',
+  color: 'E',
   identity: ['P', 'O', 'R', 'F', 'S'],
   type: 'summon',
   level: 3,
@@ -63,6 +99,16 @@ const ernum: CardDef = {
         c.grantEffectDamage(me, 3);
         c.clearDebt(c.me, 6);
       },
+    },
+    {
+      // The Candy pip is what folds the sixth colour into Ernum's leader
+      // identity: deckIdentity reads power costs, so this line alone is what
+      // lets an Ernum deck run the Candy cards.
+      name: 'Sentimental',
+      cost: { K: 1 },
+      text: 'Gain 1 Love.',
+      sapSelf: true,
+      effect: (c) => c.gainLove(c.me, 1),
     },
   ],
 };
@@ -1009,6 +1055,400 @@ export const mixedCards: CardDef[] = [
     text: 'All enemies have -1 attack.',
     stageHooks: {
       strengthBonus: ({ controller, summon }) => (summon.owner === controller ? 0 : -1),
+    },
+  }),
+
+  // --- Candy and Fish: the shop floor and the water ---------------------------
+  mb.summon(2, 'CandyCraver', 'Candy Craver', ['Mortal'], {
+    str: 2,
+    hp: 3,
+    text: 'Whenever you buy from a Store, draw a card.',
+    triggers: {
+      onStoreBought: (c) => c.draw(c.me, 1),
+    },
+    powers: [
+      {
+        name: 'Sweet Tooth',
+        cost: { K: 1, F: 1 },
+        text: 'Gain 1 Love, then draw a card.',
+        sapSelf: true,
+        effect: (c) => {
+          c.gainLove(c.me, 1);
+          c.draw(c.me, 1);
+        },
+      },
+    ],
+  }),
+  mb.summon(2, 'CandyFish', 'Candy Fish', ['Saccharine', 'Fish'], {
+    str: 2,
+    hp: 4,
+    powers: [
+      {
+        name: 'Bubblegum Stream',
+        cost: { K: 1, F: 1 },
+        text: 'Scry 3 for a Fish or a Saccharine.',
+        sapSelf: true,
+        effect: (c) => {
+          c.dig(
+            c.me,
+            3,
+            (d) => !!d.factions?.includes('Fish') || !!d.factions?.includes('Saccharine'),
+          );
+        },
+      },
+    ],
+    flipText: 'Gain 1 Love.',
+    flip: (c) => c.gainLove(c.me, 1),
+  }),
+  bm.summon(3, 'loanshark', 'Loanshark', ['Fish', 'Beast'], {
+    str: 3,
+    hp: 5,
+    debtAmplify: true,
+    text: 'Whenever a player takes debt, they take 1 more.',
+    powers: [
+      {
+        name: 'Collect',
+        cost: { K: 1, F: 1 },
+        text: 'Deal 1 debt.',
+        sapSelf: true,
+        effect: (c) => c.addDebt(c.opp, 1, 'The loanshark collects.'),
+      },
+    ],
+  }),
+  mb.spell('IcecubeCandy', 'Icecube Candy', { K: 1, F: 1 }, {
+    text: 'Shuffle 8 cards from your discard pile into your deck. Draw a card.',
+    effect: (c) => {
+      c.recycleDiscard(c.me, 8);
+      c.draw(c.me, 1);
+    },
+  }),
+  mb.spell('TropicalBlueDrink', 'Tropical Blue Drink', { K: 1, F: 1 }, {
+    text: 'Heal an ally for 3. Love: Heal 1 more.',
+    targets: [T.allyOrLeader()],
+    effect: (c) => {
+      const n = c.spendLove(c.me);
+      c.unflip(c.targets[0], 3 + n);
+    },
+  }),
+
+  // --- Candy and Robot: the graduate scheme ----------------------------------
+  mg.summon(2, 'CuriousPilgrim', 'Curious Pilgrim', ['Mortal', 'Hedron'], {
+    str: 2,
+    hp: 4,
+    text: 'Store: Scry 2 for any card.',
+    store: {
+      useful: (state, user) => state.players[user].deck.length > 0,
+      effect: (c) => c.dig(c.me, 2, () => true),
+    },
+    powers: [
+      {
+        name: 'Wander',
+        cost: { K: 1, R: 1 },
+        text: 'Draw a card, then heal 1 debt.',
+        sapSelf: true,
+        effect: (c) => {
+          c.draw(c.me, 1);
+          c.clearDebt(c.me, 1);
+        },
+      },
+    ],
+  }),
+  mg.summon(2, 'NewGrad', 'New Grad', ['Mortal', 'Scholar'], {
+    str: 2,
+    hp: 3,
+    text: "Store: Draw the top card of another player's deck, rebuilt in Robot with its cost turned colorless.",
+    store: {
+      // The deck is named by its owner's leader, the way Loan names a player.
+      targets: [
+        {
+          kind: 'summon',
+          side: 'enemy',
+          includeLeader: true,
+          label: 'a player, by their leader',
+          filter: (a) => a.ref.kind === 'leader',
+        },
+      ],
+      useful: (state, user) =>
+        livingOpponents(state, user).some((p) => state.players[p].deck.length > 0),
+      effect: (c) => {
+        const t = c.targets[0];
+        if (t?.kind !== 'leader') return;
+        const id = c.state.players[t.player].deck.shift();
+        if (!id) {
+          c.log('That deck is empty.');
+          return;
+        }
+        c.toHand(c.me, robotColorlessCopy(id));
+      },
+    },
+    powers: [
+      {
+        name: 'Job Application Fees',
+        cost: { K: 1, R: 1 },
+        text: 'Draw 2 cards, then take 1 debt.',
+        sapSelf: true,
+        effect: (c) => {
+          c.draw(c.me, 2);
+          c.addDebt(c.me, 1, 'The hours are billed back.');
+        },
+      },
+    ],
+  }),
+  mg.spell('AbsurdlySourCandy', 'Absurdly Sour Candy', { K: 1, R: 1 }, {
+    text: 'Deal 2 to an enemy summon and it loses 2 attack.',
+    targets: [T.enemy()],
+    effect: (c) => {
+      c.damage(c.targets[0], 2);
+      c.buffStrength(c.targets[0], -2, 'permanent');
+    },
+  }),
+  mg.spell('CandyVirus', 'Candy Virus', { K: 1, R: 1 }, {
+    text: 'Deal 2 to an enemy summon. If it dies, gain 2 Love.',
+    targets: [T.enemy()],
+    effect: (c) => {
+      c.damage(c.targets[0], 2);
+      if (!c.summonAt(c.targets[0])) c.gainLove(c.me, 2);
+    },
+  }),
+  mg.spell('HedronFragments', 'Hedron Fragments', { K: 1, R: 1 }, {
+    text: 'Each of your summons gains 1 HP off your deck. Affected summons are permanently Hedrons.',
+    effect: (c) => {
+      for (const ref of c.summonsOf(c.me)) {
+        c.reinforce(ref, 1);
+        const s = c.summonAt(ref);
+        if (!s || card(s.cardId).factions?.includes('Hedron')) continue;
+        c.transform(ref, hedronCopy(s.cardId));
+      }
+    },
+  }),
+
+  // --- Candy and Oil: the toll and the bones ---------------------------------
+  mp.summon(3, 'LenAphelion', 'Len-Aphelion', ['Spirit', 'Scholar'], {
+    str: 2,
+    hp: 5,
+    text: 'Your Beasts have +1 attack. At the start of your turn, Scry 2 for any card.',
+    triggers: {
+      strengthBonus: ({ controller, summon, def }) =>
+        summon.owner === controller && def.factions?.includes('Beast') ? 1 : 0,
+      onAwake: (c) => c.dig(c.me, 2, () => true),
+    },
+    powers: [
+      {
+        name: 'Umbral Slash',
+        cost: { K: 1, O: 1 },
+        text: 'Deal 1 to every enemy summon, and gain 1 Love for each that dies.',
+        sapSelf: true,
+        effect: (c) => {
+          // Every seat, not just one: "every enemy" reaches the whole party.
+          const refs = livingOpponents(c.state, c.me).flatMap((foe) => c.summonsOf(foe));
+          for (const ref of refs) c.damage(ref, 1);
+          let dead = 0;
+          for (const ref of refs) {
+            if (!c.summonAt(ref)) dead++;
+          }
+          if (dead > 0) c.gainLove(c.me, dead);
+        },
+      },
+    ],
+  }),
+  mp.summon(2, 'PairOfCritters', 'Pair of Critters', ['Saccharine', 'Beast'], {
+    str: 2,
+    hp: 3,
+    text: 'Battlecry: Gain 1 Love. Deathrattle: Gain 1 Love.',
+    triggers: {
+      onEnter: (c) => c.gainLove(c.me, 1),
+      onDeath: (c) => c.gainLove(c.me, 1),
+    },
+    powers: [
+      {
+        name: 'Nibble',
+        cost: { K: 1, O: 1 },
+        text: 'Put a Wound on every enemy summon.',
+        sapSelf: true,
+        effect: (c) => {
+          for (const foe of livingOpponents(c.state, c.me)) {
+            for (const ref of c.summonsOf(foe)) c.wound(ref, 1);
+          }
+        },
+      },
+    ],
+  }),
+  mp.spell('MarkOfTheFalseKing', 'Mark of the False King', { K: 1, O: 1 }, {
+    text: 'An enemy summon loses 2 attack. Its controller takes 1 debt.',
+    targets: [T.enemy()],
+    effect: (c) => {
+      const t = c.targets[0];
+      c.buffStrength(t, -2, 'permanent');
+      if (t?.kind === 'summon') c.addDebt(t.player, 1, 'The false king marks his own.');
+    },
+  }),
+  mp.spell('RottenCandy', 'Rotten Candy', { K: 1, O: 1 }, {
+    text: "Shuffle 3 Rot into the enemy's deck. Gain 1 Love.",
+    effect: (c) => {
+      c.curse(c.opp, 'o-curse-rot', 3);
+      c.gainLove(c.me, 1);
+    },
+  }),
+  mp.spell('SoldBones', 'Sold Bones', { K: 1, O: 1 }, {
+    text: 'Return a summon from your discard pile to your hand. Gain 1 Love.',
+    targets: [
+      {
+        kind: 'discard',
+        side: 'ally',
+        label: 'a summon in your discard pile',
+        optional: true,
+        filter: (a) => a.card?.type === 'summon',
+      },
+    ],
+    effect: (c) => {
+      if (c.targets[0]) c.reclaim(c.targets[0]);
+      c.gainLove(c.me, 1);
+    },
+  }),
+
+  // --- Candy and Pepper: the stall that sells heat ----------------------------
+  mr.summon(2, 'CandyAxeman', 'Candy Axeman', ['Saccharine', 'Mortal'], {
+    str: 3,
+    hp: 3,
+    text: 'Strike: Gain 1 Love.',
+    triggers: {
+      onAttack: (c) => c.gainLove(c.me, 1),
+    },
+    powers: [
+      {
+        name: 'Chop',
+        cost: { K: 1, P: 1 },
+        text: 'Deal 2 to an enemy summon.',
+        sapSelf: true,
+        targets: [T.enemy()],
+        effect: (c) => c.damage(c.targets[0], 2),
+      },
+    ],
+  }),
+  rm.summon(3, 'RedSweets', 'Red Sweets', ['Mortal', 'Scholar'], {
+    str: 3,
+    hp: 4,
+    text: 'Store: Take any card from your deck into your hand. Store costs +3.',
+    store: {
+      surcharge: 3,
+      useful: (state, user) => state.players[user].deck.length > 0,
+      effect: (c) => c.search(c.me, () => true),
+    },
+    powers: [
+      {
+        name: 'Pummel',
+        cost: { K: 1, P: 1 },
+        text: 'Deal 1 to an enemy summon and gain 1 Love.',
+        sapSelf: true,
+        targets: [T.enemy()],
+        effect: (c) => {
+          c.damage(c.targets[0], 1);
+          c.gainLove(c.me, 1);
+        },
+      },
+    ],
+  }),
+  mr.spell('AbsurdlySpicyCandy', 'Absurdly Spicy Candy', { K: 3, P: 2 }, {
+    text: 'Deal 2 to an enemy summon and 1 to the enemy leader. Love: Effect Damage +1.',
+    targets: [T.enemy()],
+    effect: (c) => {
+      const n = c.spendLove(c.me);
+      c.damage(c.targets[0], 2 + n);
+      c.damage({ kind: 'leader', player: c.opp }, 1 + n);
+    },
+  }),
+  mr.spell('DeflateCurrency', 'Deflate Currency', { K: 1, P: 1 }, {
+    text: 'Deal 2 debt, then gain 1 Love.',
+    effect: (c) => {
+      c.addDebt(c.opp, 2);
+      c.gainLove(c.me, 1);
+    },
+  }),
+  mr.spell('RedTape', 'Red Tape', { K: 1, P: 1 }, {
+    text: 'Sap an enemy summon. It does not unsap the next time it would.',
+    targets: [T.enemy()],
+    effect: (c) => {
+      c.sap(c.targets[0]);
+      const s = c.summonAt(c.targets[0]);
+      if (s) s.sapLock = true;
+    },
+  }),
+
+  // --- Candy and Solar: the lemonade stand ------------------------------------
+  my.summon(2, 'LittleGummyBear', 'Little Gummy Bear', ['Saccharine', 'Beast'], {
+    str: 2,
+    hp: 4,
+    text: 'Battlecry: Gain 1 Love.',
+    triggers: {
+      onEnter: (c) => c.gainLove(c.me, 1),
+    },
+    powers: [
+      {
+        name: 'Squish',
+        cost: { K: 1, S: 1 },
+        text: 'Heal a character for 3.',
+        sapSelf: true,
+        targets: [damagedCharacter('a character to heal')],
+        effect: (c) => {
+          if (c.targets[0]) c.unflip(c.targets[0], 3);
+        },
+      },
+    ],
+    flipText: 'Gain 1 Love.',
+    flip: (c) => c.gainLove(c.me, 1),
+  }),
+  my.summon(3, 'PinkLemonader', 'Pink Lemonader', ['Beast'], {
+    str: 3,
+    hp: 4,
+    text: 'Store: Each of your summons heals 4.',
+    store: {
+      useful: (state, user) =>
+        state.players[user].slots.some((s) => !!s && s.hp.some((h) => h.flipped)),
+      effect: (c) => {
+        for (const ref of c.summonsOf(c.me)) c.unflip(ref, 4);
+      },
+    },
+    powers: [
+      {
+        name: 'Fresh Squeeze',
+        cost: { K: 1, S: 1 },
+        text: 'Heal your leader for 2 and gain 1 Love.',
+        sapSelf: true,
+        effect: (c) => {
+          c.unflip({ kind: 'leader', player: c.me }, 2);
+          c.gainLove(c.me, 1);
+        },
+      },
+    ],
+  }),
+  my.spell('CandySun', 'Candy Sun', { K: 1, S: 1 }, {
+    text: 'Each of your characters heals 2, then gain 2 Love.',
+    effect: (c) => {
+      for (const ref of c.summonsOf(c.me, true)) c.unflip(ref, 2);
+      c.gainLove(c.me, 2);
+    },
+  }),
+  my.spell('MoltenCandyBolt', 'Molten Candy Bolt', { K: 1, S: 1 }, {
+    text: 'Deal 3 to a summon, then heal an ally for 2.',
+    targets: [T.any(), T.allyOrLeader()],
+    effect: (c) => {
+      c.damage(c.targets[0], 3);
+      c.unflip(c.targets[1], 2);
+    },
+  }),
+  my.spell('SourSoda', 'Sour Soda', { K: 1, S: 1 }, {
+    text: 'Unsap an ally summon, then heal it for 3.',
+    targets: [
+      {
+        kind: 'summon',
+        side: 'ally',
+        label: 'a sapped ally summon',
+        filter: (a) => !!a.summon?.sapped,
+      },
+    ],
+    effect: (c) => {
+      c.unsap(c.targets[0]);
+      c.unflip(c.targets[0], 3);
     },
   }),
 ];

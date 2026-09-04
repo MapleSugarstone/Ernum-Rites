@@ -86,9 +86,11 @@ public static class Learning
             {
                 if (CardIndex.Def(c).Color != CardIndex.Def(c - 1).Color) changes++;
             }
-            // Six colours, neutral among them, means five boundaries if the
-            // ordering is doing its job.
-            Harness.Eq(5, changes, "colour boundaries along the axis");
+            // One boundary between each pair of neighbouring colours, counted off
+            // the set rather than pinned, so printing a new colour does not
+            // read as the ordering having broken.
+            int colours = Registry.All.Select(d => d.Color).Distinct().Count();
+            Harness.Eq(colours - 1, changes, "colour boundaries along the axis");
         });
 
         Harness.Test("colour identity is read off the leader", () =>

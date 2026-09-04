@@ -64,7 +64,14 @@ public static class Manifest
             + $"\"trapUseful\":{L(c.TrapUseful is not null)},"
             + $"\"flipCost\":{J(CostString(c.FlipCost))},"
             + $"\"triggers\":{J(TriggerList(c))},"
-            + $"\"stage\":{J(StageList(c))}"
+            + $"\"stage\":{J(StageList(c))},"
+            // Presence only, the way flip is: a predicate cannot be compared
+            // across two languages, but whether a card carries one can be.
+            + $"\"store\":{L(c.Store is not null)},"
+            + $"\"storeSurcharge\":{(c.Store?.Surcharge ?? 0)},"
+            + $"\"storeTargets\":{(c.Store?.Targets?.Length ?? 0)},"
+            + $"\"storeUseful\":{L(c.Store?.Useful is not null)},"
+            + $"\"storeBoost\":{L(c.StoreBoost)}"
             + "}";
     }
 
@@ -80,6 +87,7 @@ public static class Manifest
         if (t.OnAwake is not null) names.Add("awake");
         if (t.OnOtherDeath is not null) names.Add("otherdeath");
         if (t.OnSpellCast is not null) names.Add("spellcast");
+        if (t.OnStoreSold is not null) names.Add("storesold");
         if (t.OnSummonPlayed is not null) names.Add("played");
         if (t.StrengthBonus is not null) names.Add("strength");
         return string.Join("+", names);
@@ -91,6 +99,7 @@ public static class Manifest
         if (h is null) return "";
         var names = new List<string>();
         if (h.OnAwake is not null) names.Add("awake");
+        if (h.OnStoreSold is not null) names.Add("storesold");
         if (h.StrengthBonus is not null) names.Add("strength");
         return string.Join("+", names);
     }

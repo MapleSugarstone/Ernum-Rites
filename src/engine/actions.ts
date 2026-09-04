@@ -32,6 +32,18 @@ export type Action =
   /** Pay for the flip at the front of the queue. handIndex feeds a discard cost. */
   | { type: 'PAY_FLIP'; handIndex?: number; enemy?: PlayerIdx }
   | { type: 'DECLINE_FLIP' }
+  /** Run your own Store for 2 debt plus its surcharge. Targets are asked after. */
+  | { type: 'USE_STORE'; source: SourceRef }
+  /** Open a negotiation on another player's Store, on your own main step. */
+  | { type: 'OPEN_STORE'; source: SourceRef }
+  /** Seller only: put a price on the table. A final offer ends countering. */
+  | { type: 'STORE_OFFER'; price: number; final?: boolean }
+  /** Buyer only: send a different price back. Not against a final offer. */
+  | { type: 'STORE_COUNTER'; price: number }
+  /** Close the deal at the other side's price. Targets are asked after. */
+  | { type: 'STORE_ACCEPT' }
+  /** Buyer only: walk away. The Store is closed to them for the turn. */
+  | { type: 'STORE_REJECT' }
   | { type: 'END_TURN' }
   | { type: 'CONCEDE' };
 

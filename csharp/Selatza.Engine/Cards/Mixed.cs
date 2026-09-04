@@ -15,6 +15,27 @@ public static class Mixed
     private static readonly DualKit Yg = new("YG", Color.S, Color.R);
     private static readonly DualKit Yp = new("YP", Color.S, Color.O);
     private static readonly DualKit Yr = new("YR", Color.S, Color.P);
+    // Candy pairs with each of the other five. The frame is Candy on all of
+    // them, so the folder letter leads with M and the kit reads K first.
+    private static readonly DualKit Mb = new("MB", Color.K, Color.F);
+    private static readonly DualKit Mg = new("MG", Color.K, Color.R);
+    private static readonly DualKit Mp = new("MP", Color.K, Color.O);
+    private static readonly DualKit Mr = new("MR", Color.K, Color.P);
+    // Reversed frames on the same folders: the folder names the art, the kit
+    // names the colours, so Loanshark prints Fish and Red Sweets prints Pepper.
+    private static readonly DualKit Bm = new("MB", Color.F, Color.K);
+    private static readonly DualKit Rm = new("MR", Color.P, Color.K);
+    private static readonly DualKit My = new("MY", Color.K, Color.S);
+
+    /// <summary>A character with something to heal, the only one worth pointing at.</summary>
+    private static TargetSpec DamagedCharacter(string label) => new()
+    {
+        Kind = TargetKind.Summon,
+        Side = Side.Any,
+        IncludeLeader = true,
+        Label = label,
+        Filter = a => a.Summon is { } s && s.Hp.Exists(h => h.Flipped),
+    };
 
     public static CardDef[] Build() => new[]
     {
@@ -22,12 +43,14 @@ public static class Mixed
         // carries more colours than Color2 and Color3 hold, so it is spelled out
         // here rather than run through a pair kit. A leader whose identity is
         // every colour makes every card legal in its deck, which is the point:
-        // the ritual has to be paid in all five.
+        // the ritual has to be paid in all five. What it prints is Ernum, a
+        // colour of its own, so facing it as a supporter pays Ernum mana and that
+        // one covers a pip of any colour.
         new CardDef
         {
             Id = "m-ernum",
             Name = "Ernum",
-            Color = Color.P,
+            Color = Color.E,
             Identity = new[] { Color.P, Color.O, Color.R, Color.F, Color.S },
             Type = CardType.Summon,
             Level = 3,
@@ -60,6 +83,16 @@ public static class Mixed
                     c.GrantEffectDamage(me, 3);
                     c.ClearDebt(c.Me, 6);
                 },
+            }, new Power
+            {
+                // The Candy pip is what folds the sixth colour into Ernum's
+                // leader identity: DeckIdentity reads power costs, so this line
+                // alone is what lets an Ernum deck run the Candy cards.
+                Name = "Sentimental",
+                Cost = new Cost(K: 1),
+                Text = "Gain 1 Love.",
+                SapSelf = true,
+                Effect = c => c.GainLove(c.Me, 1),
             }),
         },
 
@@ -922,6 +955,377 @@ public static class Mixed
             new StageHooks
             {
                 StrengthBonus = a => a.Summon.Owner == a.Controller ? 0 : -1,
+            }),
+
+        // --- Candy and Fish: the shop floor and the water ----------------------
+        Mb.Summon(2, "CandyCraver", "Candy Craver", F(Faction.Mortal), str: 2, hp: 3,
+            text: "Whenever you buy from a Store, draw a card.",
+            triggers: new Triggers { OnStoreBought = c => c.Draw(c.Me, 1) },
+            powers: Powers(new Power
+            {
+                Name = "Sweet Tooth",
+                Cost = new Cost(K: 1, F: 1),
+                Text = "Gain 1 Love, then draw a card.",
+                SapSelf = true,
+                Effect = c =>
+                {
+                    c.GainLove(c.Me, 1);
+                    c.Draw(c.Me, 1);
+                },
+            })),
+
+        Mb.Summon(2, "CandyFish", "Candy Fish", F(Faction.Saccharine, Faction.Fish),
+            str: 2, hp: 4,
+            powers: Powers(new Power
+            {
+                Name = "Bubblegum Stream",
+                Cost = new Cost(K: 1, F: 1),
+                Text = "Scry 3 for a Fish or a Saccharine.",
+                SapSelf = true,
+                Effect = c => c.Dig(c.Me, 3,
+                    d => d.HasFaction(Faction.Fish) || d.HasFaction(Faction.Saccharine)),
+            }),
+            flipText: "Gain 1 Love.",
+            flip: c => c.GainLove(c.Me, 1)),
+
+        Bm.Summon(3, "loanshark", "Loanshark", F(Faction.Fish, Faction.Beast), str: 3, hp: 5,
+            debtAmplify: true,
+            text: "Whenever a player takes debt, they take 1 more.",
+            powers: Powers(new Power
+            {
+                Name = "Collect",
+                Cost = new Cost(K: 1, F: 1),
+                Text = "Deal 1 debt.",
+                SapSelf = true,
+                Effect = c => c.AddDebt(c.Opp, 1, "The loanshark collects."),
+            })),
+
+        Mb.Spell("IcecubeCandy", "Icecube Candy", new Cost(K: 1, F: 1),
+            "Shuffle 8 cards from your discard pile into your deck. Draw a card.",
+            null, c =>
+            {
+                c.RecycleDiscard(c.Me, 8);
+                c.Draw(c.Me, 1);
+            }),
+
+        Mb.Spell("TropicalBlueDrink", "Tropical Blue Drink", new Cost(K: 1, F: 1),
+            "Heal an ally for 3. Love: Heal 1 more.",
+            Specs(AllyOrLeader()), c =>
+            {
+                int n = c.SpendLove(c.Me);
+                c.Unflip(c.Target(0), 3 + n);
+            }),
+
+        // --- Candy and Robot: the graduate scheme ------------------------------
+        Mg.Summon(2, "CuriousPilgrim", "Curious Pilgrim", F(Faction.Mortal, Faction.Hedron),
+            str: 2, hp: 4,
+            text: "Store: Scry 2 for any card.",
+            store: new StoreDef
+            {
+                Useful = (state, user) => state.Players[user].Deck.Count > 0,
+                Effect = c => c.Dig(c.Me, 2, _ => true),
+            },
+            powers: Powers(new Power
+            {
+                Name = "Wander",
+                Cost = new Cost(K: 1, R: 1),
+                Text = "Draw a card, then heal 1 debt.",
+                SapSelf = true,
+                Effect = c =>
+                {
+                    c.Draw(c.Me, 1);
+                    c.ClearDebt(c.Me, 1);
+                },
+            })),
+
+        Mg.Summon(2, "NewGrad", "New Grad", F(Faction.Mortal, Faction.Scholar), str: 2, hp: 3,
+            text: "Store: Draw the top card of another player's deck, rebuilt in Robot with its cost turned colorless.",
+            store: new StoreDef
+            {
+                // The deck is named by its owner's leader, the way Loan names a player.
+                Targets = Specs(new TargetSpec
+                {
+                    Kind = TargetKind.Summon,
+                    Side = Side.Enemy,
+                    IncludeLeader = true,
+                    Label = "a player, by their leader",
+                    Filter = a => a.Ref.Kind == TargetKind.Leader,
+                }),
+                Useful = (state, user) => state.Players[GameState.Other(user)].Deck.Count > 0,
+                Effect = c =>
+                {
+                    if (c.TargetOrNull(0) is not { Kind: TargetKind.Leader } t) return;
+                    var deck = c.State.Players[t.Player].Deck;
+                    if (deck.Count == 0)
+                    {
+                        c.Log("That deck is empty.");
+                        return;
+                    }
+                    var id = deck[0];
+                    deck.RemoveAt(0);
+                    c.ToHand(c.Me, Generated.RobotColorlessCopy(id));
+                },
+            },
+            powers: Powers(new Power
+            {
+                Name = "Job Application Fees",
+                Cost = new Cost(K: 1, R: 1),
+                Text = "Draw 2 cards, then take 1 debt.",
+                SapSelf = true,
+                Effect = c =>
+                {
+                    c.Draw(c.Me, 2);
+                    c.AddDebt(c.Me, 1, "The hours are billed back.");
+                },
+            })),
+
+        Mg.Spell("AbsurdlySourCandy", "Absurdly Sour Candy", new Cost(K: 1, R: 1),
+            "Deal 2 to an enemy summon and it loses 2 attack.",
+            Specs(Enemy()), c =>
+            {
+                c.Damage(c.Target(0), 2);
+                c.BuffStrength(c.Target(0), -2, ModDuration.Permanent);
+            }),
+
+        Mg.Spell("CandyVirus", "Candy Virus", new Cost(K: 1, R: 1),
+            "Deal 2 to an enemy summon. If it dies, gain 2 Love.",
+            Specs(Enemy()), c =>
+            {
+                c.Damage(c.Target(0), 2);
+                if (c.SummonAt(c.Target(0)) is null) c.GainLove(c.Me, 2);
+            }),
+
+        Mg.Spell("HedronFragments", "Hedron Fragments", new Cost(K: 1, R: 1),
+            "Each of your summons gains 1 HP off your deck. Affected summons are permanently Hedrons.",
+            null, c =>
+            {
+                foreach (var r in c.SummonsOf(c.Me))
+                {
+                    c.Reinforce(r, 1);
+                    var s = c.SummonAt(r);
+                    if (s is null || Registry.Card(s.CardId).HasFaction(Faction.Hedron)) continue;
+                    c.Transform(r, Generated.HedronCopy(s.CardId));
+                }
+            }),
+
+        // --- Candy and Oil: the toll and the bones -----------------------------
+        Mp.Summon(3, "LenAphelion", "Len-Aphelion", F(Faction.Spirit, Faction.Scholar),
+            str: 2, hp: 5,
+            text: "Your Beasts have +1 attack. At the start of your turn, Scry 2 for any card.",
+            triggers: new Triggers
+            {
+                StrengthBonus = a => a.Summon.Owner == a.Controller
+                    && a.Def.HasFaction(Faction.Beast) ? 1 : 0,
+                OnAwake = c => c.Dig(c.Me, 2, _ => true),
+            },
+            powers: Powers(new Power
+            {
+                Name = "Umbral Slash",
+                Cost = new Cost(K: 1, O: 1),
+                Text = "Deal 1 to every enemy summon, and gain 1 Love for each that dies.",
+                SapSelf = true,
+                Effect = c =>
+                {
+                    var refs = c.SummonsOf(c.Opp);
+                    foreach (var r in refs) c.Damage(r, 1);
+                    int dead = 0;
+                    foreach (var r in refs)
+                    {
+                        if (c.SummonAt(r) is null) dead++;
+                    }
+                    if (dead > 0) c.GainLove(c.Me, dead);
+                },
+            })),
+
+        Mp.Summon(2, "PairOfCritters", "Pair of Critters", F(Faction.Saccharine, Faction.Beast),
+            str: 2, hp: 3,
+            text: "Battlecry: Gain 1 Love. Deathrattle: Gain 1 Love.",
+            triggers: new Triggers
+            {
+                OnEnter = c => c.GainLove(c.Me, 1),
+                OnDeath = c => c.GainLove(c.Me, 1),
+            },
+            powers: Powers(new Power
+            {
+                Name = "Nibble",
+                Cost = new Cost(K: 1, O: 1),
+                Text = "Put a Wound on every enemy summon.",
+                SapSelf = true,
+                Effect = c =>
+                {
+                    foreach (var r in c.SummonsOf(c.Opp)) c.Wound(r, 1);
+                },
+            })),
+
+        Mp.Spell("MarkOfTheFalseKing", "Mark of the False King", new Cost(K: 1, O: 1),
+            "An enemy summon loses 2 attack. Its controller takes 1 debt.",
+            Specs(Enemy()), c =>
+            {
+                var t = c.Target(0);
+                c.BuffStrength(t, -2, ModDuration.Permanent);
+                if (t.Kind == TargetKind.Summon)
+                {
+                    c.AddDebt(t.Player, 1, "The false king marks his own.");
+                }
+            }),
+
+        Mp.Spell("RottenCandy", "Rotten Candy", new Cost(K: 1, O: 1),
+            "Shuffle 3 Rot into the enemy's deck. Gain 1 Love.",
+            null, c =>
+            {
+                c.Curse(c.Opp, "o-curse-rot", 3);
+                c.GainLove(c.Me, 1);
+            }),
+
+        Mp.Spell("SoldBones", "Sold Bones", new Cost(K: 1, O: 1),
+            "Return a summon from your discard pile to your hand. Gain 1 Love.",
+            Specs(new TargetSpec
+            {
+                Kind = TargetKind.Discard,
+                Side = Side.Ally,
+                Label = "a summon in your discard pile",
+                Optional = true,
+                Filter = a => a.Card?.Type == CardType.Summon,
+            }), c =>
+            {
+                if (c.TargetOrNull(0) is { } t) c.Reclaim(t);
+                c.GainLove(c.Me, 1);
+            }),
+
+        // --- Candy and Pepper: the stall that sells heat ------------------------
+        Mr.Summon(2, "CandyAxeman", "Candy Axeman", F(Faction.Saccharine, Faction.Mortal),
+            str: 3, hp: 3,
+            text: "Strike: Gain 1 Love.",
+            triggers: new Triggers { OnAttack = c => c.GainLove(c.Me, 1) },
+            powers: Powers(new Power
+            {
+                Name = "Chop",
+                Cost = new Cost(K: 1, P: 1),
+                Text = "Deal 2 to an enemy summon.",
+                SapSelf = true,
+                Targets = Specs(Enemy()),
+                Effect = c => c.Damage(c.Target(0), 2),
+            })),
+
+        Rm.Summon(3, "RedSweets", "Red Sweets", F(Faction.Mortal, Faction.Scholar), str: 3, hp: 4,
+            text: "Store: Take any card from your deck into your hand. Store costs +3.",
+            store: new StoreDef
+            {
+                Surcharge = 3,
+                Useful = (state, user) => state.Players[user].Deck.Count > 0,
+                Effect = c => c.Search(c.Me, _ => true),
+            },
+            powers: Powers(new Power
+            {
+                Name = "Pummel",
+                Cost = new Cost(K: 1, P: 1),
+                Text = "Deal 1 to an enemy summon and gain 1 Love.",
+                SapSelf = true,
+                Targets = Specs(Enemy()),
+                Effect = c =>
+                {
+                    c.Damage(c.Target(0), 1);
+                    c.GainLove(c.Me, 1);
+                },
+            })),
+
+        Mr.Spell("AbsurdlySpicyCandy", "Absurdly Spicy Candy", new Cost(K: 3, P: 2),
+            "Deal 2 to an enemy summon and 1 to the enemy leader. Love: Effect Damage +1.",
+            Specs(Enemy()), c =>
+            {
+                int n = c.SpendLove(c.Me);
+                c.Damage(c.Target(0), 2 + n);
+                c.Damage(TargetRef.Leader(c.Opp), 1 + n);
+            }),
+
+        Mr.Spell("DeflateCurrency", "Deflate Currency", new Cost(K: 1, P: 1),
+            "Deal 2 debt, then gain 1 Love.",
+            null, c =>
+            {
+                c.AddDebt(c.Opp, 2);
+                c.GainLove(c.Me, 1);
+            }),
+
+        Mr.Spell("RedTape", "Red Tape", new Cost(K: 1, P: 1),
+            "Sap an enemy summon. It does not unsap the next time it would.",
+            Specs(Enemy()), c =>
+            {
+                c.Sap(c.Target(0));
+                if (c.SummonAt(c.Target(0)) is { } s) s.SapLock = true;
+            }),
+
+        // --- Candy and Solar: the lemonade stand --------------------------------
+        My.Summon(2, "LittleGummyBear", "Little Gummy Bear",
+            F(Faction.Saccharine, Faction.Beast), str: 2, hp: 4,
+            text: "Battlecry: Gain 1 Love.",
+            triggers: new Triggers { OnEnter = c => c.GainLove(c.Me, 1) },
+            powers: Powers(new Power
+            {
+                Name = "Squish",
+                Cost = new Cost(K: 1, S: 1),
+                Text = "Heal a character for 3.",
+                SapSelf = true,
+                Targets = Specs(DamagedCharacter("a character to heal")),
+                Effect = c => { if (c.TargetOrNull(0) is { } t) c.Unflip(t, 3); },
+            }),
+            flipText: "Gain 1 Love.",
+            flip: c => c.GainLove(c.Me, 1)),
+
+        My.Summon(3, "PinkLemonader", "Pink Lemonader", F(Faction.Beast), str: 3, hp: 4,
+            text: "Store: Each of your summons heals 4.",
+            store: new StoreDef
+            {
+                Useful = (state, user) =>
+                {
+                    foreach (var s in state.Players[user].Slots)
+                    {
+                        if (s is not null && s.Hp.Exists(h => h.Flipped)) return true;
+                    }
+                    return false;
+                },
+                Effect = c => { foreach (var r in c.SummonsOf(c.Me)) c.Unflip(r, 4); },
+            },
+            powers: Powers(new Power
+            {
+                Name = "Fresh Squeeze",
+                Cost = new Cost(K: 1, S: 1),
+                Text = "Heal your leader for 2 and gain 1 Love.",
+                SapSelf = true,
+                Effect = c =>
+                {
+                    c.Unflip(TargetRef.Leader(c.Me), 2);
+                    c.GainLove(c.Me, 1);
+                },
+            })),
+
+        My.Spell("CandySun", "Candy Sun", new Cost(K: 1, S: 1),
+            "Each of your characters heals 2, then gain 2 Love.",
+            null, c =>
+            {
+                foreach (var r in c.SummonsOf(c.Me, true)) c.Unflip(r, 2);
+                c.GainLove(c.Me, 2);
+            }),
+
+        My.Spell("MoltenCandyBolt", "Molten Candy Bolt", new Cost(K: 1, S: 1),
+            "Deal 3 to a summon, then heal an ally for 2.",
+            Specs(Any(), AllyOrLeader()), c =>
+            {
+                c.Damage(c.Target(0), 3);
+                c.Unflip(c.Target(1), 2);
+            }),
+
+        My.Spell("SourSoda", "Sour Soda", new Cost(K: 1, S: 1),
+            "Unsap an ally summon, then heal it for 3.",
+            Specs(new TargetSpec
+            {
+                Kind = TargetKind.Summon,
+                Side = Side.Ally,
+                Label = "a sapped ally summon",
+                Filter = a => a.Summon is not null && a.Summon.Sapped,
+            }), c =>
+            {
+                c.Unsap(c.Target(0));
+                c.Unflip(c.Target(0), 3);
             }),
     };
 }

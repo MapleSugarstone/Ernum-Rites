@@ -68,7 +68,7 @@ function board(): GameState {
     p.supporters = [];
     p.debt = [];
     p.debtCount = 0;
-    p.mana = { P: 0, O: 0, R: 0, F: 0, S: 0, C: 0 };
+    p.mana = { P: 0, O: 0, R: 0, F: 0, S: 0, K: 0, C: 0, E: 0 };
     p.turnsTaken = 5;
     p.supportersLeft = 1;
     p.leaderPlayed = true;

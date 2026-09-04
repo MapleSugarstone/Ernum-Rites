@@ -8,7 +8,8 @@
  * still deciding about.
  */
 import type { Action } from './actions';
-import { currentActor, type GameState } from './state';
+import { tryCard } from './registry';
+import { currentActor, findSummon, type GameState } from './state';
 
 /**
  * The action to force. Returns null only when the position asks something that
@@ -17,6 +18,17 @@ import { currentActor, type GameState } from './state';
  */
 export function timeoutAction(state: GameState): Action | null {
   const me = currentActor(state);
+
+  // A Store window. The buyer walking away is the passive answer. The seller
+  // has no walk-away: the rules guarantee a buyer can always buy at the top of
+  // the slider, so a silent seller is taken to have said exactly that.
+  if (state.pending?.kind === 'store') {
+    const w = state.pending;
+    if (me === w.buyer) return { type: 'STORE_REJECT' };
+    const s = findSummon(state, w.source);
+    const surcharge = (s && tryCard(s.cardId)?.store?.surcharge) || 0;
+    return { type: 'STORE_OFFER', price: 4 + surcharge, final: true };
+  }
 
   // A trap window or a spell response: let it through unanswered.
   if (state.pending) return { type: 'PASS_RESPONSE' };

@@ -49,9 +49,13 @@ const CLIPS = {
   spellS: 'Sounds/genericsolarspellorpower.wav',
   solarBig: 'Sounds/strongsolarspellorpower.wav',
   pepperBolt: 'Sounds/pepperdirectdamage.wav',
+  // Candy prints a big and a small voice, the way Solar does.
+  spellK: 'Sounds/CandySpell.mp3',
+  candySoft: 'Sounds/CandySpellWeaker.mp3',
 
   // --- cards with a voice of their own --------------------------------------
   kapigras: 'Sounds/kapigras.wav',
+  handcuffs: 'Sounds/Handcuffs.mp3',
   graft: 'Sounds/graft.wav',
   joke: 'Sounds/joke.wav',
   recompile: 'Sounds/recompile.wav',
@@ -226,15 +230,16 @@ export function stopHold(): void {
 }
 
 /**
- * The last ten seconds of a clock. A one-shot rather than a loop, but held on a
- * gain node like the hold bed is, so ending the turn early fades it instead of
- * cutting it dead mid-tick.
+ * The last ten seconds of a clock. A tick loop rather than a one-shot: it runs
+ * for as long as the clock is inside the window and is stopped the moment the
+ * player buys their way out of it or the window ends, held on a gain node like
+ * the hold bed so the stop fades instead of cutting mid-tick.
  */
 let ropeSrc: AudioBufferSourceNode | null = null;
 let ropeGain: GainNode | null = null;
 const ROPE_OUT = 0.18;
 
-/** Whether a ring is now sounding, so a caller can retry once it has decoded. */
+/** Whether the ticking now sounds, so a caller can retry once it has decoded. */
 export function startLast10(): boolean {
   const bus = effectsBus();
   if (!bus) return false;
@@ -250,13 +255,8 @@ export function startLast10(): boolean {
     g.gain.value = TRIM.last10 ?? 1;
     const src = bus.ctx.createBufferSource();
     src.buffer = buffer;
+    src.loop = true;
     src.connect(g).connect(bus.out);
-    // A clock left to run out ends on its own, and must not look still-playing.
-    src.onended = () => {
-      if (ropeSrc !== src) return;
-      ropeSrc = null;
-      ropeGain = null;
-    };
     src.start();
     ropeSrc = src;
     ropeGain = g;

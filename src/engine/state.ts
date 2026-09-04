@@ -84,6 +84,14 @@ export interface SummonInstance {
   /** Card id whose Deathrattle this body fires in addition to its own. */
   bestowed?: string;
   enteredTurn: number;
+  /**
+   * Candy: purchases this Store still has in it this turn, drawn on the card
+   * as Love tokens. Refilled at the start of every turn, spent by a purchase
+   * or a rejection. Only set on bodies whose card prints a Store.
+   */
+  storeStock?: number;
+  /** Candy: its controller already ran this Store this turn. */
+  storeUsed?: boolean;
 }
 
 export interface Supporter {
@@ -134,6 +142,14 @@ export interface PlayerState {
   turnsTaken: number;
   /** Times this deck has run dry. Each one costs more than the last. */
   deckOuts: number;
+  /** Candy: Love tokens held, kept between turns, no cap. */
+  love: number;
+  /**
+   * Cards this player has played from hand this turn: summons, supporters,
+   * spells, fields and traps. Reset at the start of every player's turn.
+   * Trap: Sugar Crash reads it off the active player.
+   */
+  playsThisTurn: number;
   /**
    * Knocked out of a party game: board swept, turns skipped, still watching.
    * Never set in a 2-player game, where a loss ends the match instead.
@@ -158,20 +174,51 @@ export interface PendingSpell {
 }
 
 /**
- * One response window at a time: an attack waiting on a trap, or an enemy
- * spell waiting on a Spell Trap. Exactly one of battle and spell is set.
+ * Candy's negotiation, alternating between the two seats until it closes.
+ *
+ * The buyer opens it on their own main step, so the seller answers on the
+ * buyer's turn the way a defender answers with a trap. The seller must always
+ * answer an opened Store with a price, so only the buyer may reject, and only
+ * the seller may declare an offer final. `pass` counts price messages: odd
+ * means the seller's price is on the table, even (and nonzero) the buyer's.
+ * After pass 4 there are no more counters, only a final offer, an acceptance
+ * or a rejection.
  */
-export type Pending = {
-  kind: 'response';
+export interface PendingStore {
+  kind: 'store';
+  /** Whoever the window waits on right now. */
   player: PlayerIdx;
-  battle: PendingBattle | null;
-  spell: PendingSpell | null;
-  /**
-   * Enemies still owed this spell's response window after the current one, in
-   * turn order. Party games only: with one opponent there is never a queue.
-   */
-  queue?: PlayerIdx[];
-};
+  seller: PlayerIdx;
+  buyer: PlayerIdx;
+  /** The shop body. Always a slot summon: leaders print no Stores. */
+  source: TargetRef;
+  /** Price on the table, absent until the seller's first offer. */
+  price?: number;
+  final: boolean;
+  pass: number;
+  /** Always null. Carried so code reading a response window's halves compiles. */
+  battle: null;
+  spell: null;
+}
+
+/**
+ * One response window at a time: an attack waiting on a trap, an enemy
+ * spell waiting on a Spell Trap, or a Store being haggled over. For the
+ * response kind, exactly one of battle and spell is set.
+ */
+export type Pending =
+  | {
+      kind: 'response';
+      player: PlayerIdx;
+      battle: PendingBattle | null;
+      spell: PendingSpell | null;
+      /**
+       * Enemies still owed this spell's response window after the current one, in
+       * turn order. Party games only: with one opponent there is never a queue.
+       */
+      queue?: PlayerIdx[];
+    }
+  | PendingStore;
 
 /** A costed flip waiting on its owner to pay for it or wave it away. */
 export interface FlipOffer {
@@ -287,7 +334,7 @@ export function nextLiving(state: GameState, from: PlayerIdx): PlayerIdx {
 }
 
 export function emptyMana(): Record<ManaKind, number> {
-  return { P: 0, O: 0, R: 0, F: 0, S: 0, C: 0 };
+  return { P: 0, O: 0, R: 0, F: 0, S: 0, K: 0, C: 0, E: 0 };
 }
 
 /** Current strength: base (or override) plus all modifiers, floored at 0. */

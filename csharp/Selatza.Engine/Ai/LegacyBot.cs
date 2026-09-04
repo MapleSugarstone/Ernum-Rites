@@ -191,6 +191,13 @@ public static class LegacyBot
         if (state.Pending is not null)
         {
             if (state.Pending.Player != me) return acts;
+            // This bot never opens a Store, but the searching one may open one
+            // on it, and a seat with no legal answer stalls the match.
+            if (state.Pending.Store is not null)
+            {
+                if (Bot.StoreAnswer(state, me) is { } only) acts.Add(only);
+                return acts;
+            }
             bool wantsSpellTrap = state.Pending!.Spell is not null;
             for (int i = 0; i < p.Hand.Count; i++)
             {
@@ -265,6 +272,14 @@ public static class LegacyBot
             }
         }
 
+        // Candy: running your own Store is a power priced in debt.
+        for (int slot = 0; slot < p.Slots.Length; slot++)
+        {
+            if (p.Slots[slot] is null) continue;
+            var src = TargetRef.Summon(me, slot);
+            if (Engine.StoreBlockers(state, me, src) is null) acts.Add(GameAction.UseStore(src));
+        }
+
         foreach (var attacker in Engine.ReadyAttackers(state, me))
         {
             foreach (var target in Engine.LegalAttackTargets(state, attacker))
@@ -279,6 +294,10 @@ public static class LegacyBot
     private static GameAction PassAction(GameState state)
     {
         if (state.FlipQueue.Count > 0) return GameAction.DeclineFlip();
+        if (state.Pending?.Store is not null)
+        {
+            return Bot.StoreAnswer(state, state.Pending.Player) ?? GameAction.StoreReject();
+        }
         if (state.Pending is not null) return GameAction.PassResponse();
         if (state.ChoiceQueue.Count > 0)
         {

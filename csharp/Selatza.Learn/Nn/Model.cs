@@ -108,7 +108,12 @@ public sealed class NetShape
 public sealed class SelatzaNet
 {
     public const int Magic = 0x314E4E53; // "SNN1"
-    public const int HandBuckets = 25;   // five colours by five card types
+    /// <summary>
+    /// One bucket per colour per card type. Sized off the Color enum itself,
+    /// Neutral included, because the hardcoded "five colours" this replaced
+    /// silently overflowed when Neutral and then Candy pushed the enum past it.
+    /// </summary>
+    public static readonly int HandBuckets = Enum.GetValues<Color>().Length * 5;
 
     private readonly List<Layer> _cardTower = new();
     private readonly List<Layer> _entityTower = new();

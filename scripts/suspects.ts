@@ -9,7 +9,7 @@
  */
 import '../src/cards';
 import { allCards } from '../src/engine/registry';
-import { RARITY_NAME, type CardDef, type ManaKind } from '../src/engine/types';
+import { RARITY_NAME, type CardDef, type CostKind } from '../src/engine/types';
 
 /** Keywords that are strictly good to have; a card missing one is not worse for it. */
 const UPSIDE: (keyof CardDef)[] = [
@@ -49,7 +49,7 @@ function colours(c: CardDef): string {
 function costNoWorse(a: CardDef['cost'], b: CardDef['cost']): boolean {
   const kinds = new Set<string>([...Object.keys(a ?? {}), ...Object.keys(b ?? {})]);
   for (const k of kinds) {
-    if ((a?.[k as ManaKind] ?? 0) > (b?.[k as ManaKind] ?? 0)) return false;
+    if ((a?.[k as CostKind] ?? 0) > (b?.[k as CostKind] ?? 0)) return false;
   }
   return true;
 }

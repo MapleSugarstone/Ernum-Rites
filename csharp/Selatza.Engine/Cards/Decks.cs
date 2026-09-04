@@ -25,12 +25,14 @@ public static class CardSets
         _registered = true;
         Kit.ResetNumbering();
         SharedChoices.Register();
+        Engine.RegisterStoreResolver();
         Registry.Register(Placeholder.Build());
         Registry.Register(Red.Build());
         Registry.Register(Purple.Build());
         Registry.Register(Green.Build());
         Registry.Register(Blue.Build());
         Registry.Register(Yellow.Build());
+        Registry.Register(Pink.Build());
         Registry.Register(Mixed.Build());
         Triple.Register();
         Registry.Register(Triple.Build());
@@ -127,6 +129,22 @@ public static class CardSets
                 ("f3-infiniteship", 2), ("fx-error", 2), ("fx-riptide", 2),
                 ("f2-jellyking", 2), ("n2-LesserGrinkle", 2)),
         },
+        new()
+        {
+            Key = "sweetshop",
+            Name = "Pink Deus",
+            Blurb = "Candy storefronts that sell services for debt and cash the Love in.",
+            LeaderId = "kh-PinkDeus",
+            Cards = Build(
+                ("k1-SugarBug", 2), ("k1-apprentice", 2), ("k1-candymouse", 2),
+                ("k3-SweetHarmony", 2), ("k1-icecreambird", 2), ("n2-Smithee", 2),
+                ("k1-sleepybeast", 2), ("k1-patheticbonbon", 2), ("k2-CandyWizard", 2),
+                ("k2-Nurse", 2), ("k2-PrivateDetective", 2), ("k2-SnoozingGiant", 2),
+                ("k2-spellsell", 2), ("k2-GunForHire", 2), ("k3-DebtReliever", 2),
+                ("k3-DerangedCandyfolk", 2), ("kx-trapExpensiveSecurity", 2), ("k3-Final Unicorn", 2),
+                ("kh-PinkDeus", 2), ("n1-BucketGuardian", 2), ("kx-DarkCandy", 2),
+                ("kx-Loan", 2), ("kx-cuffed", 2), ("k3-LastLollipop", 2)),
+        },
     };
 
     public static readonly StarterDeck[] TestDecks =
@@ -146,7 +164,7 @@ public static class CardSets
                 ("m-bg-robotfish", 2), ("r1-lapgrob", 2), ("r1-mouse", 2), ("r2-badglitch", 2),
                 ("r2-bellobot", 2), ("r2-engineer", 2), ("rx-battery", 2), ("rx-plugzap", 2),
                 ("rx-siphon", 2)),
-        },
+        },
         new()
         {
             Key = "vanilla",

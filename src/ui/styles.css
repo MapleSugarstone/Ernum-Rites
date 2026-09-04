@@ -141,9 +141,10 @@
   --c-R: #1f8f3d;
   --c-F: #1155b8;
   --c-S: #d8a800;
+  --c-K: #c0189e;
   --c-N: #99715b;
-  /* Sampled from ernumc.png, the frame drawn for the every-colour card. */
-  --c-X: #220f9b;
+  /* Sampled from ernumc.png, the frame Ernum is drawn in. */
+  --c-E: #220f9b;
 
   /* Every card size derives from one width; the frame is 240x336. The board
      sizes track viewport height so the two sides and their HP fans always fit. */
@@ -1472,6 +1473,9 @@ button.on {
 .pip-S {
   color: var(--c-S);
 }
+.pip-K {
+  color: var(--c-K);
+}
 /* Colourless pips: any mana pays them, so they stay grey. */
 .pip-C {
   color: #a9b4ba;
@@ -1827,6 +1831,15 @@ body.dragging .bookgrid .card {
   color: #ff9b8a;
   font-weight: 700;
 }
+/* Candy's two keywords carry their own colours, like the triggers above. */
+.card .kw-shop {
+  color: #ff85d6;
+  font-weight: 700;
+}
+.card .kw-love {
+  color: #ff5c8a;
+  font-weight: 700;
+}
 /* Mechanic keywords read as rules, not prose. */
 .card .kw-b {
   font-weight: 700;
@@ -1846,6 +1859,14 @@ body.dragging .bookgrid .card {
 }
 .prompt .kw-st {
   color: #ff9b8a;
+  font-weight: 700;
+}
+.prompt .kw-shop {
+  color: #ff85d6;
+  font-weight: 700;
+}
+.prompt .kw-love {
+  color: #ff5c8a;
   font-weight: 700;
 }
 .prompt .kw-b {
@@ -2957,6 +2978,9 @@ body.mobile .modes .mixer {
   font-size: 13px;
   padding: 4px 13px;
 }
+/* A search reaches every colour, so the tabs are not filtering anything while
+   one is typed. */
+.tabs.quiet .tab { opacity: 0.45; }
 .tabdot {
   width: 11px;
   height: 11px;
@@ -3546,6 +3570,36 @@ body.mobile .modes .mixer {
   color: var(--muted);
   white-space: nowrap;
 }
+/* The colour tally sits between the deck list and the save buttons, so it stays
+   on screen while the list above it scrolls. */
+.decktally {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  padding: 7px 10px 0;
+  background: var(--glass);
+  border-top: var(--stroke-thick) solid var(--ink);
+}
+.tallychip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border: var(--stroke) solid var(--ink);
+  border-radius: 999px;
+  background: var(--fill-1);
+  white-space: nowrap;
+}
+.tallychip .tabdot {
+  width: 9px;
+  height: 9px;
+  border-width: 1px;
+}
+/* The tally already draws the top edge when it is showing. */
+.decktally + .deckfoot { border-top: 0; }
 .deckfoot {
   display: flex;
   align-items: center;
@@ -6383,4 +6437,54 @@ input[type='search'] {
   opacity: 0.75;
   align-self: flex-end;
   font-variant-numeric: tabular-nums;
+}
+
+/* --- Candy: Love tokens and the Store haggle -------------------------------- */
+
+.card .token.spent {
+  opacity: 0.35;
+  filter: grayscale(1);
+}
+
+.loverun {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 8px;
+  align-self: center;
+}
+.loverun img {
+  width: 16px;
+  height: auto;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+}
+.loverun b {
+  font-size: 12px;
+  margin-left: 2px;
+}
+
+.storeprompt .storeline {
+  margin: 4px 0;
+}
+.storeslider {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 10px;
+  font-size: 14px;
+}
+.storeslider input[type='range'] {
+  width: 130px;
+  accent-color: #eb39ff;
+}
+.storeslider output {
+  min-width: 1.2em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.storewait {
+  opacity: 0.8;
+  font-style: italic;
 }

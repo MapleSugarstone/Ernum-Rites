@@ -6,9 +6,11 @@ import { requestPersistence } from './prefs';
 export { DECK_SIZE, counts };
 import {
   COLORS,
+  COLOR_ART,
   COLOR_NAME,
   COPY_LIMIT,
   RARITY_NAME,
+  type CardColour,
   type CardDef,
   type Color,
   type Rarity,
@@ -201,10 +203,15 @@ function playable(d: CardDef): boolean {
   return !!d.art && !d.uncollectible;
 }
 
-/** The cards on one tab, split into the groups a deckbuilder thinks in. */
-export function browseSections(tab: BrowseTab): Section[] {
+/**
+ * The cards on one tab, split into the groups a deckbuilder thinks in. Pass
+ * 'ALL' for every collectable card at once, which is what a search runs over so
+ * a tribe or a colour the current tab does not hold still turns up.
+ */
+export function browseSections(tab: BrowseTab | 'ALL'): Section[] {
   const pool = allCards().filter((d) => {
     if (!playable(d)) return false;
+    if (tab === 'ALL') return true;
     // Neutral cards carry a colour only so the frame has something to draw
     // with, so they have to be pulled off that colour's tab explicitly.
     if (tab === 'N') return !!d.neutral;
@@ -246,20 +253,111 @@ export function deckCards(cards: readonly string[]): CardDef[] {
     .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
 }
 
+/** What each card type is called where a player meets it, for the search index. */
+const TYPE_WORDS: Record<CardDef['type'], string[]> = {
+  summon: ['Summon'],
+  spell: ['Spell'],
+  trap: ['Trap'],
+  stage: ['Field', 'Stage'],
+};
+
 /**
- * Does a card survive the search box and the rarity chips? The typed query
- * matches a card's name, its rules text, or the name of its rarity, so
- * "legendary" finds the same cards the Legendary chip does.
+ * Everything about one card the search box looks through, lowercased and joined
+ * by spaces: its name, its colours under both the names the game uses and the
+ * plain ones the art is drawn in, its tribes, its type, its rarity, its level,
+ * and every line printed on it including each Power and the flip.
+ */
+function searchIndex(d: CardDef): string {
+  const parts: string[] = [d.name, d.id, ...TYPE_WORDS[d.type], RARITY_NAME[d.rarity ?? 'C']];
+  const colours = colorsOf(d);
+  if (colours.length === 0) parts.push(COLOR_NAME.N);
+  for (const c of colours) parts.push(COLOR_NAME[c], COLOR_ART[c]);
+  if (colours.length > 1) parts.push('Mixed', 'Dual');
+  parts.push(...(d.factions ?? []));
+  if (d.type === 'summon') parts.push(`Level ${d.level ?? 1}`);
+  if (d.text) parts.push(d.text);
+  if (d.note) parts.push(d.note);
+  for (const p of d.powers ?? []) parts.push(p.name, p.text);
+  if (d.flipText) parts.push(d.flipText);
+  if (d.artist) parts.push(d.artist);
+  if (d.num) parts.push(d.num);
+  return parts.join(' ').toLowerCase();
+}
+
+// Card definitions never change once the registry is built, so each card is
+// only ever flattened once however many keystrokes the search box takes.
+const indexCache = new Map<string, string>();
+
+function indexOf(d: CardDef): string {
+  let text = indexCache.get(d.id);
+  if (text === undefined) {
+    text = searchIndex(d);
+    indexCache.set(d.id, text);
+  }
+  return text;
+}
+
+/** One line of the colour tally under the deck. */
+export interface ColorTally {
+  color: CardColour;
+  /** Cards in the deck that carry this colour. */
+  n: number;
+}
+
+/**
+ * The one colour a card is counted under: the colour its frame and its art are
+ * drawn in. A dual card carries a second colour in its identity but is only ever
+ * printed in one, so the tally adds up to the deck's own size.
+ */
+function primaryColor(d: CardDef): CardColour {
+  return d.neutral ? 'N' : d.color;
+}
+
+/**
+ * How many of the deck's cards each colour contributes, in the order the browser
+ * tabs run.
+ */
+export function colorCounts(cards: readonly string[]): ColorTally[] {
+  const tally = new Map<CardColour, number>();
+  for (const id of cards) {
+    const def = tryCard(id);
+    if (!def) continue;
+    const c = primaryColor(def);
+    tally.set(c, (tally.get(c) ?? 0) + 1);
+  }
+  return [...COLORS, 'E' as const, 'N' as const]
+    .filter((c) => tally.has(c))
+    .map((c) => ({ color: c, n: tally.get(c) ?? 0 }));
+}
+
+/**
+ * Does a card survive the search box and the rarity chips? A query that reads as
+ * a phrase on some card is taken as that phrase, so "level 3" answers with the
+ * level 3 cards rather than with everything holding a 3. Only when no card
+ * prints the phrase does each word have to match on its own, which is what makes
+ * "pepper trap" find the Pepper traps.
  */
 export function matchesSearch(d: CardDef, query: string, rarities: Rarity[]): boolean {
   if (rarities.length > 0 && !rarities.includes(d.rarity ?? 'C')) return false;
-  const q = query.trim().toLowerCase();
-  if (!q) return true;
-  return (
-    d.name.toLowerCase().includes(q) ||
-    (d.text ?? '').toLowerCase().includes(q) ||
-    RARITY_NAME[d.rarity ?? 'C'].toLowerCase().includes(q)
-  );
+  const phrase = query.trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!phrase) return true;
+  const hay = indexOf(d);
+  if (hay.includes(phrase)) return true;
+  if (phraseIsPrinted(phrase)) return false;
+  return phrase.split(' ').every((w) => hay.includes(w));
+}
+
+// Whether any collectable card prints the phrase, so the fallback to matching
+// each word on its own only opens when no card answers the phrase itself.
+const phraseCache = new Map<string, boolean>();
+
+function phraseIsPrinted(phrase: string): boolean {
+  let known = phraseCache.get(phrase);
+  if (known === undefined) {
+    known = allCards().some((d) => playable(d) && indexOf(d).includes(phrase));
+    phraseCache.set(phrase, known);
+  }
+  return known;
 }
 
 /** Every body that may stand as a leader, grouped by the colours it brings. */

@@ -93,7 +93,9 @@ public static class Recorder
         };
 
         int actions = 0;
-        while (state.Winner < 0 && actions < maxActions && state.Turn < maxTurns)
+        // IsOver, not Winner: a drawn game leaves Winner at -1, and recording
+        // past the draw would ask the engine for a move it refuses to apply.
+        while (!state.IsOver && actions < maxActions && state.Turn < maxTurns)
         {
             int actor = state.CurrentActor;
             var action = Bot.ChooseAction(state, actor);

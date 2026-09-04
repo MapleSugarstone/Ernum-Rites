@@ -24,7 +24,7 @@ import {
 import { frameFor, frameKeyOf, gemFor } from '../src/ui/frames';
 
 /** The frames the art pack actually ships. */
-const FRAME_KEYS = ['P', 'O', 'R', 'F', 'S', 'N', 'X'];
+const FRAME_KEYS = ['P', 'O', 'R', 'F', 'S', 'K', 'N', 'E'];
 import { COLORS, COPY_LIMIT } from '../src/engine/types';
 import { counts, deckMarkdown, newBuilder, parseDeckList } from '../src/ui/builder';
 
@@ -88,6 +88,10 @@ const NOT_A_CARD = new Set([
   'Cardgame/purplespell.png',
   'Cardgame/yellowspell.png',
   'Cardgame/neutralc.png',
+  'Cardgame/pinkc.png',
+  // Candy chrome, not card faces: the mana pip and the Love marker.
+  'Cardgame/Extras/CandyPip.png',
+  'Cardgame/Extras/lovetoken.png',
   'Cardgame/neutralspell.png',
   'Cardgame/ExampleCard.png',
   'Cardgame/flipborderr.png',

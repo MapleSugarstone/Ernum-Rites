@@ -13,6 +13,9 @@ public static class Identity
         // leader and every deck may run it.
         if (def.Color == Color.N || def.Neutral) return Array.Empty<Color>();
         if (def.Identity is { Length: > 0 }) return def.Identity;
+        // Ernum is not one of the six, so a card printed in it brings whatever
+        // identity it spells out and nothing more.
+        if (def.Color == Color.E) return Array.Empty<Color>();
         var out_ = new List<Color> { def.Color };
         if (def.Color2 is { } c2) out_.Add(c2);
         if (def.Color3 is { } c3) out_.Add(c3);

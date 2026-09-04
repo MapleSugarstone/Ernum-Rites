@@ -39,7 +39,7 @@ function board(): GameState {
   );
   for (const p of s.players) {
     p.hand = []; p.slots = [null, null, null]; p.supporters = []; p.debt = []; p.debtCount = 0;
-    p.mana = { P: 0, O: 0, R: 0, F: 0, S: 0, C: 0 };
+    p.mana = { P: 0, O: 0, R: 0, F: 0, S: 0, K: 0, C: 0, E: 0 };
     p.turnsTaken = 5; p.supportersLeft = 0; p.leaderPlayed = true;
   }
   s.turn = 6; s.phase = 'main'; s.active = 0; s.drawn = false;

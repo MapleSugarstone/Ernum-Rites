@@ -16,8 +16,17 @@ public enum ActionType
     DeclineReplace,
     PayFlip,
     DeclineFlip,
+    UseStore,
     EndTurn,
     Concede,
+    // Appended rather than filed beside UseStore: a game log stores the action
+    // type as its ordinal, so renumbering EndTurn would misread every log
+    // written before this.
+    OpenStore,
+    StoreOffer,
+    StoreCounter,
+    StoreAccept,
+    StoreReject,
 }
 
 /// <summary>
@@ -38,6 +47,10 @@ public sealed record GameAction
     public TargetRef? Pick { get; init; }
     /// <summary>ResolveChoice revealed-card index; null for board picks and skips.</summary>
     public int? ChoiceIndex { get; init; }
+    /// <summary>The debt a StoreOffer or StoreCounter puts on the table.</summary>
+    public int Price { get; init; }
+    /// <summary>StoreOffer only: the seller declares this price the last one.</summary>
+    public bool Final { get; init; }
 
     public static GameAction PlaySupporter(int handIndex) =>
         new() { Type = ActionType.PlaySupporter, HandIndex = handIndex };
@@ -66,6 +79,16 @@ public sealed record GameAction
     public static GameAction PayFlip(int handIndex = -1) =>
         new() { Type = ActionType.PayFlip, HandIndex = handIndex };
     public static GameAction DeclineFlip() => new() { Type = ActionType.DeclineFlip };
+    public static GameAction UseStore(TargetRef source) =>
+        new() { Type = ActionType.UseStore, Source = source };
+    public static GameAction OpenStore(TargetRef source) =>
+        new() { Type = ActionType.OpenStore, Source = source };
+    public static GameAction StoreOffer(int price, bool final = false) =>
+        new() { Type = ActionType.StoreOffer, Price = price, Final = final };
+    public static GameAction StoreCounter(int price) =>
+        new() { Type = ActionType.StoreCounter, Price = price };
+    public static GameAction StoreAccept() => new() { Type = ActionType.StoreAccept };
+    public static GameAction StoreReject() => new() { Type = ActionType.StoreReject };
     public static GameAction EndTurn() => new() { Type = ActionType.EndTurn };
     public static GameAction Concede() => new() { Type = ActionType.Concede };
 }
@@ -165,29 +188,60 @@ public static class Engine
     }
 
     /// <summary>
-    /// Coloured pips have to come from their own colour. A colourless pip takes
-    /// whatever is left over, colourless mana first and then any colour, which is
-    /// why it is checked against the surplus rather than against a bucket.
+    /// Coloured pips have to come from their own colour, or from Ernum mana,
+    /// which covers a pip of any kind. A colourless pip takes whatever is left
+    /// over, colourless mana first and then any colour, which is why it is
+    /// checked against the surplus rather than against a bucket.
     /// </summary>
     public static bool CanPay(PlayerState p, Cost cost)
     {
         if (cost.IsFree) return true;
         var avail = AvailableMana(p);
         int spare = avail[Rules.Colorless];
+        int wild = avail[Rules.Ernum];
         foreach (var c in Colors.All)
         {
-            if (cost[c] > avail[(int)c]) return false;
-            spare += avail[(int)c] - cost[c];
+            if (cost[c] > avail[(int)c])
+            {
+                int short_ = cost[c] - avail[(int)c];
+                if (short_ > wild) return false;
+                wild -= short_;
+            }
+            else spare += avail[(int)c] - cost[c];
         }
-        return cost.C <= spare;
+        return cost.C <= spare + wild;
     }
 
-    /// <summary>Spends the pool first, then saps matching supporters.</summary>
+    /// <summary>
+    /// Spends the pool first, then saps matching supporters. Ernum mana pays for
+    /// anything, so it is always spent last: every pip takes what only it can
+    /// take before the wildcard is touched.
+    /// </summary>
     private static bool PayCost(GameState state, int player, Cost cost)
     {
         var p = state.Players[player];
         if (!CanPay(p, cost)) return false;
         if (cost.IsFree) return true;
+
+        // Ernum mana, and then Ernum supporters, for a pip nothing else can pay.
+        int SpendWild(int need)
+        {
+            while (need > 0 && p.Mana[Rules.Ernum] > 0)
+            {
+                p.Mana[Rules.Ernum]--;
+                need--;
+            }
+            while (need > 0)
+            {
+                var s = p.Supporters.Find(x =>
+                    !x.Sapped && ManaIndexFor(p, Registry.Card(x.CardId)) == Rules.Ernum);
+                if (s is null) break;
+                s.Sapped = true;
+                need--;
+            }
+            return need;
+        }
+
         foreach (var c in Colors.All)
         {
             int need = cost[c];
@@ -200,10 +254,11 @@ public static class Engine
             {
                 var s = p.Supporters.Find(x =>
                     !x.Sapped && ManaIndexFor(p, Registry.Card(x.CardId)) == (int)c);
-                if (s is null) return false;
+                if (s is null) break;
                 s.Sapped = true;
                 need--;
             }
+            if (SpendWild(need) > 0) return false;
         }
 
         // Colourless takes whatever is spare: the colourless pool first, so
@@ -222,21 +277,23 @@ public static class Engine
             s.Sapped = true;
             generic--;
         }
-        for (int i = 0; generic > 0 && i < Rules.ManaKinds; i++)
+        foreach (var c in Colors.All)
         {
-            while (generic > 0 && p.Mana[i] > 0)
+            while (generic > 0 && p.Mana[(int)c] > 0)
             {
-                p.Mana[i]--;
+                p.Mana[(int)c]--;
                 generic--;
             }
         }
         while (generic > 0)
         {
-            var s = p.Supporters.Find(x => !x.Sapped);
-            if (s is null) return false;
+            var s = p.Supporters.Find(x =>
+                !x.Sapped && ManaIndexFor(p, Registry.Card(x.CardId)) != Rules.Ernum);
+            if (s is null) break;
             s.Sapped = true;
             generic--;
         }
+        if (SpendWild(generic) > 0) return false;
         return true;
     }
 
@@ -252,6 +309,19 @@ public static class Engine
         p.SupportersLeft = 1;
         if (p.ReplaceLocked > 0) p.ReplaceLocked--;
         Array.Clear(p.Mana);
+        p.PlaysThisTurn = 0;
+        // Every shop restocks at the start of every turn, whoever's turn it is:
+        // the stock is the once-per-buyer rule made visible, and the buyer
+        // changes with the turn. Self-use resets on the same clock.
+        foreach (var pl in state.Players)
+        {
+            foreach (var s in pl.Slots.Append(pl.Leader))
+            {
+                if (s is null || StoreOf(s, Registry.Card(s.CardId)) is null) continue;
+                s.StoreStock = StoreBoosted(state, s.Owner) ? 2 : 1;
+                s.StoreUsed = false;
+            }
+        }
         Effects.Log(state, player, $"{p.Name} begins turn {p.TurnsTaken}.");
 
         if (!p.LeaderPlayed)
@@ -340,20 +410,22 @@ public static class Engine
 
     /// <summary>
     /// Everything a target spec may legally choose. <paramref name="source"/> is
-    /// the card doing the asking, which decides two things: a spell or trap
-    /// cannot choose a Spell Immune body, and neither can choose past a
-    /// Redirection body on the far side of the table.
+    /// the card doing the asking, which decides two things: no card's effect
+    /// may choose a Spell Immune body (the body's own powers excepted), and
+    /// none may choose past a Redirection body on the far side of the table.
     /// </summary>
     public static List<TargetRef> TargetCandidates(GameState state, int me, TargetSpec spec,
-        CardDef? source = null)
+        CardDef? source = null, SummonInstance? asker = null)
     {
         var outList = new List<TargetRef>();
-        bool bySpell = source is not null
-            && (source.Type == CardType.Spell || source.Type == CardType.Trap);
 
         void Push(TargetRef r, CardDef? def, SummonInstance? summon)
         {
-            if (bySpell && r.IsBody && !SpellCanTarget(state, r)) return;
+            // Spell Immunity is total: no card's effect may choose an immune
+            // body, its controller's included. The one exemption is the body
+            // itself asking, which is how its own powers still reach it.
+            if (r.IsBody && summon is not null && Registry.Card(summon.CardId).SpellImmune
+                && !ReferenceEquals(summon, asker)) return;
             if (r.IsBody && r.Player != me)
             {
                 var forced = RedirectTargets(state, r.Player);
@@ -419,7 +491,7 @@ public static class Engine
     }
 
     private static string? ValidateTargets(GameState state, int me, TargetSpec[]? specs, TargetRef[] refs,
-        CardDef? source = null)
+        CardDef? source = null, SummonInstance? asker = null)
     {
         var list = specs ?? Array.Empty<TargetSpec>();
         if (refs.Length > list.Length) return "Too many targets.";
@@ -432,7 +504,7 @@ public static class Engine
                 continue;
             }
             var r = refs[i];
-            if (!TargetCandidates(state, me, spec, source).Contains(r))
+            if (!TargetCandidates(state, me, spec, source, asker).Contains(r))
             {
                 return $"Illegal target for {spec.Label}.";
             }
@@ -504,13 +576,6 @@ public static class Engine
         return outList;
     }
 
-    /// <summary>Whether a spell or trap may choose this body at all.</summary>
-    public static bool SpellCanTarget(GameState state, TargetRef r)
-    {
-        var s = state.Find(r);
-        return s is null || !Registry.Card(s.CardId).SpellImmune;
-    }
-
     public static List<TargetRef> ReadyAttackers(GameState state, int player)
     {
         var outList = new List<TargetRef>();
@@ -541,8 +606,143 @@ public static class Engine
         {
             return "Already used this turn.";
         }
+        if (power.NeedsLove && state.Players[player].Love <= 0) return "No Love to spend.";
         if (!CanPay(state.Players[player], power.Cost)) return "Not enough mana.";
         return null;
+    }
+
+    // --- stores --------------------------------------------------------------
+
+    /// <summary>The Store a body's card prints, or null when it was played as something else.</summary>
+    public static StoreDef? StoreOf(SummonInstance s, CardDef def) =>
+        s.Override is null ? def.Store : null;
+
+    /// <summary>Whether this player's stage doubles their shops and discounts their prices.</summary>
+    public static bool StoreBoosted(GameState state, int player)
+    {
+        var id = state.Players[player].Stage;
+        return id is not null && (Registry.TryCard(id)?.StoreBoost ?? false);
+    }
+
+    /// <summary>What running your own Store costs. Clearance Sale takes 1 off, floor 1.</summary>
+    public static int StoreSelfPrice(GameState state, int owner, StoreDef store) =>
+        Math.Max(1, 2 + store.Surcharge - (StoreBoosted(state, owner) ? 1 : 0));
+
+    /// <summary>The slider a negotiation runs on: 1 to 4 plus the Store's surcharge.</summary>
+    public static (int Min, int Max) StorePriceBounds(StoreDef store) =>
+        (1 + store.Surcharge, 4 + store.Surcharge);
+
+    /// <summary>
+    /// Why this player cannot use or open the Store on this body right now, or
+    /// null when they can. Shared by self-use, opening and the bot.
+    /// </summary>
+    public static string? StoreBlockers(GameState state, int user, TargetRef source)
+    {
+        var summon = state.Find(source);
+        if (summon is null) return "No summon there.";
+        var def = Registry.Card(summon.CardId);
+        var store = StoreOf(summon, def);
+        if (store is null) return $"{def.Name} is not a Store.";
+        if (summon.Owner == user)
+        {
+            if (summon.EnteredTurn >= state.Turn) return "A Store cannot be run the turn it opens.";
+            if (summon.StoreUsed) return "Already used this turn.";
+        }
+        else
+        {
+            if (summon.StoreStock <= 0) return "That Store is closed this turn.";
+        }
+        if (store.Useful is not null && !store.Useful(state, user)) return "That Store has nothing for you.";
+        return null;
+    }
+
+    /// <summary>
+    /// A Store's effect always resolves for its user, with any target asked of
+    /// them through the choice queue once the price is settled. One candidate
+    /// collapses to an instant pick, none runs the resolver empty-handed.
+    /// </summary>
+    private static void ResolveStoreEffect(GameState state, int user, SummonInstance summon,
+        CardDef def, StoreDef store)
+    {
+        var spec = store.Targets is { Length: > 0 } t ? t[0] : null;
+        if (spec is null)
+        {
+            store.Effect(new EffectCtx { State = state, Me = user, Source = summon, Card = def });
+            return;
+        }
+        var refs = TargetCandidates(state, user, spec, def, summon).ToArray();
+        var choice = new PendingChoice
+        {
+            Player = user,
+            Source = def.Id,
+            Effect = "store-effect",
+            Prompt = $"Choose {spec.Label}.",
+            Refs = refs,
+            At = Effects.RefFor(state, summon),
+        };
+        if (refs.Length == 0)
+        {
+            Choices.Run(state, choice, new ChoicePick());
+            return;
+        }
+        if (refs.Length == 1)
+        {
+            Choices.Run(state, choice, new ChoicePick(Ref: refs[0]));
+            return;
+        }
+        state.ChoiceQueue.Add(choice);
+    }
+
+    /// <summary>Registered by CardSets.RegisterAll, mirrored in the TypeScript engine.</summary>
+    public static void RegisterStoreResolver() =>
+        Choices.Register("store-effect", (state, choice, pick) =>
+        {
+            var def = Registry.Card(choice.Source);
+            if (def.Store is null) return;
+            var src = choice.At is { } at ? state.Find(at) : null;
+            def.Store.Effect(new EffectCtx
+            {
+                State = state,
+                Me = choice.Player,
+                Source = src,
+                Card = def,
+                Targets = pick.Ref is { } r ? new[] { r } : Array.Empty<TargetRef>(),
+            });
+        });
+
+    /// <summary>Close the window, charge the buyer, pay the seller, run the effect.</summary>
+    private static void ResolveStorePurchase(GameState state, PendingStoreWindow w)
+    {
+        state.Pending = null;
+        var summon = state.Find(w.Source);
+        if (summon is null) return;
+        var def = Registry.Card(summon.CardId);
+        var store = StoreOf(summon, def);
+        if (store is null) return;
+        summon.StoreStock = Math.Max(0, summon.StoreStock - 1);
+        int paid = Math.Max(1, (w.Price < 0 ? 1 : w.Price) - (StoreBoosted(state, w.Seller) ? 1 : 0));
+        Effects.AddDebt(state, w.Buyer, paid,
+            $"{state.Players[w.Buyer].Name} buys from {def.Name}'s Store for {paid} debt.");
+        if (state.Winner >= 0) return;
+        Effects.GainLove(state, w.Seller, 1);
+        ResolveStoreEffect(state, w.Buyer, summon, def, store);
+        if (state.Winner >= 0) return;
+        var seller = state.Players[w.Seller];
+        foreach (var s in seller.Slots.Append(seller.Leader))
+        {
+            if (s is not null) Effects.FireTrigger(state, s, TriggerName.OnStoreSold);
+        }
+        var stageDef = seller.Stage is not null ? Registry.TryCard(seller.Stage) : null;
+        if (stageDef?.StageHooks?.OnStoreSold is { } hook)
+        {
+            hook(new EffectCtx { State = state, Me = w.Seller, Card = stageDef });
+        }
+        if (state.Winner >= 0) return;
+        var buyer = state.Players[w.Buyer];
+        foreach (var s in buyer.Slots.Append(buyer.Leader))
+        {
+            if (s is not null) Effects.FireTrigger(state, s, TriggerName.OnStoreBought);
+        }
     }
 
     // --- reducer -------------------------------------------------------------
@@ -598,19 +798,32 @@ public static class Engine
             }
         }
         finally { Effects.ClearSpellBonus(); }
-        Effects.ToDiscard(state, caster, id);
-        if (state.Winner >= 0) return;
         var p = state.Players[caster];
-        // The spell is already in the discard pile, so its index there is how the
-        // other side's triggers get told which one was cast.
-        var foe = state.Players[GameState.Other(caster)];
-        var castRef = new TargetRef
+        int before = p.Discard.Count;
+        if (def.AnnihilateAfterCast)
         {
-            Kind = TargetKind.Discard,
-            Player = caster,
-            Index = p.Discard.Count - 1,
-        };
-        var one = new[] { castRef };
+            Effects.Log(state, caster, $"{def.Name} is annihilated.");
+        }
+        else
+        {
+            Effects.ToDiscard(state, caster, id);
+        }
+        if (state.Winner >= 0) return;
+        // The spell's discard index is how the other side's triggers get told
+        // which one was cast. A spell that never landed there (annihilated after
+        // cast, or voided by an aura) offers no ref rather than the old top.
+        var foe = state.Players[GameState.Other(caster)];
+        var one = p.Discard.Count > before
+            ? new[]
+            {
+                new TargetRef
+                {
+                    Kind = TargetKind.Discard,
+                    Player = caster,
+                    Index = p.Discard.Count - 1,
+                },
+            }
+            : Array.Empty<TargetRef>();
         // One round of answers per cast. An echo is a second cast rather than a
         // louder first one, so a card that answers a cast answers both, and the
         // rounds run after the discard because that is what names the spell.
@@ -740,6 +953,7 @@ public static class Engine
                 if (action.HandIndex < 0 || action.HandIndex >= me.Hand.Count) return "No card at that hand index.";
                 var id = me.Hand[action.HandIndex];
                 me.Hand.RemoveAt(action.HandIndex);
+                me.PlaysThisTurn += 1;
                 me.Supporters.Add(new Supporter { CardId = id });
                 // The hack rides along: a hacked supporter pays in Robot.
                 me.SupportersLeft -= 1;
@@ -889,21 +1103,25 @@ public static class Engine
                 if (!CanPay(me, spellCost)) return "Not enough mana.";
                 PayCost(state, actor, spellCost);
                 me.Hand.RemoveAt(action.HandIndex);
+                me.PlaysThisTurn += 1;
                 Effects.Log(state, actor, $"{me.Name} casts {def.Name}.");
                 int spellFoe = GameState.Other(actor);
+                // The window opens only for a Spell Trap that could actually
+                // answer this cast. The pending is staged before the question,
+                // because a trap's printed gate (Sugar Crash's play count)
+                // reads the spell it would be answering.
+                state.Pending = new Pending
+                {
+                    Player = spellFoe,
+                    Spell = new PendingSpell
+                    { Caster = actor, CardId = id, Targets = action.Targets },
+                };
                 bool holdsSpellTrap = state.Players[spellFoe].Hand
-                    .Exists(h => Registry.Card(h).Type == CardType.Trap && Registry.Card(h).SpellTrap);
-                if (holdsSpellTrap)
+                    .Exists(h => Registry.Card(h) is { Type: CardType.Trap, SpellTrap: true } trap
+                        && Effects.TrapWouldFire(state, spellFoe, trap));
+                if (!holdsSpellTrap)
                 {
-                    state.Pending = new Pending
-                    {
-                        Player = spellFoe,
-                        Spell = new PendingSpell
-                        { Caster = actor, CardId = id, Targets = action.Targets },
-                    };
-                }
-                else
-                {
+                    state.Pending = null;
                     ResolveSpell(state, actor, id, action.Targets);
                 }
                 return null;
@@ -921,6 +1139,7 @@ public static class Engine
                 if (!CanPay(me, stageCost)) return "Not enough mana.";
                 PayCost(state, actor, stageCost);
                 me.Hand.RemoveAt(action.HandIndex);
+                me.PlaysThisTurn += 1;
                 if (me.Stage is not null) Effects.ToDiscard(state, actor, me.Stage);
                 me.Stage = id;
                 Effects.Log(state, actor, $"{me.Name} sets the stage: {def.Name}.");
@@ -937,7 +1156,7 @@ public static class Engine
                 var summon = state.Find(action.Source)!;
                 var def = Registry.Card(summon.CardId);
                 var power = GameState.PowersOf(summon, def)[action.PowerIndex];
-                var bad = ValidateTargets(state, actor, power.Targets, action.Targets);
+                var bad = ValidateTargets(state, actor, power.Targets, action.Targets, def, summon);
                 if (bad is not null) return bad;
                 PayCost(state, actor, power.Cost);
                 // Sapping is part of the cost, paid before the effect resolves.
@@ -1001,6 +1220,7 @@ public static class Engine
             {
                 var pending = state.Pending;
                 if (pending is null || pending.Player != actor) return "No response window is open.";
+                if (pending.Store is not null) return "Settle the Store window first.";
                 // Springing the trap resolves the clash, and a flip revealed on
                 // the way in is owed its answer before that blow can land.
                 if (state.FlipQueue.Count > 0) return "Settle the flipped card first.";
@@ -1030,6 +1250,7 @@ public static class Engine
                 if (!CanPay(me, trapCost)) return "Not enough mana.";
                 PayCost(state, actor, trapCost);
                 me.Hand.RemoveAt(action.HandIndex);
+                me.PlaysThisTurn += 1;
                 Effects.Log(state, actor, $"{me.Name} springs {def.Name}.");
                 if (pending.Battle is not null)
                 {
@@ -1122,6 +1343,7 @@ public static class Engine
             case ActionType.PassResponse:
             {
                 if (state.Pending is null || state.Pending.Player != actor) return "No response window is open.";
+                if (state.Pending.Store is not null) return "Settle the Store window first.";
                 // Passing resolves the clash, so a flip still gating that blow
                 // comes first.
                 if (state.FlipQueue.Count > 0) return "Settle the flipped card first.";
@@ -1137,6 +1359,136 @@ public static class Engine
                 {
                     ResolvePendingBattle(state);
                 }
+                return null;
+            }
+
+            case ActionType.UseStore:
+            {
+                var blocked = MainPhaseBlocker(state);
+                if (blocked is not null) return blocked;
+                var summon = state.Find(action.Source);
+                if (summon is null) return "No summon there.";
+                if (summon.Owner != actor) return "Not your Store: open it and haggle.";
+                var why = StoreBlockers(state, actor, action.Source);
+                if (why is not null) return why;
+                var def = Registry.Card(summon.CardId);
+                var store = StoreOf(summon, def)!;
+                summon.StoreUsed = true;
+                int price = StoreSelfPrice(state, actor, store);
+                Effects.AddDebt(state, actor, price,
+                    $"{me.Name} runs {def.Name}'s Store for {price} debt.");
+                if (state.Winner >= 0) return null;
+                ResolveStoreEffect(state, actor, summon, def, store);
+                return null;
+            }
+
+            case ActionType.OpenStore:
+            {
+                var blocked = MainPhaseBlocker(state);
+                if (blocked is not null) return blocked;
+                if (state.Active != actor) return "Not your turn.";
+                var summon = state.Find(action.Source);
+                if (summon is null) return "No summon there.";
+                if (summon.Owner == actor) return "Run your own Store instead of haggling with it.";
+                var why = StoreBlockers(state, actor, action.Source);
+                if (why is not null) return why;
+                Effects.Log(state, actor,
+                    $"{me.Name} opens {Registry.Card(summon.CardId).Name}'s Store.");
+                state.Pending = new Pending
+                {
+                    Player = summon.Owner,
+                    Store = new PendingStoreWindow
+                    {
+                        Seller = summon.Owner,
+                        Buyer = actor,
+                        Source = action.Source,
+                    },
+                };
+                return null;
+            }
+
+            case ActionType.StoreOffer:
+            {
+                var pend = state.Pending;
+                if (pend?.Store is null || pend.Player != actor) return "No Store window is open.";
+                var w = pend.Store;
+                if (actor != w.Seller) return "Only the seller sets prices.";
+                if (w.Pass % 2 == 1) return "Your price is already on the table.";
+                var summon = state.Find(w.Source);
+                if (summon is null)
+                {
+                    state.Pending = null;
+                    return null;
+                }
+                var def = Registry.Card(summon.CardId);
+                var (min, max) = StorePriceBounds(StoreOf(summon, def)!);
+                if (action.Price < min || action.Price > max) return $"The price must be {min} to {max}.";
+                // An opening offer plus three counters, and after that the seller
+                // may only declare the price final.
+                if (w.Pass >= 4 && !action.Final) return "Only a final offer now.";
+                w.Price = action.Price;
+                w.Final = action.Final;
+                w.Pass += 1;
+                pend.Player = w.Buyer;
+                Effects.Log(state, actor, $"{me.Name} offers {def.Name}'s Store for "
+                    + $"{action.Price} debt{(w.Final ? ", final" : "")}.");
+                return null;
+            }
+
+            case ActionType.StoreCounter:
+            {
+                var pend = state.Pending;
+                if (pend?.Store is null || pend.Player != actor) return "No Store window is open.";
+                var w = pend.Store;
+                if (actor != w.Buyer) return "Only the buyer counters.";
+                if (w.Pass % 2 == 0) return "Nothing to counter yet.";
+                if (w.Final) return "That was a final offer: accept or reject.";
+                if (w.Pass >= 4) return "No more counters: accept or reject.";
+                var summon = state.Find(w.Source);
+                if (summon is null)
+                {
+                    state.Pending = null;
+                    return null;
+                }
+                var (min, max) = StorePriceBounds(StoreOf(summon, Registry.Card(summon.CardId))!);
+                if (action.Price < min || action.Price > max) return $"The price must be {min} to {max}.";
+                if (action.Price == w.Price) return "That is the price on the table: accept it.";
+                w.Price = action.Price;
+                w.Pass += 1;
+                pend.Player = w.Seller;
+                Effects.Log(state, actor, $"{me.Name} counters at {action.Price} debt.");
+                return null;
+            }
+
+            case ActionType.StoreAccept:
+            {
+                var pend = state.Pending;
+                if (pend?.Store is null || pend.Player != actor) return "No Store window is open.";
+                var w = pend.Store;
+                if (w.Price < 0) return "No price is on the table.";
+                // You accept the other side's price: the buyer an offer, the
+                // seller a counter. Odd passes are the seller's price.
+                bool theirPrice = actor == w.Seller ? w.Pass % 2 == 0 : w.Pass % 2 == 1;
+                if (!theirPrice) return "That is your own price.";
+                Effects.Log(state, actor, $"{me.Name} accepts {w.Price} debt.");
+                ResolveStorePurchase(state, w);
+                return null;
+            }
+
+            case ActionType.StoreReject:
+            {
+                var pend = state.Pending;
+                if (pend?.Store is null || pend.Player != actor) return "No Store window is open.";
+                var w = pend.Store;
+                // The seller must always name a price: a buyer can always buy at
+                // the slider's top, so only the buyer may walk away.
+                if (actor != w.Buyer) return "The seller must name a price.";
+                var summon = state.Find(w.Source);
+                if (summon is not null) summon.StoreStock = 0;
+                state.Pending = null;
+                Effects.Log(state, actor, $"{me.Name} walks away"
+                    + (summon is not null ? $" from {Registry.Card(summon.CardId).Name}'s Store" : "")
+                    + ".");
                 return null;
             }
 
@@ -1190,6 +1542,7 @@ public static class Engine
         if (badTarget is not null) return badTarget;
 
         me.Hand.RemoveAt(handIndex);
+        me.PlaysThisTurn += 1;
         var summon = Effects.NewSummon(state, id, actor);
         me.Slots[slot] = summon;
         int wanted = def.Hp;

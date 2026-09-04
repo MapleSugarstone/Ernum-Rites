@@ -37,7 +37,9 @@ public enum CardTag
 /// </summary>
 public static class CardIndex
 {
-    public const int StaticChannels = 32;
+    // The identity mask writes one channel per entry of Colors.All, so this
+    // grew with the sixth colour.
+    public const int StaticChannels = 33;
 
     private static string[] _ids = Array.Empty<string>();
     private static CardDef[] _defs = Array.Empty<CardDef>();

@@ -29,6 +29,7 @@ export interface Extra {
   triggers?: Triggers;
   effectDamage?: number;
   woundAmplify?: boolean;
+  debtAmplify?: boolean;
   supporterLock?: boolean;
   freeSpells?: boolean;
   spellTrap?: boolean;
@@ -37,6 +38,7 @@ export interface Extra {
   cursePotency?: boolean;
   muffleFlips?: boolean;
   voidsDiscard?: boolean;
+  annihilateAfterCast?: boolean;
   stationary?: boolean;
   redirect?: boolean;
   spellImmune?: boolean;
@@ -57,6 +59,8 @@ export interface Extra {
   targets?: TargetSpec[];
   effect?: EffectFn;
   stageHooks?: CardDef['stageHooks'];
+  store?: CardDef['store'];
+  storeBoost?: boolean;
 }
 
 let counter = 0;
@@ -157,6 +161,7 @@ function base(
   if (extra.triggers) def.triggers = extra.triggers;
   if (extra.effectDamage) def.effectDamage = extra.effectDamage;
   if (extra.woundAmplify) def.woundAmplify = extra.woundAmplify;
+  if (extra.debtAmplify) def.debtAmplify = extra.debtAmplify;
   if (extra.supporterLock) def.supporterLock = extra.supporterLock;
   if (extra.freeSpells) def.freeSpells = extra.freeSpells;
   if (extra.spellTrap) def.spellTrap = extra.spellTrap;
@@ -165,6 +170,7 @@ function base(
   if (extra.cursePotency) def.cursePotency = extra.cursePotency;
   if (extra.muffleFlips) def.muffleFlips = extra.muffleFlips;
   if (extra.voidsDiscard) def.voidsDiscard = extra.voidsDiscard;
+  if (extra.annihilateAfterCast) def.annihilateAfterCast = extra.annihilateAfterCast;
   if (extra.stationary) def.stationary = extra.stationary;
   if (extra.redirect) def.redirect = extra.redirect;
   if (extra.spellImmune) def.spellImmune = extra.spellImmune;
@@ -179,6 +185,8 @@ function base(
   if (extra.targets) def.targets = extra.targets;
   if (extra.effect) def.effect = extra.effect;
   if (extra.stageHooks) def.stageHooks = extra.stageHooks;
+  if (extra.store) def.store = extra.store;
+  if (extra.storeBoost) def.storeBoost = extra.storeBoost;
   return def;
 }
 

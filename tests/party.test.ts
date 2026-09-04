@@ -171,11 +171,11 @@ describe('party spell windows', () => {
     const idx = give(s, 0, 'sx-celebrate');
     s = must(s, 0, { type: 'CAST_SPELL', handIndex: idx, targets: [] });
     expect(s.pending?.player).toBe(1);
-    expect(s.pending?.queue).toEqual([2]);
+    expect(s.pending?.kind === 'response' ? s.pending.queue : null).toEqual([2]);
 
     s = must(s, 1, { type: 'PASS_RESPONSE' });
     expect(s.pending?.player).toBe(2);
-    expect(s.pending?.queue).toBeUndefined();
+    expect(s.pending?.kind === 'response' ? s.pending.queue : null).toBeUndefined();
 
     const trapIdx = s.players[2].hand.indexOf('rx-siphon');
     s = must(s, 2, { type: 'CAST_TRAP', handIndex: trapIdx, targets: [] });

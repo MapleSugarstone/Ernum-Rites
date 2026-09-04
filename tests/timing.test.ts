@@ -15,6 +15,7 @@ import {
   isRoping,
   PLAY_BONUS_CARDS,
   PLAY_BONUS_SECONDS,
+  PLAY_BONUS_FLOOR_MS,
   playBonusMs,
   ROPE_SECONDS,
   secondsLeft,
@@ -93,10 +94,12 @@ describe('clock arithmetic', () => {
 });
 
 describe('the time a card buys back', () => {
-  it('hands the first play the full refund and fades it to nothing', () => {
-    expect(playBonusMs(1)).toBe(PLAY_BONUS_SECONDS * 1000);
-    expect(playBonusMs(PLAY_BONUS_CARDS)).toBeGreaterThan(0);
-    expect(playBonusMs(PLAY_BONUS_CARDS + 1)).toBe(0);
+  it('hands the first play the full refund and fades to the flat second', () => {
+    expect(playBonusMs(1)).toBe(PLAY_BONUS_SECONDS * 1000 + PLAY_BONUS_FLOOR_MS);
+    expect(playBonusMs(PLAY_BONUS_CARDS)).toBeGreaterThan(PLAY_BONUS_FLOOR_MS);
+    // The curve is spent, and every play still pays the flat second.
+    expect(playBonusMs(PLAY_BONUS_CARDS + 1)).toBe(PLAY_BONUS_FLOOR_MS);
+    expect(playBonusMs(PLAY_BONUS_CARDS + 20)).toBe(PLAY_BONUS_FLOOR_MS);
     expect(playBonusMs(0)).toBe(0);
   });
 
@@ -110,6 +113,7 @@ describe('the time a card buys back', () => {
     // Every refund a single turn can earn, which stays well under a second turn.
     let total = 0;
     for (let n = 1; n <= PLAY_BONUS_CARDS; n++) total += playBonusMs(n);
+    // The curve plus ten flat seconds still sits under one full turn.
     expect(total).toBeLessThan(CLOCK_SECONDS.turn * 1000);
   });
 
