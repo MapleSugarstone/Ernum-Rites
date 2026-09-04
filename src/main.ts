@@ -677,9 +677,16 @@ const PIP_ART: Record<PipKind, string> = {
  */
 const PIP_ORDER: PipKind[] = ['P', 'S', 'R', 'F', 'O', 'K', 'C', 'E'];
 
-/** Pips for a pool rather than a cost, which is the one place Ernum prints. */
+/**
+ * Pips for a pool rather than a cost, which is the one place Ernum prints.
+ *
+ * Colourless prints here too. On a cost line a colourless pip means "any mana",
+ * so it is the one kind that names no bucket, but a pool holds it as itself:
+ * `payCost` spends `mana.C` before it touches any colour. Filtered out, the
+ * mana Lightbolbe pays for burning out was real, spendable and invisible.
+ */
 function poolHtml(mana: Record<ManaKind, number>): string {
-  return PIP_ORDER.filter((k) => k !== 'C' && mana[k] > 0)
+  return PIP_ORDER.filter((k) => mana[k] > 0)
     .map((k) => pipRun(k, mana[k]))
     .join('');
 }
