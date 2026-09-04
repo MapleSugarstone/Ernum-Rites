@@ -145,6 +145,7 @@ public static class Program
         Keywords();
         Stores();
         Immunity();
+        Ghost();
         TripleLegends();
         DigestAndReplay();
         Learning.Run();
@@ -1734,6 +1735,32 @@ public static class Program
     }
 
     /// <summary>Candy's price negotiation, from opening the shop to walking away.</summary>
+    private static void Ghost()
+    {
+        Harness.Test("Ghost costs no debt when a spell kills it at zero debt", () =>
+        {
+            var s = Game();
+            s = Place(s, 0, "o1-ghost", 0);
+            Harness.Eq(0, s.Players[0].DebtCount, "starts clear");
+            var spell = new EffectCtx { State = s, Me = 0, Card = Registry.Card("kx-DarkCandy") };
+            spell.Damage(TargetRef.Summon(0, 0), 9);
+            Harness.True(s.Players[0].Slots[0] is null, "the ghost fell");
+            Harness.Eq(0, s.Players[0].DebtCount, "no debt charged");
+            Harness.True(!s.Players[0].DebtZone.Contains("o1-ghost"), "not owed for");
+            Harness.True(s.Players[0].Discard.Contains("o1-ghost"), "spent to discard");
+        });
+
+        Harness.Test("Ghost neither bills nor refunds when debt is already carried", () =>
+        {
+            var s = Game();
+            s = Place(s, 0, "o1-ghost", 0);
+            s.Players[0].DebtCount = 5;
+            var spell = new EffectCtx { State = s, Me = 0, Card = Registry.Card("kx-DarkCandy") };
+            spell.Damage(TargetRef.Summon(0, 0), 9);
+            Harness.Eq(5, s.Players[0].DebtCount, "the free death leaves standing debt alone");
+        });
+    }
+
     private static void Immunity()
     {
         // Hateful Jelly: 2/4, Spell Immunity, the smallest printed immune body.

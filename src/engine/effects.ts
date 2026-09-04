@@ -62,6 +62,17 @@ export function markReturnToHand(asId?: string): void {
 let returnAsId: string | null = null;
 
 /**
+ * Raised by a Deathrattle so its death charges no debt: the card goes to the
+ * discard pile and the counter is not billed for it. This is the honest way to
+ * say "Costs no debt", where clearing debt in the trigger only worked when the
+ * owner already had some to clear.
+ */
+let deathFree = false;
+export function markFreeDeath(): void {
+  deathFree = true;
+}
+
+/**
  * The body eating this one. Set for the length of a single destroy: the eaten
  * card goes face down under the eater instead of into the debt zone, and no debt
  * is charged, because the card never reached the zone the counter counts.
@@ -629,7 +640,9 @@ export function destroySummon(state: GameState, summon: SummonInstance): void {
   // Fires while the debt is still unpaid, so a card can discount its own death.
   // Annihilation silences the body first, so none of its own text runs.
   const outer = returnToHand;
+  const outerFree = deathFree;
   returnToHand = false;
+  deathFree = false;
   if (!annihilated) fireTrigger(state, summon, 'onDeath');
   // A Deathrattle bestowed by another card fires after the body's own.
   const bestowed =
@@ -645,8 +658,10 @@ export function destroySummon(state: GameState, summon: SummonInstance): void {
   }
   const handBack = returnToHand;
   const handBackAs = returnAsId;
+  const free = deathFree;
   returnToHand = outer;
   returnAsId = null;
+  deathFree = outerFree;
 
   // The summon and everything that was protecting it goes to the debt zone,
   // but only the summon itself counts against the debt limit.
@@ -662,11 +677,15 @@ export function destroySummon(state: GameState, summon: SummonInstance): void {
   } else if (eatenBy) {
     eatenBy.hp.push({ cardId: summon.cardId, flipped: false });
     log(state, summon.owner, `${card(eatenBy.cardId).name} eats ${def.name}.`);
+  } else if (free) {
+    // Costs no debt: the card is spent to the discard pile rather than owed for.
+    toDiscard(state, summon.owner, summon.cardId);
+    log(state, summon.owner, `${def.name} fades without owing.`);
   } else {
     toDebt(state, summon.owner, summon.cardId);
   }
   for (const h of summon.hp) toDiscard(state, summon.owner, h.cardId);
-  if (!eatenBy && !annihilated) {
+  if (!eatenBy && !annihilated && !free) {
     const level = levelOf(summon, def);
     addDebt(state, summon.owner, level, `${def.name} dies for ${level} debt.`);
   }
@@ -1170,6 +1189,7 @@ function baseHelpers(state: GameState, me: PlayerIdx, sourceId: string, casts: b
       }
     },
     returnToHand: (asId?: string) => markReturnToHand(asId),
+    freeDeath: () => markFreeDeath(),
     catch: (target: TargetRef, count: number) => {
       if (blocked(target)) return 0;
       return catchHp(state, target, count);

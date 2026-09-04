@@ -62,7 +62,7 @@ public static class Purple
             str: 1,
             hp: 2,
             text: "Deathrattle: Costs no debt.",
-            triggers: new Triggers { OnDeath = c => c.ClearDebt(c.Me, 1) },
+            triggers: new Triggers { OnDeath = c => c.FreeDeath() },
             flipText: "Deal 1 debt.",
             flip: c => c.AddDebt(c.Opp, 1)),
 

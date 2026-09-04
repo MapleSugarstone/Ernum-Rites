@@ -103,10 +103,18 @@ public static class Triple
 
         Bgy.Summon("Seer Altine", "Seer Altine", F(Faction.Scholar, Faction.Star), str: 2, hp: 6,
             text: "At the start of your turn, the top card of your deck becomes a sapped supporter, "
-                + "then draw a card.",
+                + "then draw a card. A level 1 you play is annihilated; a level 2 takes 1.",
             triggers: new Triggers
             {
                 OnAwake = c => { c.SupporterFromDeck(c.Me); c.Draw(c.Me, 1); },
+                OnSummonPlayed = c =>
+                {
+                    var played = c.SummonAt(c.Target(0));
+                    if (played is null || played.Owner != c.Me) return;
+                    int lvl = GameState.LevelOf(played, Registry.Card(played.CardId));
+                    if (lvl == 1) c.Annihilate(c.Target(0));
+                    else if (lvl == 2) c.RawDamage(c.Target(0), 1);
+                },
             },
             powers: Powers(new Power
             {

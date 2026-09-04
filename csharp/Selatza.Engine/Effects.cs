@@ -83,6 +83,7 @@ public sealed class EffectCtx
     /// into the debt zone. The debt its level costs is still charged.
     /// </summary>
     public void ReturnToHand(string? asId = null) => Effects.MarkReturnToHand(asId);
+    public void FreeDeath() => Effects.MarkFreeDeath();
 
     /// <summary>Fish: flipped HP cards come back to their owner's hand.</summary>
     public int Catch(TargetRef t, int count) => Blocked(t) ? 0 : Effects.CatchHp(State, t, count);
@@ -604,6 +605,14 @@ public static class Effects
     /// </summary>
     [ThreadStatic]
     private static bool _returnToHand;
+
+    /// <summary>
+    /// Raised by a Deathrattle so its death charges no debt: the card is spent
+    /// to the discard pile and the counter is not billed for it, whatever debt
+    /// its owner carried and whatever killed it.
+    /// </summary>
+    [ThreadStatic]
+    private static bool _deathFree;
 
     /// <summary>
     /// The body eating this one. Set for the length of a single destroy: the eaten
@@ -1201,7 +1210,9 @@ public static class Effects
         // Fires while the debt is still unpaid, so a card can discount its own death.
         // Annihilation silences the body first, so none of its own text runs.
         bool outer = _returnToHand;
+        bool outerFree = _deathFree;
         _returnToHand = false;
+        _deathFree = false;
         if (!annihilated) FireTrigger(state, summon, TriggerName.OnDeath);
         // A Deathrattle bestowed by another card fires after the body's own.
         var bestowed = annihilated || summon.Bestowed is null
@@ -1228,8 +1239,10 @@ public static class Effects
         }
         bool handBack = _returnToHand;
         string? handBackAs = _returnAsId;
+        bool free = _deathFree;
         _returnToHand = outer;
         _returnAsId = null;
+        _deathFree = outerFree;
 
         var eatenBy = _eater;
         if (annihilated)
@@ -1250,12 +1263,18 @@ public static class Effects
             eatenBy.Hp.Add(new HpCard { CardId = summon.CardId });
             Log(state, summon.Owner, $"{Registry.Card(eatenBy.CardId).Name} eats {def.Name}.");
         }
+        else if (free)
+        {
+            // Costs no debt: the card is spent to the discard pile, not owed for.
+            ToDiscard(state, summon.Owner, summon.CardId);
+            Log(state, summon.Owner, $"{def.Name} fades without owing.");
+        }
         else
         {
             ToDebt(state, summon.Owner, summon.CardId);
         }
         foreach (var h in summon.Hp) ToDiscard(state, summon.Owner, h.CardId);
-        if (eatenBy is null && !annihilated)
+        if (eatenBy is null && !annihilated && !free)
         {
             int level = GameState.LevelOf(summon, def);
             AddDebt(state, summon.Owner, level, $"{def.Name} dies for {level} debt.");
@@ -1758,6 +1777,9 @@ public static class Effects
         _returnAsId = asId;
     }
     private static string? _returnAsId;
+
+    /// <summary>Raised by a Deathrattle so its death charges no debt at all.</summary>
+    public static void MarkFreeDeath() => _deathFree = true;
 
     public static int CatchHp(GameState state, TargetRef r, int count)
     {

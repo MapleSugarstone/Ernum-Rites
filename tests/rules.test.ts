@@ -447,6 +447,62 @@ describe('wounds', () => {
   });
 });
 
+describe('Seer Altine punishes small allies you play', () => {
+  const SEER = 'm-bgy-seeraltine';
+
+  it('annihilates a level 1 ally, chips a level 2, and spares enemies', () => {
+    let s = game();
+    s = place(s, 0, SEER, 0);
+
+    // A level 1 ally played under Seer is annihilated on the spot.
+    s = place(s, 0, D1, 1);
+    expect(s.players[0].slots[1], 'level 1 ally gone').toBeNull();
+
+    // A level 2 ally survives, one HP lighter.
+    s = place(s, 0, D2, 1);
+    const two = s.players[0].slots[1]!;
+    expect(two, 'level 2 ally stands').toBeTruthy();
+    expect(remainingHp(two)).toBe((card(D2).hp ?? 0) - 1);
+
+    // An enemy playing a level 1 is untouched: only your own board.
+    s = must(s, 0, { type: 'END_TURN' });
+    s = place(s, 1, D1, 0);
+    expect(s.players[1].slots[0], 'enemy level 1 stands').toBeTruthy();
+  });
+});
+
+describe('Ghost costs no debt however it dies', () => {
+  it('charges nothing when a spell kills it at zero debt', () => {
+    let s = game();
+    s = place(s, 0, 'o1-ghost', 0);
+    expect(s.players[0].debtCount).toBe(0);
+    // A spell kill at 0 debt is the reported case: the old clearDebt was wasted
+    // and the level debt landed anyway.
+    makeEffectCtx(s, 0, null, card('kx-DarkCandy'), []).damage(
+      { kind: 'summon', player: 0, slot: 0 },
+      9,
+    );
+    expect(s.players[0].slots[0]).toBeNull();
+    expect(s.players[0].debtCount, 'no debt charged').toBe(0);
+    // Spent to discard, never owed for.
+    expect(s.players[0].debt).not.toContain('o1-ghost');
+    expect(s.players[0].discard).toContain('o1-ghost');
+  });
+
+  it('still charges nothing when the owner already carries debt', () => {
+    let s = game();
+    s = place(s, 0, 'o1-ghost', 0);
+    s.players[0].debtCount = 5;
+    const before = s.players[0].debtCount;
+    makeEffectCtx(s, 0, null, card('kx-DarkCandy'), []).damage(
+      { kind: 'summon', player: 0, slot: 0 },
+      9,
+    );
+    // The whole death is free: it neither bills nor refunds standing debt.
+    expect(s.players[0].debtCount).toBe(before);
+  });
+});
+
 describe("Skeleton's fading recursion", () => {
   it('bills the final combat death once', () => {
     let s = game();

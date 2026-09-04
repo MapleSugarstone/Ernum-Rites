@@ -946,6 +946,12 @@ export interface EffectCtx {
    * the debt zone. The debt its level costs is still charged.
    */
   returnToHand(asId?: string): void;
+  /**
+   * From a Deathrattle: this death charges no debt at all. The card is spent to
+   * the discard pile and the counter is never billed for it, whatever debt its
+   * owner was carrying and whatever killed it.
+   */
+  freeDeath(): void;
   /** Fish: flipped HP cards come back to their owner's hand. */
   catch(target: TargetRef, count: number): number;
   /** Oil: junk shuffled into a deck, each copy a bad flip waiting to happen. */

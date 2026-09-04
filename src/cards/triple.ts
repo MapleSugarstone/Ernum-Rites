@@ -118,11 +118,19 @@ export const tripleCards: CardDef[] = [
     hp: 6,
     text:
       'At the start of your turn, the top card of your deck becomes a sapped supporter, ' +
-      'then draw a card.',
+      'then draw a card. A level 1 you play is annihilated; a level 2 takes 1.',
     triggers: {
       onAwake: (c) => {
         c.supporterFromDeck(c.me);
         c.draw(c.me, 1);
+      },
+      onSummonPlayed: (c) => {
+        const ref = c.targets[0];
+        const played = c.summonAt(ref);
+        if (!played || played.owner !== c.me) return;
+        const lvl = levelOf(played, card(played.cardId));
+        if (lvl === 1) c.annihilate(ref);
+        else if (lvl === 2) c.rawDamage(ref, 1);
       },
     },
     powers: [

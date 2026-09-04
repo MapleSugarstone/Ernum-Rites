@@ -78,7 +78,7 @@ export const purpleCards: CardDef[] = [
     str: 1,
     hp: 2,
     text: 'Deathrattle: Costs no debt.',
-    triggers: { onDeath: (c) => c.clearDebt(c.me, 1) },
+    triggers: { onDeath: (c) => c.freeDeath() },
     flipText: 'Deal 1 debt.',
     flip: (c) => c.addDebt(c.opp, 1),
   }),
