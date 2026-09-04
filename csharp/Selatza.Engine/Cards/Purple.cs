@@ -120,15 +120,15 @@ public static class Purple
         K.Summon(1, "skeleton", "Skeleton", F(Faction.Spirit),
             str: 1,
             hp: 3,
-            text: "Deathrattle: Adds its level plus 1 to your debt, then returns to your hand.",
-            // The engine bills a death for the body's level after this fires, so
-            // the extra point is added here and the two land together.
+            text: "Deathrattle: Returns to your hand with 1 less base HP. At 0 HP it stays down.",
+            // The bone wears down a printing per death: each return is a
+            // generated copy one HP smaller, and the copy that would print 0 is
+            // not returned, so the debt zone finally keeps it.
             triggers: new Triggers
             {
                 OnDeath = c =>
                 {
-                    c.AddDebt(c.Me, 1, "The bones are owed for twice over.");
-                    c.ReturnToHand();
+                    if (c.Card.Hp - 1 > 0) c.ReturnToHand(Generated.WitheredCopy(c.Card.Id));
                 },
             },
             flipText: "Shuffle a Rot into the enemy's deck.",

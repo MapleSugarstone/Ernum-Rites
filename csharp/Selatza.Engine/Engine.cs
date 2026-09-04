@@ -410,22 +410,21 @@ public static class Engine
 
     /// <summary>
     /// Everything a target spec may legally choose. <paramref name="source"/> is
-    /// the card doing the asking, which decides two things: no card's effect
-    /// may choose a Spell Immune body (the body's own powers excepted), and
-    /// none may choose past a Redirection body on the far side of the table.
+    /// the card doing the asking, which decides two things: a spell, trap or
+    /// field cannot choose a Spell Immune body, and nothing may choose past a
+    /// Redirection body on the far side of the table.
     /// </summary>
     public static List<TargetRef> TargetCandidates(GameState state, int me, TargetSpec spec,
-        CardDef? source = null, SummonInstance? asker = null)
+        CardDef? source = null)
     {
         var outList = new List<TargetRef>();
+        bool byCast = source is not null
+            && source.Type is CardType.Spell or CardType.Trap or CardType.Stage;
 
         void Push(TargetRef r, CardDef? def, SummonInstance? summon)
         {
-            // Spell Immunity is total: no card's effect may choose an immune
-            // body, its controller's included. The one exemption is the body
-            // itself asking, which is how its own powers still reach it.
-            if (r.IsBody && summon is not null && Registry.Card(summon.CardId).SpellImmune
-                && !ReferenceEquals(summon, asker)) return;
+            if (r.IsBody && byCast && summon is not null
+                && Registry.Card(summon.CardId).SpellImmune) return;
             if (r.IsBody && r.Player != me)
             {
                 var forced = RedirectTargets(state, r.Player);
@@ -491,7 +490,7 @@ public static class Engine
     }
 
     private static string? ValidateTargets(GameState state, int me, TargetSpec[]? specs, TargetRef[] refs,
-        CardDef? source = null, SummonInstance? asker = null)
+        CardDef? source = null)
     {
         var list = specs ?? Array.Empty<TargetSpec>();
         if (refs.Length > list.Length) return "Too many targets.";
@@ -504,7 +503,7 @@ public static class Engine
                 continue;
             }
             var r = refs[i];
-            if (!TargetCandidates(state, me, spec, source, asker).Contains(r))
+            if (!TargetCandidates(state, me, spec, source).Contains(r))
             {
                 return $"Illegal target for {spec.Label}.";
             }
@@ -670,7 +669,7 @@ public static class Engine
             store.Effect(new EffectCtx { State = state, Me = user, Source = summon, Card = def });
             return;
         }
-        var refs = TargetCandidates(state, user, spec, def, summon).ToArray();
+        var refs = TargetCandidates(state, user, spec, def).ToArray();
         var choice = new PendingChoice
         {
             Player = user,
@@ -1156,7 +1155,7 @@ public static class Engine
                 var summon = state.Find(action.Source)!;
                 var def = Registry.Card(summon.CardId);
                 var power = GameState.PowersOf(summon, def)[action.PowerIndex];
-                var bad = ValidateTargets(state, actor, power.Targets, action.Targets, def, summon);
+                var bad = ValidateTargets(state, actor, power.Targets, action.Targets, def);
                 if (bad is not null) return bad;
                 PayCost(state, actor, power.Cost);
                 // Sapping is part of the cost, paid before the effect resolves.

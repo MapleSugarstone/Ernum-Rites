@@ -109,17 +109,18 @@ describe('what a cast spell sets off', () => {
 describe('Skeleton going round', () => {
   const SKELETON = 'o1-skeleton';
 
-  it('bills a lap for its level and one more', () => {
+  it('bills a lap for its level and comes home one HP smaller', () => {
     const s = board();
     putSummonDirect(s, 0, SKELETON, 0, { strength: 1, color: 'O', hp: 3, asPrinted: true });
     const before = s.players[0].debtCount;
     destroySummon(s, s.players[0].slots[0]!);
-    expect(s.players[0].debtCount - before, 'a level 1 body costs 2').toBe(2);
-    expect(s.players[0].hand, 'and comes home to go round again').toContain(SKELETON);
+    expect(s.players[0].debtCount - before, 'a level 1 body costs its level').toBe(1);
+    expect(s.players[0].hand, 'and comes home worn down').toContain(`gen-wither-${SKELETON}`);
   });
 
   it('says what a lap costs', () => {
-    expect(card(SKELETON).text).toContain('Adds its level plus 1 to your debt');
+    expect(card(SKELETON).text).toContain('with 1 less base HP');
+    expect(card(SKELETON).text).toContain('At 0 HP it stays down');
   });
 });
 

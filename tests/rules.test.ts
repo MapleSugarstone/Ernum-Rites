@@ -447,17 +447,50 @@ describe('wounds', () => {
   });
 });
 
-describe('total spell immunity', () => {
+describe("Skeleton's fading recursion", () => {
+  it('returns one HP smaller each death and stays down at zero', () => {
+    let s = game();
+    s = place(s, 0, 'o1-skeleton', 0);
+    const kill = (st: GameState) => {
+      makeEffectCtx(st, 1, null, card('x-r-dummy-1'), []).destroy({
+        kind: 'summon',
+        player: 0,
+        slot: 0,
+      });
+    };
+    kill(s);
+    const first = s.players[0].hand[s.players[0].hand.length - 1];
+    expect(first).toBe('gen-wither-o1-skeleton');
+    expect(card(first).hp).toBe(2);
+
+    s.replaceQueue = [];
+    s = must(s, 0, { type: 'PLAY_SUMMON', handIndex: s.players[0].hand.length - 1, slot: 0 });
+    kill(s);
+    const second = s.players[0].hand[s.players[0].hand.length - 1];
+    expect(second).toBe('gen-wither-gen-wither-o1-skeleton');
+    expect(card(second).hp).toBe(1);
+
+    s.replaceQueue = [];
+    s = must(s, 0, { type: 'PLAY_SUMMON', handIndex: s.players[0].hand.length - 1, slot: 0 });
+    const handBefore = s.players[0].hand.length;
+    kill(s);
+    // A copy that would print 0 HP is not returned: the bone stays down.
+    expect(s.players[0].hand.length).toBe(handBefore);
+    expect(s.players[0].debt).toContain('gen-wither-gen-wither-o1-skeleton');
+  });
+});
+
+describe('spell immunity against casts', () => {
   // Hateful Jelly is the smallest printed immune body: 2/4, Spell Immunity.
   const JELLY = 'm-bp-hatefuljely';
 
-  it('keeps every card effect off an immune body, its own side included', () => {
+  it('keeps spells off the body, targeted and untargeted alike', () => {
     let s = game();
     s = place(s, 0, JELLY, 0);
     s = place(s, 0, D3, 1);
     const jelly = { kind: 'summon', player: 0, slot: 0 } as const;
 
-    // Its own side's heal spell cannot choose it.
+    // A heal spell cannot choose it, from its own side either.
     s.players[0].slots[0]!.hp[0].flipped = true;
     s.players[0].supporters.push(
       { cardId: 's1-fluterat', sapped: false },
@@ -468,30 +501,32 @@ describe('total spell immunity', () => {
     expect(res.ok).toBe(false);
     s.players[0].hand.pop();
 
-    // An untargeted sweep from the other side skips it and hits its neighbour.
-    s = must(s, 0, { type: 'END_TURN' });
+    // An untargeted spell sweep skips it and still hits its neighbour.
     const before = remainingHp(s.players[0].slots[0]!);
-    const ctx = makeEffectCtx(s, 1, null, card('kx-DarkCandy'), []);
-    ctx.damage(jelly, 3);
-    ctx.damage({ kind: 'summon', player: 0, slot: 1 }, 1);
+    const spell = makeEffectCtx(s, 1, null, card('kx-DarkCandy'), []);
+    spell.damage(jelly, 3);
+    spell.damage({ kind: 'summon', player: 0, slot: 1 }, 1);
     expect(remainingHp(s.players[0].slots[0]!)).toBe(before);
     expect(remainingHp(s.players[0].slots[1]!)).toBeLessThan(5);
+
+    // A Power is not a cast: the same damage from a body's power lands.
+    const power = makeEffectCtx(s, 1, null, card('m-bp-hatefuljely'), []);
+    power.damage(jelly, 1);
+    expect(remainingHp(s.players[0].slots[0]!)).toBe(before - 1);
   });
 
-  it('lets the immune body itself keep asking, and drops every other aura', () => {
+  it('keeps field auras off the body while other auras still land', () => {
     let s = game();
     s = place(s, 0, JELLY, 0);
     const jellyBody = s.players[0].slots[0]!;
-    // The asker exemption: the body's own card still finds itself.
-    const spec = { kind: 'summon', side: 'ally', label: 'x' } as const;
-    const own = targetCandidates(s, 0, spec, card(JELLY), jellyBody);
-    expect(own.some((r) => r.kind === 'summon' && r.slot === 0)).toBe(true);
-    const other = targetCandidates(s, 0, spec, card('m-yb-skypaint'));
-    expect(other.some((r) => r.kind === 'summon' && r.slot === 0)).toBe(false);
-
-    // A field that lowers every enemy's attack no longer reaches it.
+    // The enemy field's -1 never lands on it.
     s.players[1].stage = 'm-pg-Doortonowhere';
     expect(effectiveStrength(s, jellyBody)).toBe(2);
+    // A body's aura is not a cast and still applies: the enemy Obelisks'
+    // "All enemies have -1 attack" lands where the field's could not.
+    s.players[1].stage = null;
+    putSummonDirect(s, 1, 'm-rg-obelisks', 0, { asPrinted: true, strength: 1, color: 'P', hp: 2 });
+    expect(effectiveStrength(s, jellyBody)).toBe(1);
   });
 });
 
@@ -755,11 +790,11 @@ describe('triggers', () => {
     let s = game();
     s = place(s, 0, D3, 0);
     s = must(s, 0, { type: 'END_TURN' });
-    // Skeleton returns to hand when it falls.
+    // Skeleton returns to hand when it falls, one HP smaller each time.
     s = place(s, 1, 'o1-skeleton', 0);
     s = must(s, 1, { type: 'END_TURN' });
     s = must(s, 0, { type: 'DECLARE_ATTACK', source: src(0, 0), target: { kind: 'summon', player: 1, slot: 0 } });
-    expect(s.players[1].hand).toContain('o1-skeleton');
+    expect(s.players[1].hand).toContain('gen-wither-o1-skeleton');
   });
 
   it('fires on defence, before damage is dealt', () => {

@@ -7,12 +7,12 @@ namespace Selatza;
 public sealed class EffectCtx
 {
     /// <summary>
-    /// Spell Immunity is total: no card's effect touches an immune body, its
-    /// controller's included. The one exemption is the body's own card acting,
-    /// which is how an immune body's printed powers still reach itself. Combat
-    /// damage never comes through these verbs, so the clash is untouched.
+    /// Spell Immunity blocks casts: a spell, a trap or a field cannot touch an
+    /// immune body, targeted or not. Powers, triggers and Stores still reach
+    /// it, and combat damage never comes through these verbs at all.
     /// </summary>
-    private bool Blocked(TargetRef t) => Effects.ImmunityBlocks(State, t, Source);
+    private bool Blocked(TargetRef t) => Effects.ImmunityBlocks(State, t,
+        Card.Type is CardType.Spell or CardType.Trap or CardType.Stage);
 
     public required GameState State { get; init; }
     public required int Me { get; init; }
@@ -82,7 +82,7 @@ public sealed class EffectCtx
     /// From a Deathrattle: this body goes back to its owner's hand rather than
     /// into the debt zone. The debt its level costs is still charged.
     /// </summary>
-    public void ReturnToHand() => Effects.MarkReturnToHand();
+    public void ReturnToHand(string? asId = null) => Effects.MarkReturnToHand(asId);
 
     /// <summary>Fish: flipped HP cards come back to their owner's hand.</summary>
     public int Catch(TargetRef t, int count) => Blocked(t) ? 0 : Effects.CatchHp(State, t, count);
@@ -396,13 +396,8 @@ public sealed class TrapCheckCtx
 
 public sealed class FlipCtx
 {
-    /// <summary>
-    /// A flip is another card, so it earns no self-exemption: an immune holder
-    /// is out of its reach like everyone else. Moving itself out of the stack
-    /// stays free, since the card acting on itself is not the holder being
-    /// affected.
-    /// </summary>
-    private bool Blocked(TargetRef t) => Effects.ImmunityBlocks(State, t, null);
+    /// <summary>A flip is its own mechanic rather than a cast: immunity never blocks it.</summary>
+    private bool Blocked(TargetRef t) => Effects.ImmunityBlocks(State, t, false);
 
     public required GameState State { get; init; }
     public required int Me { get; init; }
@@ -636,15 +631,16 @@ public static class Effects
     private static int _spellBonus;
 
     /// <summary>
-    /// Spell Immunity is total: no card's effect touches an immune body, its
-    /// controller's included. The exemption is the body's own card acting.
-    /// Returns true when the touch must be skipped, logging the shrug once.
+    /// Spell Immunity blocks casts: a spell, a trap or a field cannot touch an
+    /// immune body, targeted or not and from either side. Powers, triggers,
+    /// flips and Stores still reach it. Returns true when the touch must be
+    /// skipped, logging the shrug once.
     /// </summary>
-    public static bool ImmunityBlocks(GameState state, TargetRef t, SummonInstance? source)
+    public static bool ImmunityBlocks(GameState state, TargetRef t, bool casts)
     {
-        if (!t.IsBody) return false;
+        if (!casts || !t.IsBody) return false;
         var s = state.Find(t);
-        if (s is null || !Registry.Card(s.CardId).SpellImmune || ReferenceEquals(s, source)) return false;
+        if (s is null || !Registry.Card(s.CardId).SpellImmune) return false;
         Log(state, s.Owner, $"{Registry.Card(s.CardId).Name} is untouched: Spell Immunity.");
         return true;
     }
@@ -1231,7 +1227,9 @@ public static class Effects
             }
         }
         bool handBack = _returnToHand;
+        string? handBackAs = _returnAsId;
         _returnToHand = outer;
+        _returnAsId = null;
 
         var eatenBy = _eater;
         if (annihilated)
@@ -1240,7 +1238,9 @@ public static class Effects
         }
         else if (handBack)
         {
-            if (ToHand(state, summon.Owner, summon.CardId))
+            // A rattle may hand back a different printing of itself: Skeleton
+            // returns one HP smaller each death.
+            if (ToHand(state, summon.Owner, handBackAs ?? summon.CardId))
             {
                 Log(state, summon.Owner, $"{def.Name} goes back to hand instead of into debt.");
             }
@@ -1751,8 +1751,13 @@ public static class Effects
     /// owner's hand. The summon gets smaller, which is the price, and a card
     /// that was spent comes back, which is the point.
     /// </summary>
-    /// <summary>Raised by a Deathrattle so the destroy sends the body to hand.</summary>
-    public static void MarkReturnToHand() => _returnToHand = true;
+    /// <summary>Raised by a Deathrattle so the destroy sends the body to hand, optionally as another printing.</summary>
+    public static void MarkReturnToHand(string? asId = null)
+    {
+        _returnToHand = true;
+        _returnAsId = asId;
+    }
+    private static string? _returnAsId;
 
     public static int CatchHp(GameState state, TargetRef r, int count)
     {
@@ -1946,9 +1951,9 @@ public static class Effects
     {
         var def = Registry.Card(summon.CardId);
         int total = GameState.StrengthOf(summon, def);
-        // Spell Immunity keeps every other card's standing bonus off the body:
-        // no field aura and no other body's aura lands on it. Its own card's
-        // bonus (a body counting for itself) still counts.
+        // Spell Immunity keeps field auras off the body: a stage is a cast, so
+        // its standing bonus never lands on an immune summon. Other bodies'
+        // auras are not casts and still apply.
         bool immune = def.SpellImmune;
         for (int controller = 0; controller < 2; controller++)
         {
@@ -1966,7 +1971,6 @@ public static class Effects
             {
                 var other = state.Find(r);
                 if (other is null) continue;
-                if (immune && !ReferenceEquals(other, summon)) continue;
                 var bonus2 = Registry.TryCard(other.CardId)?.Triggers?.StrengthBonus;
                 if (bonus2 is not null)
                 {

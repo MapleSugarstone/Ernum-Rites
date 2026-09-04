@@ -1,5 +1,5 @@
 import { card } from '../engine/registry';
-import { graftedCopy, oilRaise } from '../engine/generated';
+import { graftedCopy, oilRaise, witheredCopy } from '../engine/generated';
 import {
   battleAttacker,
   battleDefender,
@@ -139,13 +139,13 @@ export const purpleCards: CardDef[] = [
   k.summon(1, 'skeleton', 'Skeleton', ['Spirit'], {
     str: 1,
     hp: 3,
-    text: 'Deathrattle: Adds its level plus 1 to your debt, then returns to your hand.',
+    text: 'Deathrattle: Returns to your hand with 1 less base HP. At 0 HP it stays down.',
     triggers: {
-      // The engine bills a death for the body's level after this fires, so the
-      // extra point is added here and the two land together.
+      // The bone wears down a printing per death: each return is a generated
+      // copy one HP smaller, and the copy that would print 0 is not returned,
+      // so the debt zone finally keeps it.
       onDeath: (c) => {
-        c.addDebt(c.me, 1, 'The bones are owed for twice over.');
-        c.returnToHand();
+        if ((c.card.hp ?? 1) - 1 > 0) c.returnToHand(witheredCopy(c.card.id));
       },
     },
     flipText: 'Shuffle a Rot into the enemy\'s deck.',

@@ -371,26 +371,22 @@ function sidesFor(state: GameState, spec: TargetSpec, me: PlayerIdx): PlayerIdx[
 
 /**
  * Everything a target spec may legally choose. `source` is the card doing the
- * asking, which decides two things: no card's effect may choose a Spell Immune
- * body (the body's own powers excepted), and none may choose past a
- * Redirection body on the far side.
+ * asking, which decides two things: a spell, trap or field cannot choose a
+ * Spell Immune body, and nothing may choose past a Redirection body on the
+ * far side.
  */
 export function targetCandidates(
   state: GameState,
   me: PlayerIdx,
   spec: TargetSpec,
-  // Kept in the signature for its callers even though immunity no longer
-  // reads the card type: the asking body is what decides the exemption now.
-  _source?: CardDef,
-  asker?: SummonInstance | null,
+  source?: CardDef,
 ): TargetRef[] {
   const out: TargetRef[] = [];
+  const byCast =
+    source?.type === 'spell' || source?.type === 'trap' || source?.type === 'stage';
   const push = (ref: TargetRef, def: ReturnType<typeof card> | null, summon: SummonInstance | null) => {
     const isBody = ref.kind === 'summon' || ref.kind === 'leader';
-    // Spell Immunity is total: no card's effect may choose an immune body,
-    // its controller's included. The one exemption is the body itself asking,
-    // which is how an immune body's own powers still reach it.
-    if (isBody && summon && card(summon.cardId).spellImmune && summon !== asker) return;
+    if (isBody && byCast && summon && card(summon.cardId).spellImmune) return;
     if (isBody && ref.player !== me) {
       const forced = redirectTargets(state, ref.player);
       if (forced.length && !forced.some((f) => sameRef(f, ref))) return;
@@ -480,7 +476,6 @@ function validateTargets(
   specs: TargetSpec[] | undefined,
   refs: TargetRef[],
   source?: CardDef,
-  asker?: SummonInstance | null,
 ): string | null {
   const list = specs ?? [];
   if (refs.length > list.length) return 'Too many targets.';
@@ -491,7 +486,7 @@ function validateTargets(
       if (!spec.optional) return `Missing target: ${spec.label}.`;
       continue;
     }
-    const ok = targetCandidates(state, me, spec, source, asker).some((c) => sameRef(c, ref));
+    const ok = targetCandidates(state, me, spec, source).some((c) => sameRef(c, ref));
     if (!ok) return `Illegal target for ${spec.label}.`;
     // No card reads the same body twice, so a repeated pick is always a misclick.
     if (ref.kind === 'summon' || ref.kind === 'leader') {
@@ -643,7 +638,7 @@ function resolveStoreEffect(
     store.effect(makeEffectCtx(state, user, summon, def, []));
     return;
   }
-  const refs = targetCandidates(state, user, spec, def, summon);
+  const refs = targetCandidates(state, user, spec, def);
   const choice = {
     player: user,
     source: def.id,
@@ -1099,7 +1094,7 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
       const summon = findSummon(state, action.source)!;
       const def = card(summon.cardId);
       const power = powersOf(summon, def)[action.powerIndex];
-      const bad = validateTargets(state, actor, power.targets, action.targets, def, summon);
+      const bad = validateTargets(state, actor, power.targets, action.targets, def);
       if (bad) return bad;
       const badEnemy = enemyPickError(state, actor, action.enemy);
       if (badEnemy) return badEnemy;

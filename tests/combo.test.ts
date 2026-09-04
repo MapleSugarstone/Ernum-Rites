@@ -156,15 +156,16 @@ describe('combo search', () => {
 
   it('grafts a Deathrattle onto a body that returns to hand, and rides the loop to a kill', () => {
     // Graft moves False Humanity's "deal 2 to the enemy leader when it dies"
-    // onto Skeleton, which returns to hand when it dies. Attacking a body big
-    // enough to kill it then deals 2, hands it back, and it can be replayed and
-    // sent in again. The evaluator scores every cycle as a loss: a body traded
-    // off and a debt taken for 2 damage. Only the last cycle is a win.
+    // onto Skeleton, which returns to hand one HP smaller each death and stays
+    // down at zero, so the loop is three laps deep at most. The evaluator
+    // scores every lap as a loss: a body traded off and a debt taken for 2
+    // damage. Only the last lap is a win, and the leader sits where the laps
+    // that exist can reach it.
     const s = board();
     const me = s.players[0];
     const foe = s.players[1];
     me.leader = body(s, LEADER, 0, 10, true);
-    foe.leader = body(s, LEADER, 1, 12, true);
+    foe.leader = body(s, LEADER, 1, 6, true);
     me.slots[0] = body(s, 'o1-skeleton', 0, 2);
     me.slots[1] = body(s, 'm-rp-falsehumanity', 0, 3);
     me.hand = ['ox-graft'];

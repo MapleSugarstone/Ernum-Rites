@@ -945,7 +945,7 @@ export interface EffectCtx {
    * From a Deathrattle: this body goes back to its owner's hand rather than into
    * the debt zone. The debt its level costs is still charged.
    */
-  returnToHand(): void;
+  returnToHand(asId?: string): void;
   /** Fish: flipped HP cards come back to their owner's hand. */
   catch(target: TargetRef, count: number): number;
   /** Oil: junk shuffled into a deck, each copy a bad flip waiting to happen. */

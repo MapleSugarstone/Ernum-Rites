@@ -54,10 +54,12 @@ let triggerDepth = 0;
  */
 let returnToHand = false;
 
-/** Raised by a Deathrattle so the destroy sends the body to hand. */
-export function markReturnToHand(): void {
+/** Raised by a Deathrattle so the destroy sends the body to hand, optionally as another printing. */
+export function markReturnToHand(asId?: string): void {
   returnToHand = true;
+  returnAsId = asId ?? null;
 }
+let returnAsId: string | null = null;
 
 /**
  * The body eating this one. Set for the length of a single destroy: the eaten
@@ -642,7 +644,9 @@ export function destroySummon(state: GameState, summon: SummonInstance): void {
     }
   }
   const handBack = returnToHand;
+  const handBackAs = returnAsId;
   returnToHand = outer;
+  returnAsId = null;
 
   // The summon and everything that was protecting it goes to the debt zone,
   // but only the summon itself counts against the debt limit.
@@ -650,7 +654,9 @@ export function destroySummon(state: GameState, summon: SummonInstance): void {
   if (annihilated) {
     log(state, summon.owner, `${def.name} is annihilated.`);
   } else if (handBack) {
-    if (toHand(state, summon.owner, summon.cardId)) {
+    // A rattle may hand back a different printing of itself: Skeleton returns
+    // one HP smaller each death.
+    if (toHand(state, summon.owner, handBackAs ?? summon.cardId)) {
       log(state, summon.owner, `${def.name} goes back to hand instead of into debt.`);
     }
   } else if (eatenBy) {
@@ -1126,30 +1132,24 @@ export function takeControlOf(state: GameState, ref: TargetRef, to: PlayerIdx): 
 // --- contexts ---------------------------------------------------------------
 
 /**
- * Spell Immunity is total: no card's effect touches an immune body, its
- * controller's included, so the same rule that refuses a spell refuses a
- * power, a trap, a flip and a field. The one exemption is the body's own
- * card acting, which is how an immune body's printed powers and triggers
- * still reach itself. Combat damage never comes through these verbs, so the
- * clash is untouched.
+ * Spell Immunity blocks casts: a spell, a trap or a field cannot touch an
+ * immune body, targeted or not and from either side. Powers, battlecries,
+ * deathrattles, flips and Stores still reach it, and combat damage never
+ * comes through these verbs at all.
  */
-function immunityGate(state: GameState, source: SummonInstance | null) {
+function immunityGate(state: GameState, casts: boolean) {
   return (target: TargetRef): boolean => {
+    if (!casts) return false;
     if (target.kind !== 'summon' && target.kind !== 'leader') return false;
     const s = findSummon(state, target);
-    if (!s || !card(s.cardId).spellImmune || s === source) return false;
+    if (!s || !card(s.cardId).spellImmune) return false;
     log(state, s.owner, `${card(s.cardId).name} is untouched: Spell Immunity.`);
     return true;
   };
 }
 
-function baseHelpers(
-  state: GameState,
-  me: PlayerIdx,
-  sourceId: string,
-  sourceBody: SummonInstance | null,
-) {
-  const blocked = immunityGate(state, sourceBody);
+function baseHelpers(state: GameState, me: PlayerIdx, sourceId: string, casts: boolean) {
+  const blocked = immunityGate(state, casts);
   return {
     // Damage from a card, so Effect Damage applies. Combat does not come
     // through here, which is what keeps the keyword off the clash.
@@ -1169,7 +1169,7 @@ function baseHelpers(
         log(state, me, `${card(s.cardId).name} raises ${count} Power Shield(s).`);
       }
     },
-    returnToHand: () => markReturnToHand(),
+    returnToHand: (asId?: string) => markReturnToHand(asId),
     catch: (target: TargetRef, count: number) => {
       if (blocked(target)) return 0;
       return catchHp(state, target, count);
@@ -1479,7 +1479,8 @@ export function makeEffectCtx(
   targets: TargetRef[],
   oppMode?: OppMode,
 ): EffectCtx {
-  const ctxBlocked = immunityGate(state, source);
+  const casts = def.type === 'spell' || def.type === 'trap' || def.type === 'stage';
+  const ctxBlocked = immunityGate(state, casts);
   return {
     state,
     me,
@@ -1489,7 +1490,7 @@ export function makeEffectCtx(
     source,
     card: def,
     targets,
-    ...baseHelpers(state, me, def.id, source),
+    ...baseHelpers(state, me, def.id, casts),
     rawDamage: (target: TargetRef, amount: number) => {
       if (ctxBlocked(target)) return;
       dealDamage(state, target, amount);
@@ -1819,11 +1820,9 @@ export function makeFlipCtx(
   oppMode?: OppMode,
 ): FlipCtx {
   const me = holder.owner;
-  // A flip is another card, so it earns no self-exemption: an immune holder
-  // is out of its reach like everyone else. Moving itself out of the stack
-  // (returnThis, discardThis) stays free, since the card acting on itself is
-  // not the holder being affected.
-  const flipBlocked = immunityGate(state, null);
+  // A flip is its own mechanic rather than a cast, so immunity never blocks
+  // it, whatever the type of the card wearing the flip.
+  const flipBlocked = immunityGate(state, false);
   return {
     state,
     me,
@@ -1832,7 +1831,7 @@ export function makeFlipCtx(
     },
     holder,
     card: def,
-    ...baseHelpers(state, me, def.id, null),
+    ...baseHelpers(state, me, def.id, false),
     // A flip's own damage and wounds carry the flip depth, so a chain of
     // damage-flips and heal-flips cannot recurse without limit.
     damage: (target: TargetRef, amount: number) => {
@@ -1943,9 +1942,9 @@ export function flipWouldFire(state: GameState, offer: FlipOffer): boolean {
 export function effectiveStrength(state: GameState, summon: SummonInstance): number {
   const def = card(summon.cardId);
   let total = strengthOf(summon, def);
-  // Spell Immunity keeps every other card's standing bonus off the body too:
-  // no field aura and no other body's aura lands on it, its own side's
-  // included. Its own card's bonus (a body counting for itself) still counts.
+  // Spell Immunity keeps field auras off the body: a stage is a cast, so its
+  // standing bonus never lands on an immune summon. Other bodies' auras are
+  // not casts and still apply.
   const immune = !!def.spellImmune;
   for (let controller = 0 as PlayerIdx; controller < state.players.length; controller++) {
     const stageId = state.players[controller].stage;
@@ -1956,7 +1955,6 @@ export function effectiveStrength(state: GameState, summon: SummonInstance): num
     for (const ref of summonRefsOf(state, controller, true)) {
       const other = findSummon(state, ref);
       if (!other) continue;
-      if (immune && other !== summon) continue;
       const bonus = tryCard(other.cardId)?.triggers?.strengthBonus;
       if (bonus) total += bonus({ state, controller, summon, def, source: other });
     }

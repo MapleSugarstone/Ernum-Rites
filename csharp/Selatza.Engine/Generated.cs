@@ -9,6 +9,63 @@ public static class Generated
 {
     private static int ColoredTotal(Cost cost) => cost.Colored;
 
+    /// <summary>Skeleton's recursion wearing down: the same card printed one HP smaller.</summary>
+    public static string WitheredCopy(string sourceId)
+    {
+        var src = Registry.Card(sourceId);
+        return Registry.RegisterGenerated(new CardDef
+        {
+            Id = $"gen-wither-{sourceId}",
+            Name = src.Name,
+            Color = src.Color,
+            Color2 = src.Color2,
+            Color3 = src.Color3,
+            Identity = src.Identity,
+            Type = src.Type,
+            Starter = src.Starter,
+            Text = src.Text,
+            Cost = src.Cost,
+            Strength = src.Strength,
+            Hp = Math.Max(0, src.Hp - 1),
+            Level = src.Level,
+            Factions = src.Factions,
+            Neutral = src.Neutral,
+            Redirect = src.Redirect,
+            Reborn = src.Reborn,
+            Frenzy = src.Frenzy,
+            SpellImmune = src.SpellImmune,
+            EffectDamage = src.EffectDamage,
+            WoundAmplify = src.WoundAmplify,
+            DebtAmplify = src.DebtAmplify,
+            SupporterLock = src.SupporterLock,
+            FreeSpells = src.FreeSpells,
+            SpellTrap = src.SpellTrap,
+            LetSpellResolve = src.LetSpellResolve,
+            SpellEcho = src.SpellEcho,
+            CursePotency = src.CursePotency,
+            MuffleFlips = src.MuffleFlips,
+            VoidsDiscard = src.VoidsDiscard,
+            AnnihilateAfterCast = src.AnnihilateAfterCast,
+            Stationary = src.Stationary,
+            Uncollectible = true,
+            Art = src.Art,
+            Artist = src.Artist,
+            Num = "GEN",
+            Powers = src.Powers,
+            Triggers = src.Triggers,
+            Targets = src.Targets,
+            Effect = src.Effect,
+            Flip = src.Flip,
+            FlipUseful = src.FlipUseful,
+            TrapUseful = src.TrapUseful,
+            FlipText = src.FlipText,
+            FlipCost = src.FlipCost,
+            StageHooks = src.StageHooks,
+            Store = src.Store,
+            StoreBoost = src.StoreBoost,
+        });
+    }
+
     /// <summary>A copy of any card rebuilt in Robot: same rules text, every colour pip now R.</summary>
     public static string RobotCopy(string sourceId)
     {

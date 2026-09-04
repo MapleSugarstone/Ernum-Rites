@@ -1767,35 +1767,37 @@ public static class Program
         // Hateful Jelly: 2/4, Spell Immunity, the smallest printed immune body.
         const string Jelly = "m-bp-hatefuljely";
 
-        Harness.Test("total immunity keeps every card effect off the body", () =>
+        Harness.Test("immunity blocks casts and only casts", () =>
         {
             var s = Game();
             s = Place(s, 0, Jelly, 0);
             var jelly = TargetRef.Summon(0, 0);
             var body = s.Players[0].Slots[0]!;
 
-            // An untargeted sweep from the other side skips it.
+            // An untargeted spell sweep skips it.
             int before = body.RemainingHp;
-            var ctx = new EffectCtx { State = s, Me = 1, Card = Registry.Card("kx-DarkCandy") };
-            ctx.Damage(jelly, 3);
-            Harness.Eq(before, body.RemainingHp, "effect damage is shrugged off");
+            var spell = new EffectCtx { State = s, Me = 1, Card = Registry.Card("kx-DarkCandy") };
+            spell.Damage(jelly, 3);
+            Harness.Eq(before, body.RemainingHp, "spell damage is shrugged off");
 
-            // Its own side's card cannot heal it either.
-            body.Hp[0].Flipped = true;
-            var heal = new EffectCtx { State = s, Me = 0, Card = Registry.Card("m-yb-skypaint") };
-            heal.Unflip(jelly, 4);
-            Harness.Eq(before - 1, body.RemainingHp, "its own side's heal is refused");
+            // A Power is not a cast: the same damage from a body lands.
+            var power = new EffectCtx { State = s, Me = 1, Card = Registry.Card(Jelly) };
+            power.Damage(jelly, 1);
+            Harness.Eq(before - 1, body.RemainingHp, "power damage lands");
 
-            // The body's own card still reaches itself through targeting.
+            // A spell cannot choose it, from either side.
             var spec = new TargetSpec { Kind = TargetKind.Summon, Side = Side.Ally, Label = "x" };
-            var own = Engine.TargetCandidates(s, 0, spec, Registry.Card(Jelly), body);
-            Harness.Eq(true, own.Contains(jelly), "the asker exemption holds");
-            var other = Engine.TargetCandidates(s, 0, spec, Registry.Card("m-yb-skypaint"));
-            Harness.Eq(false, other.Contains(jelly), "other cards cannot choose it");
+            var cands = Engine.TargetCandidates(s, 0, spec, Registry.Card("m-yb-skypaint"));
+            Harness.Eq(false, cands.Contains(jelly), "a spell cannot choose it");
+            var byPower = Engine.TargetCandidates(s, 0, spec, Registry.Card(Jelly));
+            Harness.Eq(true, byPower.Contains(jelly), "a power still can");
 
-            // A field aura no longer lands on it.
+            // A field aura never lands; a body's aura still does.
             s.Players[1].Stage = "m-pg-Doortonowhere";
-            Harness.Eq(2, Effects.EffectiveStrength(s, body), "enemy field aura is dropped");
+            Harness.Eq(2, Effects.EffectiveStrength(s, body), "field aura is dropped");
+            s.Players[1].Stage = null;
+            s.Players[1].Slots[0] = Effects.NewSummon(s, "m-rg-obelisks", 1);
+            Harness.Eq(1, Effects.EffectiveStrength(s, body), "a body's aura still lands");
         });
     }
 

@@ -25,6 +25,18 @@ function coloredTotal(cost: Cost | undefined): number {
   return n;
 }
 
+/** Skeleton's recursion wearing down: the same card printed one HP smaller. */
+export function witheredCopy(sourceId: string): string {
+  const src = card(sourceId);
+  return registerGenerated({
+    ...src,
+    id: `gen-wither-${sourceId}`,
+    hp: Math.max(0, (src.hp ?? 1) - 1),
+    uncollectible: true,
+    num: 'GEN',
+  });
+}
+
 /** A copy of any card rebuilt in Robot: same rules text, every colour pip now R. */
 export function robotCopy(sourceId: string): string {
   const src = card(sourceId);
@@ -562,6 +574,7 @@ export function livingSummon(
 function rebuild(id: string): void {
   const simple: Array<[string, (src: string) => string]> = [
     ['gen-hack-', robotCopy],
+    ['gen-wither-', witheredCopy],
     ['gen-hedron-', hedronCopy],
     ['gen-grad-', robotColorlessCopy],
     ['gen-raise-', oilRaise],
