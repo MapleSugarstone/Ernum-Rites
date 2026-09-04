@@ -859,6 +859,10 @@ function fitFactor(chars: number): number {
   if (chars <= 240) return 0.0455;
   if (chars <= 280) return 0.044;
   if (chars <= 350) return 0.04;
+  // Seer Altine's two Powers and its punish clause push it to ~400, which the
+  // minted-card floor below rendered tiny; measured to fit at 0.0398, so this
+  // sits just under. Grafts (~436) and fusions (~485) stay past it on 0.034.
+  if (chars <= 420) return 0.039;
   return 0.034;
 }
 
