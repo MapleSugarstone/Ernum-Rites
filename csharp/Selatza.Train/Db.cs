@@ -73,14 +73,15 @@ public static class Db
         var e = Prep(con, "insert into ev_raw (game, seat, type, turn, card, power, target, "
             + "targetkind, targetside, won) values ($g,$s,$ty,$tu,$c,$p,$tg,$tk,$ts,$w)");
         var b = Prep(con, "insert into board (game, seat, turn, debt, hand, deck, discard, "
-            + "deckouts, bodies, supporters, leaderhp, slot, card, hp, won) values "
-            + "($g,$s,$tu,$d,$h,$dk,$di,$do,$bo,$su,$lh,$sl,$c,$hp,$w)");
+            + "deckouts, bodies, supporters, leaderhp, slot, card, hp, love, stock, won) values "
+            + "($g,$s,$tu,$d,$h,$dk,$di,$do,$bo,$su,$lh,$sl,$c,$hp,$lv,$sk,$w)");
 
         long games = 0, evRows = 0, boardRows = 0, seen = 0;
         var pendEv = new List<(int Seat, string Type, int Turn, int Card, string Power,
             int Target, string Kind, string Side)>();
         var pendBoard = new List<(int Seat, int Turn, int Debt, int Hand, int Deck, int Discard,
-            int DeckOuts, int Bodies, int Sup, int LeaderHp, int Slot, int Card, int Hp)>();
+            int DeckOuts, int Bodies, int Sup, int LeaderHp, int Slot, int Card, int Hp,
+            int Love, int Stock)>();
 
         while (r.NextGame(out var head))
         {
@@ -104,7 +105,7 @@ public static class Db
                         {
                             pendBoard.Add((seat, r.SnapTurn, s.Debt, s.Hand, s.Deck, s.Discard,
                                 s.DeckOuts, s.Bodies, s.SupporterCount, s.LeaderHp,
-                                slot, s.Slots[slot], s.SlotHp[slot]));
+                                slot, s.Slots[slot], s.SlotHp[slot], s.Love, s.SlotStock[slot]));
                         }
                     }
                     continue;
@@ -160,6 +161,7 @@ public static class Db
                 Set(b, "$di", row.Discard); Set(b, "$do", row.DeckOuts); Set(b, "$bo", row.Bodies);
                 Set(b, "$su", row.Sup); Set(b, "$lh", row.LeaderHp); Set(b, "$sl", row.Slot);
                 Set(b, "$c", row.Card); Set(b, "$hp", row.Hp);
+                Set(b, "$lv", row.Love); Set(b, "$sk", row.Stock);
                 Set(b, "$w", tail.Winner == row.Seat ? 1 : 0);
                 b.ExecuteNonQuery();
                 boardRows++;
@@ -260,7 +262,7 @@ create table ev_raw (game integer, seat integer, type text, turn integer, card i
 create table board (game integer, seat integer, turn integer, debt integer, hand integer,
                     deck integer, discard integer, deckouts integer, bodies integer,
                     supporters integer, leaderhp integer, slot integer, card integer,
-                    hp integer, won integer);
+                    hp integer, love integer, stock integer, won integer);
 
 create view ev as select e.game, e.seat, e.type, e.turn,
        c.name as card, c.colour as cardcol, c.level as cardlevel,
@@ -276,7 +278,7 @@ create view ev as select e.game, e.seat, e.type, e.turn,
 
 create view bd as select b.game, b.seat, b.turn, b.debt, b.hand, b.deck, b.discard,
        b.deckouts, b.bodies, b.supporters, b.leaderhp, b.slot,
-       c.name as card, c.colour as cardcol, c.level as cardlevel, b.hp, b.won,
+       c.name as card, c.colour as cardcol, c.level as cardlevel, b.hp, b.love, b.stock, b.won,
        case when b.seat = 0 then g.colourA else g.colourB end as colour,
        case when b.seat = 0 then g.leaderA else g.leaderB end as leader,
        g.reason, g.turns

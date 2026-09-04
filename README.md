@@ -320,9 +320,11 @@ is what keeps `check.cmd` quick. The legality tests cover everything.
 
 ## Playing the bot
 
-Set Opponent to Bot on the setup screen. It searches one ply: it plays every
-legal action out on a copy of the state, scores the resulting board, and keeps
-the best improvement, so a new card needs no bot support at all.
+Set Opponent to Bot on the setup screen. It plans a whole turn: a beam over the
+sequences of actions the turn can hold, a rollout that looks for a kill, a greedy
+model of the opponent's reply, and a term for what the board still threatens
+after that. Every step applies actions to copies of the state and reads the
+result, so a new card needs no bot support at all.
 
 ## Balancing the set against evolved decks
 
@@ -365,15 +367,16 @@ npm run train -- --rounds 120
 A population of agents plays a rated tournament against each other. Each one is
 handed a leader of any level that it has to keep, fixing the colors its deck may
 run, each starts on a random legal deck, and whoever comes out of a round behind
-swaps cards out. Two copies of the shipped one-ply bot sit in the field on
-hand-built decks at a fixed rating of 1500, so the ladder has an absolute zero.
+swaps cards out. Two copies of the shipped bot sit in the field on hand-built
+decks at a fixed rating of 1500, so the ladder has an absolute zero.
 
-The search is the same one-ply search the shipped bot uses. What changes is the
-scoring: the old evaluator ranks every legal action, and a small convolutional
-network then adjusts that ranking by predicting how wrong the evaluator was. Its
-main input is one column per card in the set, ordered so that neighboring
-columns are cards competing for the same deck slot, with the card's printed stats
-and its rules text boiled down to tags underneath.
+The search is the shipped bot's. What changes is its last comparison: the search
+plays the opponent's reply out against its best few end-of-turn candidates, and
+a small convolutional network then adjusts the ranking of those candidates by
+predicting how wrong the search's score was. Its main input is one column per
+card in the set, ordered so that neighboring columns are cards competing for the
+same deck slot, with the card's printed stats and its rules text boiled down to
+tags underneath.
 
 The network corrects rather than replaces for a specific reason written
 up in the notes: a network asked to rank the shortlist from scratch has to beat

@@ -20,7 +20,7 @@ namespace Selatza.Learn;
 /// </summary>
 public static class GameLog
 {
-    public const byte Version = 2;
+    public const byte Version = 3;
     private const byte RecordMark = 0xA5;
     public const byte SnapshotMark = 0xFE;
 
@@ -231,15 +231,18 @@ public static class GameLog
             b.VarInt(p.Deck.Count);
             b.VarInt(p.Discard.Count);
             b.VarInt(p.DeckOuts);
+            b.VarInt(p.Love);
             // Three slots then the leader, so a fixed shape needs no count.
             for (int k = 0; k < p.Slots.Length; k++)
             {
                 var body = p.Slots[k];
                 b.VarInt((body is null ? -1 : CardIndex.Of(body.CardId)) + 1);
                 b.VarInt(body?.RemainingHp ?? 0);
+                b.VarInt(body?.StoreStock ?? 0);
             }
             b.VarInt((p.Leader is null ? -1 : CardIndex.Of(p.Leader.CardId)) + 1);
             b.VarInt(p.Leader?.RemainingHp ?? 0);
+            b.VarInt(p.Leader?.StoreStock ?? 0);
             b.VarInt(p.Supporters.Count);
             foreach (var sup in p.Supporters) b.VarInt(CardIndex.Of(sup.CardId) + 1);
         }
@@ -274,7 +277,16 @@ public static class GameLog
                     ? CardIndex.Of(p.Supporters[a.Index].CardId) : -1;
             case ActionType.ActivatePower:
             case ActionType.DeclareAttack:
+            case ActionType.UseStore:
+            case ActionType.OpenStore:
                 return Resolve(s, a.Source);
+            // A haggle's passes carry no ref of their own: the shop is the one
+            // the open window names.
+            case ActionType.StoreOffer:
+            case ActionType.StoreCounter:
+            case ActionType.StoreAccept:
+            case ActionType.StoreReject:
+                return s.Pending?.Store is { } win ? Resolve(s, win.Source) : -1;
             default:
                 return -1;
         }

@@ -20,6 +20,8 @@ public sealed class SampleStore
     private float[] _prior = new float[1024];
     private float[] _hand = Array.Empty<float>();
     private float[] _trap = new float[1024];
+    /// <summary>What the position turned into a round of play later, on the value scale.</summary>
+    private float[] _boot = new float[1024];
     private int _count;
 
     private readonly int _tailSize;
@@ -60,6 +62,7 @@ public sealed class SampleStore
         Grow(ref _value, _count + 1);
         Grow(ref _prior, _count + 1);
         Grow(ref _trap, _count + 1);
+        Grow(ref _boot, _count + 1);
         Grow(ref _tail, (_count + 1) * _tailSize);
         Grow(ref _hand, (_count + 1) * SelatzaNet.HandBuckets);
 
@@ -79,6 +82,7 @@ public sealed class SampleStore
         _value[_count] = value;
         _prior[_count] = prior;
         _trap[_count] = trap;
+        _boot[_count] = value;
         sample.Slice(_cardPlane, _tailSize).CopyTo(_tail.AsSpan(_count * _tailSize, _tailSize));
         hand.CopyTo(_hand.AsSpan(_count * SelatzaNet.HandBuckets, SelatzaNet.HandBuckets));
         _count++;
@@ -86,7 +90,7 @@ public sealed class SampleStore
 
     /// <summary>Rebuilds a batch of dense observations from the given sample rows.</summary>
     public void Fill(ReadOnlySpan<int> rows, float[] dest, float[] value, float[] prior, float[] hand,
-        float[] trap)
+        float[] trap, float[] boot)
     {
         Array.Clear(dest, 0, rows.Length * _sampleSize);
         for (int b = 0; b < rows.Length; b++)
@@ -99,9 +103,16 @@ public sealed class SampleStore
             value[b] = _value[r];
             prior[b] = _prior[r];
             trap[b] = _trap[r];
+            boot[b] = _boot[r];
             Array.Copy(_hand, r * SelatzaNet.HandBuckets, hand, b * SelatzaNet.HandBuckets,
                 SelatzaNet.HandBuckets);
         }
+    }
+
+    /// <summary>What one row's position turned into, once the next planned turn had scored it.</summary>
+    public void SetBoot(int row, float value)
+    {
+        if (row >= 0 && row < _count) _boot[row] = value;
     }
 
     public void Clear()
@@ -130,6 +141,7 @@ public sealed class SampleStore
         Grow(ref _value, _count + other._count);
         Grow(ref _prior, _count + other._count);
         Grow(ref _trap, _count + other._count);
+        Grow(ref _boot, _count + other._count);
         Grow(ref _tail, (_count + other._count) * _tailSize);
         Grow(ref _hand, (_count + other._count) * SelatzaNet.HandBuckets);
 
@@ -140,6 +152,7 @@ public sealed class SampleStore
             _value[_count + i] = other._value[i];
             _prior[_count + i] = other._prior[i];
             _trap[_count + i] = other._trap[i];
+            _boot[_count + i] = other._boot[i];
         }
         Array.Copy(other._tail, 0, _tail, _count * _tailSize, other._count * _tailSize);
         Array.Copy(other._hand, 0, _hand, _count * SelatzaNet.HandBuckets,
@@ -164,6 +177,7 @@ public sealed class SampleStore
             _value[i] = _value[from + i];
             _prior[i] = _prior[from + i];
             _trap[i] = _trap[from + i];
+            _boot[i] = _boot[from + i];
         }
         Array.Copy(_tail, from * _tailSize, _tail, 0, keep * _tailSize);
         Array.Copy(_hand, from * SelatzaNet.HandBuckets, _hand, 0, keep * SelatzaNet.HandBuckets);

@@ -18,6 +18,7 @@ import { currentActor, isOver, type GameState } from '../src/engine/state';
 import { timeoutAction } from '../src/engine/timeout';
 import {
   AWAY_GRACE_SECONDS,
+  clockKeyFor,
   clockKindFor,
   enforcedMs,
   enforcedTurnMs,
@@ -96,6 +97,13 @@ export class MatchRoom extends DurableObject {
    * is a field the digest and the mirror have to agree about.
    */
   private skips: number[] = this.seats.map(() => 0);
+  /**
+   * The question the running clock was granted for. A window is told from the
+   * next one by this rather than by its kind and its owner, which a Store deal
+   * and the scry it pays out share: the scry used to inherit whatever the
+   * haggle had left.
+   */
+  private windowKey = '';
   /** Whose turn the current budget belongs to, and whether they have acted in it. */
   private turnActor: PlayerIdx | null = null;
   private turnActed = false;
@@ -769,7 +777,12 @@ export class MatchRoom extends DurableObject {
       await this.ctx.storage.deleteAlarm();
       return;
     }
-    await this.ctx.storage.setAlarm(Math.min(...at));
+    // Never in the past. The runtime fires a past alarm the instant it is set,
+    // so a deadline that has already gone by and a tick that does not move the
+    // position are a loop with no exit: the room spins, both clients are pushed
+    // the same state thousands of times a second, and the match never advances.
+    // The floor matches the tolerance `tick` reads a stale alarm with.
+    await this.ctx.storage.setAlarm(Math.max(Math.min(...at), Date.now() + 250));
   }
 
   /**
@@ -777,7 +790,7 @@ export class MatchRoom extends DurableObject {
    * enforces it. Called after every accepted action, because an action can hand
    * the turn over, open a response window, or close one.
    */
-  private async restartClock(played = false): Promise<void> {
+  private async restartClock(played = false, regrant = false): Promise<void> {
     // isOver rather than a winner: a draw ends the match with no winner set, and
     // a clock started past the end re-arms an alarm that fires at once, pushing
     // the finished state to both seats over and over.
@@ -808,6 +821,12 @@ export class MatchRoom extends DurableObject {
       this.turnLeftMs = budget;
       this.turnTotalMs = budget;
       this.turnPlays = 0;
+    } else if (regrant) {
+      // The clock ran out and the move forced into it was refused, so the bank
+      // holds nothing and the position is where it was. Grant the window again
+      // rather than hand `armAlarm` a deadline that has already gone by.
+      this.turnLeftMs = enforcedTurnMs(this.skips[this.state.active] ?? 0);
+      this.turnTotalMs = this.turnLeftMs;
     } else if (this.clock?.kind === 'turn') {
       // Still the same turn and still in the main phase, so what it has left is
       // whatever its own clock says. Reading it back here is what stops an
@@ -824,14 +843,17 @@ export class MatchRoom extends DurableObject {
       this.turnTotalMs += bonus;
     }
 
+    const question = clockKeyFor(this.state);
     if (kind === 'turn') {
       this.clock = { kind, player, endsAt: now + this.turnLeftMs, totalMs: this.turnTotalMs };
-    } else if (this.clock && this.clock.kind === kind && this.clock.player === player) {
-      // The same window still open: acting inside one does not buy more of it.
+    } else if (!regrant && this.clock && question === this.windowKey) {
+      // The same question still on the table: acting inside one window does not
+      // buy more of it.
     } else {
       const total = enforcedMs(kind);
       this.clock = { kind, player, endsAt: now + total, totalMs: total };
     }
+    this.windowKey = question;
     await this.armAlarm();
   }
 
@@ -902,8 +924,30 @@ export class MatchRoom extends DurableObject {
     if (result.ok) {
       this.state = result.state;
       this.broadcast({ type: 'timedOut', player, action: action.type });
+    } else {
+      // The forced move was refused, so the position is exactly where it was and
+      // the clock it was on has already run out. Logged rather than swallowed:
+      // every passive move here is meant to be legal in the position it is
+      // chosen for, so reaching this at all is a bug in `timeoutAction`, and it
+      // is the one thing a tail can tell it by. The window is granted again
+      // below, which is what stops the room spinning on a spent clock.
+      console.error(
+        'timeout action refused',
+        JSON.stringify({
+          room: this.ctx.id.name ?? '',
+          player,
+          action: action.type,
+          reason: result.error,
+          turn: this.state.turn,
+          active: this.state.active,
+          pending: this.state.pending?.kind ?? null,
+          flips: this.state.flipQueue.length,
+          choices: this.state.choiceQueue.length,
+          replaces: this.state.replaceQueue.length,
+        }),
+      );
     }
-    await this.restartClock();
+    await this.restartClock(false, !result.ok);
     // A move all the same, even though nobody chose it, so it animates too.
     this.pushState(result.ok ? { action, actor: player } : undefined);
   }

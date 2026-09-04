@@ -6,6 +6,11 @@
  * for them that a thinking player might not have picked. Declining a trap costs
  * nothing that was not already lost; springing one would spend a card they were
  * still deciding about.
+ *
+ * The order below is `currentActor`'s order and has to stay that way. The engine
+ * refuses an answer to a window that something else is queued in front of, and a
+ * refused answer is a clock the room has already spent with the position exactly
+ * where it was.
  */
 import type { Action } from './actions';
 import { tryCard } from './registry';
@@ -19,6 +24,13 @@ import { currentActor, findSummon, type GameState } from './state';
 export function timeoutAction(state: GameState): Action | null {
   const me = currentActor(state);
 
+  // A costed flip holds the blow that revealed it, so it is answered before the
+  // window that blow opened. Letting the card lie is the passive read, and it is
+  // what a player who stopped responding would get anyway.
+  if (state.flipQueue.length > 0 && state.flipQueue[0].player === me) {
+    return { type: 'DECLINE_FLIP' };
+  }
+
   // A Store window. The buyer walking away is the passive answer. The seller
   // has no walk-away: the rules guarantee a buyer can always buy at the top of
   // the slider, so a silent seller is taken to have said exactly that.
@@ -31,7 +43,7 @@ export function timeoutAction(state: GameState): Action | null {
   }
 
   // A trap window or a spell response: let it through unanswered.
-  if (state.pending) return { type: 'PASS_RESPONSE' };
+  if (state.pending?.player === me) return { type: 'PASS_RESPONSE' };
 
   // A deferred pick. Resolving with no pick is legal when the choice is optional
   // and the engine says so; otherwise the first offered target is the only way
@@ -46,11 +58,6 @@ export function timeoutAction(state: GameState): Action | null {
       return { type: 'RESOLVE_CHOICE', pick: choice.refs[0] };
     }
     return { type: 'RESOLVE_CHOICE' };
-  }
-
-  // A flip waiting on payment: never spend their mana for them.
-  if (state.flipQueue.length > 0 && state.flipQueue[0].player === me) {
-    return { type: 'DECLINE_FLIP' };
   }
 
   // A hole to fill: leaving it open is the passive read, and it is what a player

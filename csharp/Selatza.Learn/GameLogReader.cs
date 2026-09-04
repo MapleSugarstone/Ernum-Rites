@@ -18,9 +18,11 @@ public readonly record struct GameTail(int Winner, int Reason, int Turns, int Ev
 /// <summary>One player's zones at the top of a turn.</summary>
 public sealed class SideSnap
 {
-    public int Debt, Hand, Deck, Discard, DeckOuts, LeaderCard, LeaderHp, SupporterCount;
+    public int Debt, Hand, Deck, Discard, DeckOuts, Love, LeaderCard, LeaderHp, LeaderStock, SupporterCount;
     public readonly int[] Slots = new int[3];
     public readonly int[] SlotHp = new int[3];
+    /// <summary>Stock tokens standing on each slot body's Store, 0 for no shop.</summary>
+    public readonly int[] SlotStock = new int[3];
     public readonly List<int> Supporters = new();
 
     /// <summary>Bodies standing in slots, leader excluded.</summary>
@@ -159,13 +161,16 @@ public sealed class GameLogReader : IDisposable
                 p.Deck = (int)VarInt();
                 p.Discard = (int)VarInt();
                 p.DeckOuts = (int)VarInt();
+                p.Love = (int)VarInt();
                 for (int k = 0; k < 3; k++)
                 {
                     p.Slots[k] = (int)VarInt() - 1;
                     p.SlotHp[k] = (int)VarInt();
+                    p.SlotStock[k] = (int)VarInt();
                 }
                 p.LeaderCard = (int)VarInt() - 1;
                 p.LeaderHp = (int)VarInt();
+                p.LeaderStock = (int)VarInt();
                 p.SupporterCount = (int)VarInt();
                 p.Supporters.Clear();
                 for (int k = 0; k < p.SupporterCount; k++) p.Supporters.Add((int)VarInt() - 1);

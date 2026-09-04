@@ -25,6 +25,16 @@ public sealed class TrainConfig
     public float ResidualScale { get; set; } = 1f;
 
     /// <summary>
+    /// Share of the label taken from what the position turned into a round of
+    /// play later, as the search scored it, with the rest taken from the result
+    /// of the game. A result is one noisy bit from the end of a nine-turn game;
+    /// the next turn's score is denser and closer, and it is what teaches a
+    /// network the shape of a turn that set something up. Zero is the pure
+    /// result.
+    /// </summary>
+    public float Bootstrap { get; set; } = 0.3f;
+
+    /// <summary>
     /// Guessing the opponent's hand is not what the agent is for; it is there so
     /// the trunk has a reason to read the card-counting plane at all.
     /// </summary>
@@ -80,6 +90,7 @@ public static class Trainer
         var prior = new float[batch];
         var hand = new float[batch * SelatzaNet.HandBuckets];
         var trap = new float[batch];
+        var boot = new float[batch];
 
         int chunk = (batch + threads - 1) / threads;
         var losses = new double[threads * 3];
@@ -106,10 +117,12 @@ public static class Trainer
         for (int s = 0; s < plan; s++)
         {
             for (int i = 0; i < batch; i++) rows[i] = rng.NextInt(store.Count);
-            store.Fill(rows, input, value, prior, hand, trap);
+            store.Fill(rows, input, value, prior, hand, trap, boot);
+            float mix = Math.Clamp(cfg.Bootstrap, 0f, 1f);
             for (int i = 0; i < batch; i++)
             {
-                value[i] = Math.Clamp(cfg.ResidualScale * (value[i] - prior[i]), -1f, 1f);
+                float target = (1 - mix) * value[i] + mix * boot[i];
+                value[i] = Math.Clamp(cfg.ResidualScale * (target - prior[i]), -1f, 1f);
             }
             Array.Clear(losses);
 

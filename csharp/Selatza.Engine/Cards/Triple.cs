@@ -615,7 +615,7 @@ public static class Triple
                 },
             })),
 
-        Myr.Summon("Hellmage", "Hellmage", F(Faction.Spirit), str: 2, hp: 3,
+        Myr.Summon("Hellmage", "Hellmage", F(Faction.Spirit), str: 2, hp: 2,
             effectDamage: 1,
             text: "Effect Damage +1. At the end of your turn, every enemy character heals 1.",
             triggers: new Triggers

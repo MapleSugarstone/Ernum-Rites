@@ -26,8 +26,9 @@ public sealed class Encoder
     // this grew with the sixth colour.
     public const int EntityChannels = 27 + 2 * Rules.SummonSlots;
     // Four scalar rows write one value per entry of Colors.All (both mana
-    // pools and both identities), so this grew by four with the sixth colour.
-    public const int ScalarCount = 88;
+    // pools and both identities), so this grew by four with the sixth colour,
+    // and by six more for Love, shops and the plays counter.
+    public const int ScalarCount = 96;
 
     private readonly int _me;
     private readonly int _enemy;
@@ -415,6 +416,15 @@ public sealed class Encoder
         Put(state.StartingPlayer == _me ? 1 : 0);
         Put(Math.Min(1f, _intel.ScoutRollsTaken / 60f));
 
+        // Candy. Love and a shop's stock are both on the table, so either side's
+        // count is the viewer's to read.
+        Put(Math.Min(me.Love, 6) / 6f);
+        Put(Math.Min(enemy.Love, 6) / 6f);
+        Put((me.Love - enemy.Love) / 6f);
+        Put(Math.Min(3, OpenShops(state, _me)) / 3f);
+        Put(Math.Min(3, OpenShops(state, _enemy)) / 3f);
+        Put(Math.Min(me.PlaysThisTurn, 6) / 6f);
+
         // Declared a little long on purpose: the tail stays zero until a feature
         // is added, which keeps saved networks loadable across small additions.
         while (c < ScalarCount) Put(0);
@@ -436,6 +446,20 @@ public sealed class Encoder
         {
             if (_ent[e] is { } s && CanAttackNow(state, s, _me)) n++;
         }
+        return n;
+    }
+
+    /// <summary>Shops on <paramref name="owner"/>'s side that the viewer could act on right now.</summary>
+    private int OpenShops(GameState state, int owner)
+    {
+        int n = 0;
+        var p = state.Players[owner];
+        for (int i = 0; i < p.Slots.Length; i++)
+        {
+            if (p.Slots[i] is null) continue;
+            if (Engine.StoreBlockers(state, _me, TargetRef.Summon(owner, i)) is null) n++;
+        }
+        if (p.Leader is not null && Engine.StoreBlockers(state, _me, TargetRef.Leader(owner)) is null) n++;
         return n;
     }
 

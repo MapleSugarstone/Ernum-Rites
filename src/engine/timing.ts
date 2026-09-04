@@ -44,6 +44,45 @@ export function clockKindFor(state: {
 }
 
 /**
+ * What the clock is counting, as a value that moves whenever the question does.
+ *
+ * `clockKindFor` says how long a window runs and `currentActor` says whose it
+ * is, and between them they cannot tell one window from the next: a Store deal
+ * and the scry that deal pays out are both a response window belonging to the
+ * buyer, so the scry inherited whatever seconds the haggle had left. Every
+ * distinct question carries its own key, and the room grants a fresh window
+ * whenever the key moves.
+ *
+ * The queues are read in `currentActor`'s order, because the key has to describe
+ * the window the clock is actually on.
+ */
+export function clockKeyFor(state: {
+  pending: { kind: string; player: number; pass?: number } | null;
+  choiceQueue: readonly { player: number }[];
+  flipQueue: readonly { player: number }[];
+  replaceQueue: readonly { player: number }[];
+  turn: number;
+  active: number;
+}): string {
+  if (state.flipQueue.length > 0) {
+    return `flip/${state.flipQueue[0].player}/${state.flipQueue.length}`;
+  }
+  // Each offer on the table is its own question: a pass hands the decision to
+  // the other side, and the side receiving it gets a full window to answer in.
+  if (state.pending) {
+    const p = state.pending;
+    return p.kind === 'store' ? `store/${p.player}/${p.pass ?? 0}` : `pending/${p.player}`;
+  }
+  if (state.choiceQueue.length > 0) {
+    return `choice/${state.choiceQueue[0].player}/${state.choiceQueue.length}`;
+  }
+  if (state.replaceQueue.length > 0) {
+    return `replace/${state.replaceQueue[0].player}/${state.replaceQueue.length}`;
+  }
+  return `turn/${state.turn}/${state.active}`;
+}
+
+/**
  * The last stretch, when the rope catches. Purely a display threshold: nothing
  * about the rules changes, the bar just stops being ignorable.
  */

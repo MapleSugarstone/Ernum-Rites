@@ -216,8 +216,7 @@ public static class Program
             Net = shape,
             Agent = new AgentConfig
             {
-                TopK = Int(args, "--topk", 12),
-                RecordEvery = noNet ? 0 : Int(args, "--record-every", 2),
+                RecordEvery = noNet ? 0 : Int(args, "--record-every", 1),
             },
             Train = new TrainConfig
             {
@@ -227,6 +226,7 @@ public static class Program
                 ReplayCap = Int(args, "--replay-cap", 60000),
                 SampleReuse = Dbl(args, "--reuse", 4),
                 ResidualScale = (float)Dbl(args, "--residual", 1.0),
+                Bootstrap = (float)Dbl(args, "--bootstrap", 0.3),
                 HandWeight = (float)Dbl(args, "--hand-weight", 0.3),
                 TrapWeight = (float)Dbl(args, "--trap-weight", 0.2),
             },

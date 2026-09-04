@@ -546,7 +546,7 @@ public static class Pink
                     $"{c.State.Players[c.Me].Name} takes 2 debt for the security bill.");
             }),
 
-        K.Trap("trapSugarCrash", "Trap: Sugar Crash", new Cost(K: 2),
+        K.Trap("trapSugarCrash", "Trap: Sugar Crash", new Cost(K: 1),
             "Spell Trap. If the enemy has played more than 4 cards this turn, counter the spell, annihilate one of their summons and gain 2 Love.",
             spellTrap: true,
             trapUseful: c =>

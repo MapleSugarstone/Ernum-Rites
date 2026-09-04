@@ -3,6 +3,7 @@ import '../src/cards';
 import { applyAction, createGame, flipWouldFire } from '../src/engine/engine';
 import { chooseBoard, dealDamage } from '../src/engine/effects';
 import { card } from '../src/engine/registry';
+import { timeoutAction } from '../src/engine/timeout';
 import {
   choiceIsLive,
   currentActor,
@@ -149,6 +150,23 @@ describe('a flip parked under an open response window', () => {
   it('is what the game is waiting on, ahead of the window', () => {
     const s = parked();
     expect(currentActor(s), 'the flip owner, not the window owner').toBe(0);
+  });
+
+  it('is what a clock running out answers, not the window behind it', () => {
+    // The room forces this move and applies it, so a move the engine refuses is
+    // a clock already spent with the position exactly where it was: it re-armed
+    // an alarm in the past, the runtime fired it at once, and the room span
+    // there pushing the same state until somebody gave up. Reported as a turn
+    // that never arrived after the enemy's timer emptied.
+    const s = parked();
+    // The window on the same seat as the flip, which is the shape that wedged:
+    // the actor gate is satisfied either way, so only the order tells them apart.
+    s.pending!.player = 0;
+    const forced = timeoutAction(s)!;
+    expect(forced.type, 'the flip, which is what the game is waiting on').toBe('DECLINE_FLIP');
+    const r = applyAction(s, currentActor(s), forced);
+    expect(r.ok, 'and the engine takes it').toBe(true);
+    expect(r.ok && r.state.flipQueue.length, 'the queue is clear').toBe(0);
   });
 
   it('holds back a choice sitting behind it', () => {

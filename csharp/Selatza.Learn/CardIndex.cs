@@ -24,6 +24,10 @@ public enum CardTag
     Revive = 1 << 9,
     Ramp = 1 << 10,
     Reach = 1 << 11,
+    /// <summary>Prints a Store line, so the body sells an effect for debt.</summary>
+    Store = 1 << 12,
+    /// <summary>Gains or spends Love.</summary>
+    Love = 1 << 13,
 }
 
 /// <summary>
@@ -38,8 +42,9 @@ public enum CardTag
 public static class CardIndex
 {
     // The identity mask writes one channel per entry of Colors.All, so this
-    // grew with the sixth colour.
-    public const int StaticChannels = 33;
+    // grew with the sixth colour, and by three more for the Store and Love
+    // tags and the Store surcharge.
+    public const int StaticChannels = 36;
 
     private static string[] _ids = Array.Empty<string>();
     private static CardDef[] _defs = Array.Empty<CardDef>();
@@ -186,6 +191,8 @@ public static class CardIndex
         if (Any(t, "sap")) tags |= CardTag.Sap;
         if (Any(t, "from your debt", "from the debt", "out of debt", "revive")) tags |= CardTag.Revive;
         if (Any(t, "supporter", "mana", "extra card")) tags |= CardTag.Ramp;
+        if (Any(t, "store:")) tags |= CardTag.Store;
+        if (Any(t, "love")) tags |= CardTag.Love;
         // Reach is damage that arrives without a clash, which is what stops a
         // board of blockers from being an answer.
         if (d.Type != CardType.Summon && tags.HasFlag(CardTag.Damage)) tags |= CardTag.Reach;
@@ -237,6 +244,9 @@ public static class CardIndex
         Put(tags.HasFlag(CardTag.Mill) ? 1 : 0);
         Put(tags.HasFlag(CardTag.Revive) ? 1 : 0);
         Put(tags.HasFlag(CardTag.Reach) ? 1 : 0);
+        Put(tags.HasFlag(CardTag.Store) ? 1 : 0);
+        Put(tags.HasFlag(CardTag.Love) ? 1 : 0);
+        Put((d.Store?.Surcharge ?? 0) / 2f);
 
         if (c != StaticChannels)
         {

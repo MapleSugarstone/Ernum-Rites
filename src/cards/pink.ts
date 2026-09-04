@@ -577,7 +577,7 @@ export const pinkCards: CardDef[] = [
       c.addDebt(c.me, 2, `${c.state.players[c.me].name} takes 2 debt for the security bill.`);
     },
   }),
-  k.trap('trapSugarCrash', 'Trap: Sugar Crash', { K: 2 }, {
+  k.trap('trapSugarCrash', 'Trap: Sugar Crash', { K: 1 }, {
     spellTrap: true,
     text: 'Spell Trap. If the enemy has played more than 4 cards this turn, counter the spell, annihilate one of their summons and gain 2 Love.',
     trapUseful: (c) => {

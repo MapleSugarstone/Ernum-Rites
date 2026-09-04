@@ -129,9 +129,12 @@ public static class Program
                 {
                     var cand = CloneWeights(best, knobs);
                     double was = (double)knob.GetValue(best)!;
-                    double now = was * factor;
-                    // The reply share is a proportion, so it cannot leave [0,1].
+                    // A weight standing at zero cannot be scaled off it, so it
+                    // is stepped onto the scale instead.
+                    double now = was == 0 ? (factor < 1 ? 0.3 : 0.6) : was * factor;
+                    // Proportions cannot leave [0,1].
                     if (knob.Name == nameof(BotWeights.Reply)) now = Math.Clamp(now, 0.05, 1.0);
+                    if (knob.Name == nameof(BotWeights.DebtCurve)) now = Math.Clamp(now, 0.0, 1.0);
                     if (Math.Abs(now - was) < 1e-9) continue;
                     knob.SetValue(cand, now);
 
@@ -205,6 +208,16 @@ public static class Program
      * where the term never fired. Drawn from every leader the rules allow, which
      * is the same spread the tournaments use.
      */
+    /// <summary>
+    /// Leaders whose colours reach Candy, so a game on this pool holds shops and
+    /// Love. The debt terms only speak where a debt-for-benefit trade exists, and
+    /// a random deck from the whole set rarely offers one.
+    /// </summary>
+    private static readonly Lazy<List<string>> CandyLeaders = new(() =>
+        DeckGen.LeaderCandidates(LeaderPool.Contested2)
+            .Where(id => (CardIndex.IdentityOf(id) & (1 << (int)Color.K)) != 0)
+            .ToList());
+
     private static DeckList DeckFor(string pool, int game)
     {
         if (pool == "starters")
@@ -216,7 +229,9 @@ public static class Program
         // Seeded off the game index alone, so both weight sets in a comparison
         // are handed identical decks and the whole run reproduces.
         var rng = new Gauss(unchecked(50_021 + game * 6_361));
-        string leader = DeckGen.RandomLeader(LeaderPool.All, rng);
+        string leader = pool == "candy"
+            ? CandyLeaders.Value[rng.NextInt(CandyLeaders.Value.Count)]
+            : DeckGen.RandomLeader(LeaderPool.All, rng);
         return new DeckList
         {
             Name = "A",

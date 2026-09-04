@@ -7,6 +7,14 @@ public sealed class BotWeights
     /// <summary>Panic term once a player is within two debt of losing.</summary>
     public double DebtCliff = 40;
     /// <summary>
+    /// How much of the debt charge is deferred to the late points. At 0 every
+    /// point costs <see cref="Debt"/>. At 1 the charge is quadratic in the count
+    /// and reaches the same total at the limit, so the first points are nearly
+    /// free and the last ones cost double. This is the term that lets the bot
+    /// take a debt now for something later.
+    /// </summary>
+    public double DebtCurve = 0;
+    /// <summary>
     /// Charged per point a leader is below <c>LeaderCliffAt</c>, on top of the
     /// flat rate. The last points of a leader are worth more than the first, and
     /// a flat rate says otherwise: it prices nine HP spared off a leader on
@@ -92,6 +100,28 @@ public static class Bot
     /// Set once at startup rather than per game: it is read from every thread.
     /// </summary>
     public static bool Light { get; set; }
+
+    /// <summary>
+    /// A learned say in the turn's final ranking. The search hands over every
+    /// end-of-turn candidate it played the opponent's reply out for, with the
+    /// score it gave each, and gets back the index to play. Per thread, because
+    /// the tournament plays games in parallel and a shared hook would score one
+    /// game's leaves with another game's network.
+    /// </summary>
+    public interface ILeafChooser
+    {
+        int Pick(IReadOnlyList<GameState> leaves, IReadOnlyList<double> scores, int me);
+    }
+
+    [ThreadStatic] public static ILeafChooser? Chooser;
+
+    /// <summary>What carrying this much debt costs, on the evaluator's scale.</summary>
+    public static double DebtCharge(double debt, BotWeights w)
+    {
+        double d = Math.Max(0, debt);
+        double k = Math.Clamp(w.DebtCurve, 0, 1);
+        return w.Debt * d * ((1 - k) + k * d / Rules.DebtLimit);
+    }
 
     /// <summary>Positions the turn search carries from one action to the next.</summary>
     private static int BeamWidth => Light ? 3 : 12;
@@ -182,7 +212,7 @@ public static class Bot
             score -= sign * w.LeaderCliff * Math.Max(0, LeaderCliffAt - hp);
 
             double cliff = p.DebtCount >= Rules.DebtLimit - 2 ? w.DebtCliff : 0;
-            score -= sign * (w.Debt * p.DebtCount + cliff);
+            score -= sign * (DebtCharge(p.DebtCount, w) + cliff);
             score += sign * w.Love * p.Love;
 
             foreach (var s in p.Slots)
@@ -220,7 +250,11 @@ public static class Bot
             // owes three times as much for the next one.
             double near = Math.Min(1.0,
                 Math.Max(0, FatigueLookahead - p.Deck.Count) / (double)FatigueLookahead);
-            if (near > 0) score -= sign * w.Debt * Effects.ReshuffleCost(state, side) * near;
+            if (near > 0)
+            {
+                var bill = Effects.ReshuffleCost(state, side);
+                score -= sign * (DebtCharge(p.DebtCount + bill, w) - DebtCharge(p.DebtCount, w)) * near;
+            }
         }
         return score;
     }
@@ -233,7 +267,7 @@ public static class Bot
     /// struck or refused, so the search reads a settled price rather than an
     /// open negotiation.
     /// </summary>
-    private static GameState Settle(GameState state, BotWeights? w = null)
+    public static GameState Settle(GameState state, BotWeights? w = null)
     {
         if (state.Pending is null) return state;
         if (state.Pending.Store is not null) return SettleStore(state, w ?? BotWeights.Default);
@@ -336,7 +370,9 @@ public static class Bot
         var after = SettleChoices(res.State!, me, w);
         if (after.Winner >= 0 && after.Winner != me) return 0;
         int paid = Math.Max(1, win.Price - (Engine.StoreBoosted(state, win.Seller) ? 1 : 0));
-        double gain = Evaluate(after, me, w) - Evaluate(state, me, w) + paid * w.Debt;
+        int owed = state.Players[me].DebtCount;
+        double gain = Evaluate(after, me, w) - Evaluate(state, me, w)
+            + DebtCharge(owed + paid, w) - DebtCharge(owed, w);
         if (gain <= 0) return 0;
         return (int)Math.Floor(gain / PricePoints);
     }
@@ -345,7 +381,7 @@ public static class Bot
     /// Answer whatever decision a bought effect queued for its buyer, greedily.
     /// A Store collects at most one target, so one pass is the whole of it.
     /// </summary>
-    private static GameState SettleChoices(GameState state, int me, BotWeights w)
+    public static GameState SettleChoices(GameState state, int me, BotWeights w)
     {
         if (state.ChoiceQueue.Count == 0 || state.ChoiceQueue[0].Player != me) return state;
         GameState? best = null;
@@ -1358,18 +1394,23 @@ public static class Bot
 
         // Playing the reply out costs a turn of simulation apiece, which is why
         // only the handful of leaves gathered above get one.
-        var best = stand;
-        double bestScore = double.NegativeInfinity;
-        foreach (var leaf in ranked)
+        var totals = new double[ranked.Count];
+        int pick = 0;
+        for (int i = 0; i < ranked.Count; i++)
         {
-            double total = Outlook(leaf.State, me, w, leaf.Score);
-            if (total > bestScore + 1e-6)
-            {
-                bestScore = total;
-                best = leaf;
-            }
+            totals[i] = Outlook(ranked[i].State, me, w, ranked[i].Score);
+            if (totals[i] > totals[pick] + 1e-6) pick = i;
         }
 
-        return Begin(state, me, key, best.Line) ?? pass;
+        // These few comparisons are the ones that decide the turn, so they are
+        // the ones a learned correction is worth spending on.
+        if (Chooser is { } chooser)
+        {
+            var states = new GameState[ranked.Count];
+            for (int i = 0; i < ranked.Count; i++) states[i] = ranked[i].State;
+            pick = Math.Clamp(chooser.Pick(states, totals, me), 0, ranked.Count - 1);
+        }
+
+        return Begin(state, me, key, ranked[pick].Line) ?? pass;
     }
 }

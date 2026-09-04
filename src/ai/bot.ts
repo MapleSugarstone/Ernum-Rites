@@ -69,6 +69,14 @@ export interface BotWeights {
   /** Panic term once a player is within two debt of losing. */
   debtCliff: number;
   /**
+   * How much of the debt charge is deferred to the late points. At 0 every
+   * point costs `debt`. At 1 the charge is quadratic in the count and reaches
+   * the same total at the limit, so the first points are nearly free and the
+   * last ones cost double. This is the term that lets the bot take a debt now
+   * for something later.
+   */
+  debtCurve: number;
+  /**
    * Charged per point a leader is below `LEADER_CLIFF_AT`, on top of the flat
    * rate. The last points of a leader are worth more than the first, and a flat
    * rate says otherwise: it prices nine HP spared off a leader on thirty at
@@ -123,6 +131,7 @@ export const defaultWeights: BotWeights = {
   leaderHp: 8,
   debt: 12,
   debtCliff: 40,
+  debtCurve: 0,
   leaderCliff: 6,
   strength: 3,
   hp: 2.5,
@@ -149,6 +158,13 @@ const LEADER_CLIFF_AT = 6;
 const OUTS_CAP = 6;
 /** Draw steps the deck-out bill is projected over. */
 const FATIGUE_LOOKAHEAD = DRAW_PER_TURN * 3;
+
+/** What carrying `debt` costs, on the evaluator's scale. */
+function debtCharge(state: GameState, debt: number, w: BotWeights): number {
+  const d = Math.max(0, debt);
+  const k = Math.min(1, Math.max(0, w.debtCurve));
+  return w.debt * d * (1 - k + (k * d) / debtLimitOf(state));
+}
 
 /**
  * A body's strength as the evaluator should count it. Turn-length attack mods
@@ -196,7 +212,7 @@ export function evaluate(state: GameState, me: PlayerIdx, w = defaultWeights): n
     score -= sign * w.leaderCliff * Math.max(0, LEADER_CLIFF_AT - hp);
 
     const cliff = p.debtCount >= debtLimitOf(state) - 2 ? w.debtCliff : 0;
-    score -= sign * (w.debt * p.debtCount + cliff);
+    score -= sign * (debtCharge(state, p.debtCount, w) + cliff);
     score += sign * w.love * p.love;
 
     for (const s of p.slots) {
@@ -232,7 +248,11 @@ export function evaluate(state: GameState, me: PlayerIdx, w = defaultWeights): n
     // which both overcharged a deck one card short and could not see that a deck
     // which had already cycled twice owes three times as much for the next one.
     const near = Math.min(1, Math.max(0, FATIGUE_LOOKAHEAD - p.deck.length) / FATIGUE_LOOKAHEAD);
-    if (near > 0) score -= sign * w.debt * reshuffleCost(state, side) * near;
+    if (near > 0) {
+      const bill = reshuffleCost(state, side);
+      score -=
+        sign * (debtCharge(state, p.debtCount + bill, w) - debtCharge(state, p.debtCount, w)) * near;
+    }
   }
   return score;
 }
@@ -270,7 +290,7 @@ function debtCost(state: GameState, side: PlayerIdx, amount: number, w: BotWeigh
   const now = Math.max(0, was + amount);
   if (now >= limit) return Number.POSITIVE_INFINITY;
   const panic = (n: number) => (n >= limit - 2 ? w.debtCliff : 0);
-  return w.debt * (now - was) + panic(now) - panic(was);
+  return debtCharge(state, now, w) - debtCharge(state, was, w) + panic(now) - panic(was);
 }
 
 /**

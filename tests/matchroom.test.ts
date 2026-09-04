@@ -9,6 +9,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { openRoom, type FakeSocket, type RoomHarness } from './roomharness';
 import { autofill, DRAFT_SECONDS, PACK_COUNT } from '../src/engine/draft';
+import { dealDamage } from '../src/engine/effects';
+import type { GameState } from '../src/engine/state';
+import type { Clock } from '../src/engine/timing';
 import {
   AWAY_GRACE_SECONDS,
   CLOCK_SECONDS,
@@ -212,6 +215,163 @@ describe('a turn that shortens for the player not using it', () => {
       expect(h.peek<number>('turnTotalMs')).toBeGreaterThanOrEqual(floor);
     }
     expect(Math.max(...h.peek<number[]>('skips'))).toBeGreaterThan(1);
+  });
+});
+
+describe('a clock that runs out on a position with something queued in front', () => {
+  /** A costed flip, so the blow that reveals it parks and waits to be paid for. */
+  const COSTED_FLIP = 'n1-Thing';
+
+  /**
+   * Park a costed flip on the active player and open a window over the top of
+   * it, which is the board an on-attack trigger leaves behind when the defender
+   * holds a trap. The room is the only thing that can answer it once the clock
+   * empties, and what it answers with is the whole of this.
+   */
+  async function parkAFlipUnderAWindow(room: RoomHarness): Promise<GameState> {
+    const state = room.peek<GameState>('state');
+    const seat = state.active;
+    const leader = state.players[seat].leader!;
+    leader.hp = [
+      { cardId: leader.hp[0].cardId, flipped: false },
+      { cardId: COSTED_FLIP, flipped: false },
+    ];
+    dealDamage(state, { kind: 'leader', player: seat }, 2);
+    expect(state.flipQueue.length, 'the blow stopped on the flip').toBe(1);
+    state.pending = {
+      kind: 'response',
+      player: seat,
+      battle: {
+        attacker: { kind: 'leader', player: seat === 0 ? 1 : 0 },
+        defender: { kind: 'leader', player: seat },
+        trapUsed: false,
+      },
+      spell: null,
+    };
+    await (room.room as unknown as { restartClock(): Promise<void> }).restartClock();
+    return state;
+  }
+
+  it('answers the flip and hands the turn on', async () => {
+    // Reported as a turn that never arrived: the enemy's timer emptied, the
+    // board never moved again, and the enemy's own connection went at the same
+    // moment. The room forced the window rather than the flip, the engine
+    // refused it, and re-arming a clock that had already run out set an alarm in
+    // the past. The runtime fires that at once, so the room span there pushing
+    // the same state at both players for as long as it was up.
+    h = openRoom();
+    const a = await h.join('Alice');
+    await h.join('Bob');
+    await parkAFlipUnderAWindow(h);
+    a.socket.forget();
+
+    // `advance` throws if the alarm keeps coming due, which is the runaway.
+    await h.advance((CLOCK_SECONDS.response + NETWORK_GRACE_SECONDS + 5) * 1000);
+
+    expect(h.peek<GameState>('state').flipQueue.length, 'the flip was answered').toBe(0);
+    expect(a.socket.last('timedOut')?.action, 'and by the passive move').toBe('DECLINE_FLIP');
+    expect(a.socket.all('state').length, 'without pushing the same board forever')
+      .toBeLessThan(10);
+  });
+
+  it('grants a spent window again rather than re-arming it in the past', async () => {
+    // The backstop under the fix above. Any passive move the engine turns down
+    // leaves the position where it was on a clock that has already run out, and
+    // an alarm set in the past is one the runtime fires the instant it is set.
+    h = openRoom();
+    await h.join('Alice');
+    await h.join('Bob');
+    await parkAFlipUnderAWindow(h);
+    // The clock exactly as a refused move leaves it: spent, position unmoved.
+    h.peek<Clock>('clock').endsAt = Date.now() - 1;
+
+    await (
+      h.room as unknown as { restartClock(played: boolean, regrant: boolean): Promise<void> }
+    ).restartClock(false, true);
+
+    expect(h.peek<Clock>('clock').endsAt, 'the window has time in it again')
+      .toBeGreaterThan(Date.now());
+    expect(h.storage.alarm, 'and the alarm is ahead of the room, not behind it')
+      .toBeGreaterThan(Date.now());
+  });
+});
+
+describe('a Store deal and what it pays out', () => {
+  /** Whatever the room is counting right now, as the players are shown it. */
+  const clockOf = (room: RoomHarness) => room.peek<Clock>('clock');
+
+  it('gives the payout its own window instead of the haggle leftovers', async () => {
+    // Reported after a deal was struck and the buyer started scrying on the few
+    // seconds the haggle had left. A Store window and the scry it pays out are
+    // both a response window belonging to the buyer, so the room read the second
+    // as the first still being open and granted nothing.
+    h = openRoom();
+    await h.join('Alice');
+    await h.join('Bob');
+    const state = h.peek<GameState>('state');
+    const buyer = state.active;
+    const seller = (buyer === 0 ? 1 : 0) as typeof state.active;
+
+    state.pending = {
+      kind: 'store',
+      player: buyer,
+      seller,
+      buyer,
+      source: { kind: 'leader', player: seller },
+      final: false,
+      pass: 1,
+      battle: null,
+      spell: null,
+      price: 3,
+    } as GameState['pending'];
+    await (h.room as unknown as { restartClock(): Promise<void> }).restartClock();
+    const haggle = clockOf(h).endsAt;
+
+    // Most of the window spent thinking about the price, then the deal lands and
+    // pays out a scry, which is what the buyer is asked next.
+    await h.advance((CLOCK_SECONDS.response - 2) * 1000);
+    state.pending = null;
+    state.choiceQueue.push({ player: buyer, source: '', effect: 'scry', prompt: 'x', refs: [] });
+    await (h.room as unknown as { restartClock(): Promise<void> }).restartClock();
+
+    expect(clockOf(h).endsAt, 'the scry is not counted on the haggle clock')
+      .toBeGreaterThan(haggle);
+    expect(clockOf(h).totalMs, 'it is a full response window')
+      .toBe((CLOCK_SECONDS.response + NETWORK_GRACE_SECONDS) * 1000);
+  });
+
+  it('hands each side of the haggle a window of its own', async () => {
+    h = openRoom();
+    await h.join('Alice');
+    await h.join('Bob');
+    const state = h.peek<GameState>('state');
+    const buyer = state.active;
+    const seller = (buyer === 0 ? 1 : 0) as typeof state.active;
+    const store = (player: typeof state.active, pass: number) =>
+      ({
+        kind: 'store',
+        player,
+        seller,
+        buyer,
+        source: { kind: 'leader', player: seller },
+        final: false,
+        pass,
+        battle: null,
+        spell: null,
+        price: 3,
+      }) as GameState['pending'];
+
+    state.pending = store(seller, 0);
+    await (h.room as unknown as { restartClock(): Promise<void> }).restartClock();
+    await h.advance((CLOCK_SECONDS.response - 2) * 1000);
+    const asked = clockOf(h).endsAt;
+
+    // The seller names a price, which puts the question to the buyer.
+    state.pending = store(buyer, 1);
+    await (h.room as unknown as { restartClock(): Promise<void> }).restartClock();
+
+    expect(clockOf(h).player, 'the buyer is on the clock now').toBe(buyer);
+    expect(clockOf(h).endsAt, 'with a window of their own').toBeGreaterThan(asked);
   });
 });
 

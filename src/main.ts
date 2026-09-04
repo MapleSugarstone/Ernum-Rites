@@ -526,15 +526,21 @@ let autoPassed = -1;
 function maybeAutoPass(): void {
   const state = ui.state;
   if (!state?.pending || !canAct()) return;
+  // A costed flip in front of the window means the game is waiting on that
+  // instead, and canAct is satisfied by its owner rather than by the window's.
+  // Passing here is refused by the engine, and the refusal left the latch below
+  // set: the window was never answered and the clock ran out on it.
+  if (state.flipQueue.length > 0) return;
   if (liveTraps(state, viewSeat()) > 0) return;
   if (autoPassed === state.version) return;
   autoPassed = state.version;
   const version = state.version;
   // Off the render that noticed it: dispatching mid-render would re-enter it.
   window.setTimeout(() => {
-    if (ui.state === state && state.version === version && state.pending && canAct()) {
-      dispatch({ type: 'PASS_RESPONSE' });
-    }
+    const now = ui.state;
+    if (!now || now.version !== version || !now.pending || !canAct()) return;
+    if (now.flipQueue.length > 0) return;
+    dispatch({ type: 'PASS_RESPONSE' });
   }, 0);
 }
 
@@ -548,14 +554,16 @@ function maybeAutoDecline(): void {
   const version = state.version;
   // The delay lets the flip animation land before the card is waved away.
   window.setTimeout(() => {
-    if (
-      ui.state === state &&
-      state.version === version &&
-      state.flipQueue[0]?.player === viewSeat() &&
-      canAct()
-    ) {
-      dispatch({ type: 'DECLINE_FLIP' });
-    }
+    // Read back rather than compared against the state this was armed on. A push
+    // replaces the object without the position moving, so comparing the two
+    // dropped the decline while the latch above stayed set and nothing retried
+    // it: no prompt, and a clock running down on a card that could not be paid
+    // for either way.
+    const now = ui.state;
+    if (!now || now.version !== version || !canAct()) return;
+    if (now.flipQueue[0]?.player !== viewSeat()) return;
+    if (flipWorthAsking(now, viewSeat())) return;
+    dispatch({ type: 'DECLINE_FLIP' });
   }, 900);
 }
 
@@ -1564,6 +1572,9 @@ const CARD_VOICE: Record<string, Sfx> = {
 /** Powers with a voice of their own, keyed by the power's printed name. */
 const POWER_VOICE: Record<string, Sfx> = {
   Joke: 'joke',
+  // Candy Axeman's is a bolt of Pepper damage rather than anything Candy does,
+  // and its colour alone would have it speak in Candy's smaller voice.
+  Chop: 'pepperBolt',
 };
 
 function cue(name: Sfx, at = 0, gain?: number): void {
@@ -3342,7 +3353,7 @@ function promptHtml(state: GameState): string {
     } else {
       row = `<p class="storewait">Waiting on ${esc(other)}…</p>`;
     }
-    return `<div class="prompt urgent storeprompt">
+    return `<div class="prompt urgent storeprompt" data-prompt="store">
       <h2>${esc(def.name)}'s Store</h2>
       <p>${ruleText(def.text ?? '')}</p>
       ${onTable}
@@ -3352,29 +3363,11 @@ function promptHtml(state: GameState): string {
 
   if (!canAct()) return '';
 
-  if (state.pending) {
-    // A trap only offers itself when it answers this window and its cost,
-    // spell tax included, is within reach.
-    const live = (def: CardDef) => trapLive(state, me, def);
-    const picked = ui.selection?.kind === 'hand' ? card(p.hand[ui.selection.index] ?? '') : null;
-    const traps = liveTraps(state, me);
-    const spring = picked && live(picked) ? btn('trap', `Spring ${picked.name}`, 'primary') : '';
-    const attacker = state.pending.battle?.attacker;
-    const rival = state.pending.spell
-      ? state.pending.spell.caster
-      : attacker && attacker.kind !== 'color'
-        ? attacker.player
-        : otherPlayer(me);
-    const what = state.pending.spell
-      ? `${esc(state.players[rival].name)} casts ${esc(card(state.pending.spell.cardId).name)}.`
-      : `${esc(state.players[rival].name)} is attacking.`;
-    return `<div class="prompt urgent">
-      <h2>${state.pending.spell ? 'Spell cast' : 'Battle declared'}</h2>
-      <p>${what} ${traps > 0 ? 'Click a trap in your hand to spring it, or let' : 'Let'} it through.</p>
-      <div class="row">${spring}${btn('pass-response', 'Let it through', spring ? '' : 'primary')}</div>
-    </div>`;
-  }
-
+  // Ahead of the response window on purpose, in the order `currentActor`
+  // reads: a costed flip holds the blow that opened the window, the engine
+  // refuses an answer to the window while it is queued, and the pending
+  // prompt drawn over the top of it offered a button that could only ever
+  // come back rejected.
   if (state.flipQueue.length > 0) {
     const offer = state.flipQueue[0];
     const def = card(offer.cardId);
@@ -3402,6 +3395,29 @@ function promptHtml(state: GameState): string {
         ${affordable ? btn('pay-flip', 'Pay and trigger', 'primary') : ''}
         ${btn('decline-flip', 'Decline', affordable ? '' : 'primary')}
       </div>
+    </div>`;
+  }
+
+  if (state.pending) {
+    // A trap only offers itself when it answers this window and its cost,
+    // spell tax included, is within reach.
+    const live = (def: CardDef) => trapLive(state, me, def);
+    const picked = ui.selection?.kind === 'hand' ? card(p.hand[ui.selection.index] ?? '') : null;
+    const traps = liveTraps(state, me);
+    const spring = picked && live(picked) ? btn('trap', `Spring ${picked.name}`, 'primary') : '';
+    const attacker = state.pending.battle?.attacker;
+    const rival = state.pending.spell
+      ? state.pending.spell.caster
+      : attacker && attacker.kind !== 'color'
+        ? attacker.player
+        : otherPlayer(me);
+    const what = state.pending.spell
+      ? `${esc(state.players[rival].name)} casts ${esc(card(state.pending.spell.cardId).name)}.`
+      : `${esc(state.players[rival].name)} is attacking.`;
+    return `<div class="prompt urgent">
+      <h2>${state.pending.spell ? 'Spell cast' : 'Battle declared'}</h2>
+      <p>${what} ${traps > 0 ? 'Click a trap in your hand to spring it, or let' : 'Let'} it through.</p>
+      <div class="row">${spring}${btn('pass-response', 'Let it through', spring ? '' : 'primary')}</div>
     </div>`;
   }
 
@@ -3506,13 +3522,38 @@ function promptHtml(state: GameState): string {
   return '';
 }
 
+/**
+ * Put new markup up without rebuilding a panel that is already standing.
+ *
+ * `.prompt` runs its pop animation on the way in, and every rebuild makes a new
+ * element, so a panel that changes while it is open plays the animation again. A
+ * haggle changes on every offer and again each time the side on the clock
+ * switches, and both read as the window flashing. A panel that names itself the
+ * same as the one on screen keeps its element and takes only the new contents.
+ */
+function swapPrompt(layer: HTMLElement, html: string): void {
+  const standing = layer.firstElementChild as HTMLElement | null;
+  const key = standing?.dataset.prompt;
+  if (key) {
+    const staged = document.createElement('div');
+    staged.innerHTML = html;
+    const incoming = staged.firstElementChild as HTMLElement | null;
+    if (incoming && incoming.dataset.prompt === key) {
+      standing!.className = incoming.className;
+      standing!.innerHTML = incoming.innerHTML;
+      return;
+    }
+  }
+  layer.innerHTML = html;
+}
+
 function renderPrompt(): void {
   const el = document.getElementById('prompt');
   if (!el || !ui.state) return;
   const html = promptHtml(ui.state);
   if (html !== lastPromptHtml) {
     lastPromptHtml = html;
-    el.innerHTML = html;
+    swapPrompt(el, html);
   }
   // The slider's live position is DOM state rather than markup: written into
   // the html, every repaint after a move rebuilt the window once, which read
@@ -5378,7 +5419,7 @@ function renderBuilder(): string {
       <section class="book">
         <div class="bookscroll">${browser}</div>
         <div class="bookbar">
-          <input id="bsearch" type="text" placeholder="Search name, colour, tribe, type or any printed line" value="${esc(b.search)}"
+          <input id="bsearch" type="text" placeholder="Color, text, faction…" value="${esc(b.search)}"
             data-act="bsearch" autocomplete="off" spellcheck="false">
           <div class="rchips">${rarityChips}</div>
           <label class="ddfield"><span>Start from</span>${dropdownHtml({
@@ -5830,7 +5871,7 @@ function draftBuildHtml(): string {
     <section class="book">
       <div class="bookscroll">${draftBookHtml()}</div>
       <div class="bookbar">
-        <input id="dsearch" type="text" placeholder="Search name, colour, tribe, type or any printed line"
+        <input id="dsearch" type="text" placeholder="Color, text, faction…"
           value="${esc(d.search)}" data-act="dsearch" autocomplete="off" spellcheck="false">
         <div class="rchips">${rarityChips}</div>
       </div>
@@ -6282,6 +6323,9 @@ function netClient(): NetClient {
           takeWounds();
         }
       }
+      // A push is proof the room is there and still holding this seat, so the
+      // window this client would come back inside starts again from here.
+      holdSeatFrom();
       // The room is the authority, so its copy replaces this one outright.
       ui.state = state;
       ui.online.seat = seat;
@@ -6387,8 +6431,14 @@ function netClient(): NetClient {
       // A seat that is being held is a seat worth going back to. The room keeps
       // it for a grace period, so the match is not over until that runs out.
       if (resumable && (o.phase === 'playing' || o.phase === 'drafting')) {
-        beginReconnect();
-        return;
+        // The socket going is the moment the room starts holding the seat, so
+        // it is the moment this client's own window starts too.
+        holdSeatFrom();
+        if (beginReconnect()) return;
+        // Nothing is holding the seat any more, so the board on screen is not a
+        // match. Falling out of here without saying so is what left a player
+        // clicking a dead board: no reconnect, no Rejoin, and no way to tell.
+        keepResumable(null);
       }
       if (!rejoinTried && o.roomCode && (o.phase === 'waiting' || o.phase === 'connecting')) {
         rejoinTried = true;
@@ -6457,6 +6507,27 @@ function seatStillHeld(): boolean {
   return resumable !== null && resumable.heldUntil > Date.now();
 }
 
+/**
+ * Start the hold window again from now.
+ *
+ * The room begins its grace when the socket closes, so this has to mean the same
+ * thing: the seat is held for that long from the last moment the connection was
+ * known good. Frozen at the seating instead, it expired part way through every
+ * match longer than the grace, which is nearly all of them. The seat was still
+ * being held, the room was still waiting, and this client had already decided
+ * there was nothing to go back to: it stopped trying to reconnect, offered no
+ * Rejoin, and left the player clicking a dead board while their opponent waited
+ * on a turn that was never coming.
+ */
+function holdSeatFrom(now = Date.now()): void {
+  if (!resumable) return;
+  const until = now + AWAY_GRACE_SECONDS * 1000;
+  // Called on every push, so it writes only when the deadline actually moves:
+  // sessionStorage is synchronous and this is a coarse deadline either way.
+  if (until - resumable.heldUntil < 5_000) return;
+  keepResumable({ ...resumable, heldUntil: until });
+}
+
 function keepResumable(r: Resumable | null): void {
   resumable = r;
   try {
@@ -6478,15 +6549,18 @@ let reconnecting: { attempt: number; until: number; timer: number | null } | nul
  * something to come back to. Backed off so a server that is down is not hammered
  * by every client that was talking to it.
  */
-function beginReconnect(): void {
-  if (reconnecting || !seatStillHeld()) return;
+/** Reports whether there is an attempt running, so a caller can fall through. */
+function beginReconnect(): boolean {
+  if (reconnecting) return true;
+  if (!seatStillHeld()) return false;
   // A won match has nothing to go back to, and a scrim over the result banner
   // is the last thing the winner needs.
-  if (ui.state && isOver(ui.state)) return;
+  if (ui.state && isOver(ui.state)) return false;
   reconnecting = { attempt: 0, until: Date.now() + AWAY_GRACE_SECONDS * 1000, timer: null };
   ui.error = null;
   render();
   tryReconnect();
+  return true;
 }
 
 function tryReconnect(): void {
