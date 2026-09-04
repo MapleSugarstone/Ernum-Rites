@@ -119,6 +119,7 @@ describe('Skeleton going round', () => {
   });
 
   it('says what a lap costs', () => {
+    expect(card(SKELETON).text).toContain('Take its debt');
     expect(card(SKELETON).text).toContain('with 1 less base HP');
     expect(card(SKELETON).text).toContain('At 0 HP it stays down');
   });

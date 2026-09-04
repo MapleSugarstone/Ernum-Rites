@@ -139,7 +139,7 @@ export const purpleCards: CardDef[] = [
   k.summon(1, 'skeleton', 'Skeleton', ['Spirit'], {
     str: 1,
     hp: 3,
-    text: 'Deathrattle: Returns to your hand with 1 less base HP. At 0 HP it stays down.',
+    text: 'Deathrattle: Take its debt, then return to your hand with 1 less base HP. At 0 HP it stays down.',
     triggers: {
       // The bone wears down a printing per death: each return is a generated
       // copy one HP smaller, and the copy that would print 0 is not returned,

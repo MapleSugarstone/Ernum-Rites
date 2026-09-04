@@ -771,7 +771,7 @@ public static class Program
             s = Place(s, 1, "o1-skeleton", 0);
             s = Must(s, 1, GameAction.EndTurn());
             s = Must(s, 0, GameAction.DeclareAttack(Src(0, 0), Src(1, 0)));
-            Harness.True(s.Players[1].Hand.Contains("o1-skeleton"), "skeleton came back");
+            Harness.True(s.Players[1].Hand.Contains("gen-wither-o1-skeleton"), "skeleton came back worn down");
         });
 
         Harness.Test("fires on defence, before damage is dealt", () =>
@@ -1606,64 +1606,36 @@ public static class Program
             Harness.Eq(3, s.Players[0].DebtCount, "nor the counter");
         });
 
-        Harness.Test("a return-to-hand Deathrattle still pays its debt every time round", () =>
+        Harness.Test("Skeleton fades a printing per lap and finally stays down", () =>
         {
-            // Skeleton comes back to hand when it dies, and because it is a
-            // summon in hand it immediately offers itself as the replacement for
-            // the slot it just left. That looks unkillable. It is not: dying is
-            // what charges the debt, the debt is charged after the trigger, and
-            // it walks its owner to the limit a lap at a time. Skeleton bills
-            // its level plus one, so the lap costs two rather than one.
+            // Skeleton comes back to hand one base HP smaller each death: 3,
+            // then 2, then 1, and the copy that would print 0 is not returned.
+            // Each lap bills its level like any other death, nothing more.
             var s = Game();
             const string skeleton = "o1-skeleton";
             s = Place(s, 0, skeleton, 0);
-            int laps = 0;
-            for (int i = 0; i < Rules.DebtLimit + 5 && s.Winner < 0; i++)
-            {
-                int before = s.Players[0].DebtCount;
-                Effects.DestroySummon(s, s.Players[0].Slots[0]!);
-                laps++;
-                Harness.Eq(before + 2, s.Players[0].DebtCount, $"debt after lap {laps}");
-                if (s.Winner >= 0) break;
-                int idx = s.Players[0].Hand.IndexOf(skeleton);
-                Harness.True(idx >= 0, $"back in hand on lap {laps}");
-                // Own-turn deaths raise no replace prompt; the slot refills as
-                // an ordinary main-phase play.
-                s = Must(s, 0, GameAction.PlaySummon(idx, 0));
-            }
-            Harness.True(s.Winner >= 0, "the loop ends on its own");
-            Harness.Eq(1, s.Winner, "the looping player is the one who loses");
-            Harness.Contains("debt", s.WinReason, "reason");
-            // Two debt a lap, so the cap arrives in half the laps, rounded up.
-            Harness.Eq((Rules.DebtLimit + 1) / 2, laps, "two debt a lap up to the cap");
-            // Returning to hand moves the body rather than minting a copy, so
-            // one card stays one card however many laps it goes round.
-            int copies = s.Players[0].Hand.Count(x => x == skeleton)
-                + s.Players[0].DebtZone.Count(x => x == skeleton)
-                + s.Players[0].Deck.Count(x => x == skeleton);
-            Harness.Eq(1, copies, "the loop never mints a second copy");
-            Harness.Eq(0, s.Players[0].DebtZone.Count(x => x == skeleton),
-                "the body goes to hand, not to the debt zone");
-        });
 
-        Harness.Test("Skeleton returns the same card rather than making a new one", () =>
-        {
-            var s = Game();
-            const string skeleton = "o1-skeleton";
-            s = Place(s, 0, skeleton, 0);
-            for (int i = 0; i < 3; i++)
-            {
-                Effects.DestroySummon(s, s.Players[0].Slots[0]!);
-                int idx = s.Players[0].Hand.IndexOf(skeleton);
-                Harness.True(idx >= 0, $"back in hand on lap {i + 1}");
-                int copies = s.Players[0].Hand.Count(x => x == skeleton)
-                    + s.Players[0].DebtZone.Count(x => x == skeleton)
-                    + s.Players[0].Deck.Count(x => x == skeleton);
-                Harness.Eq(1, copies, $"still one card after lap {i + 1}");
-                s = Must(s, 0, GameAction.PlaySummon(idx, 0));
-            }
-            // Level 1 and a Deathrattle that bills one more, so two a lap.
-            Harness.Eq(6, s.Players[0].DebtCount, "three laps of a level 1 body");
+            int before = s.Players[0].DebtCount;
+            Effects.DestroySummon(s, s.Players[0].Slots[0]!);
+            Harness.Eq(before + 1, s.Players[0].DebtCount, "a lap bills the level alone");
+            int idx = s.Players[0].Hand.IndexOf("gen-wither-" + skeleton);
+            Harness.True(idx >= 0, "back in hand one HP smaller");
+            Harness.Eq(2, Registry.Card("gen-wither-" + skeleton).Hp, "the printing shrank");
+
+            // Own-turn deaths raise no replace prompt; the slot refills as an
+            // ordinary main-phase play.
+            s = Must(s, 0, GameAction.PlaySummon(idx, 0));
+            Effects.DestroySummon(s, s.Players[0].Slots[0]!);
+            idx = s.Players[0].Hand.IndexOf("gen-wither-gen-wither-" + skeleton);
+            Harness.True(idx >= 0, "a second lap shrinks it again");
+            Harness.Eq(1, Registry.Card("gen-wither-gen-wither-" + skeleton).Hp, "down to 1");
+
+            s = Must(s, 0, GameAction.PlaySummon(idx, 0));
+            int hand = s.Players[0].Hand.Count;
+            Effects.DestroySummon(s, s.Players[0].Slots[0]!);
+            Harness.Eq(hand, s.Players[0].Hand.Count, "at 0 HP it stays down");
+            Harness.True(s.Players[0].DebtZone.Contains("gen-wither-gen-wither-" + skeleton),
+                "and the debt zone finally keeps it");
         });
 
         Harness.Test("Enthrall rebuilds the seized body and its HP cards in Robot", () =>

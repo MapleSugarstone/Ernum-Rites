@@ -2601,7 +2601,7 @@ function unitHtml(state: GameState, ref: TargetRef, caption: string): string {
   if (def.spellImmune) {
     tokens.push({
       art: SPELL_IMMUNE_TOKEN,
-      title: 'Spell Immunity: no card effect touches this body, from any side. Its own text and combat still work.',
+      title: 'Spell Immunity: no spell, trap or field effect touches this body, from either side. Powers, flips and combat still reach it.',
       // Only while a spell is being aimed that would otherwise land here. The
       // token is always on the card; this is it answering.
       cls: warded.has(refKey(ref)) ? 'warding' : '',
@@ -4880,7 +4880,7 @@ function renderRules(): string {
     ${sec('14-4.', 'Frenzy fires the first time its summon takes damage and survives, once per summon. A summon that dies to the hit never frenzies.')}
     ${sec('14-5.', 'A Stationary character never declares an attack. It still deals its attack back when something attacks it.')}
     ${sec('14-6.', 'Redirection forces the enemy to attack this character and to aim every spell and trap at it. A leader with Redirection is the only legal target, so you may attack it even with its slots full.')}
-    ${sec('14-7.', 'Spell Immunity stops every card effect from touching this character: spells, traps, powers, flips and field effects alike, its own controller included. Its own printed text still works, and combat damage still lands.')}
+    ${sec('14-7.', 'Spell Immunity stops spells, traps and field effects from touching this character, targeted or not and from either side of the table. Powers, Battlecries, Deathrattles, flips, Stores and combat all still reach it.')}
     ${sec('14-8.', 'Effect Damage raises the damage its controller deals with spells, Powers and flips by that much. It does not change combat damage.')}
     ${sec('14-9.', 'Scry N looks at the top N cards of your deck, takes the first match to your hand, and puts the rest on the bottom.')}
     ${sec('14-10.', 'Mill moves cards from the top of a deck into its discard pile.')}
@@ -8618,7 +8618,7 @@ const KEYWORD_HELP: [RegExp, string, string][] = [
   [/\bPower Shields?\b/, 'Power Shield', 'Blocks the next instance of damage completely, then breaks.'],
   [/\bRedirection\b/, 'Redirection', 'Enemies may only attack this body and only aim spells and traps at it.'],
   [/\bStationary\b/, 'Stationary', 'Never declares an attack, but still deals its attack back when attacked.'],
-  [/\bSpell Immunity\b/, 'Spell Immunity', 'No card effect touches this body, from any side: spells, traps, powers, flips and fields alike. Its own text and combat still work.'],
+  [/\bSpell Immunity\b/, 'Spell Immunity', 'No spell, trap or field effect touches this body, from either side. Powers, flips and combat still reach it.'],
   [/\bSpell Trap\b/, 'Spell Trap', 'Springs when the enemy casts a spell, and countering it means the spell never resolves.'],
   [/\bEffect Damage\b/, 'Effect Damage', 'Damage from your spells, Powers and flips is increased by this much.'],
   [/\bStores?\b/, 'Store', 'Its controller may run it once per turn for 2 debt, never the turn it arrived. On their own turn other players may buy it: the seller names a price from 1 to 4, only the buyer may reject, and each sale pays the seller 1 Love.'],

@@ -448,6 +448,31 @@ describe('wounds', () => {
 });
 
 describe("Skeleton's fading recursion", () => {
+  it('bills the final combat death once', () => {
+    let s = game();
+    s = place(s, 0, D3, 0);
+    s = must(s, 0, { type: 'END_TURN' });
+    // The worn-to-1 printing stands for the enemy and falls to the attack.
+    putSummonDirect(s, 1, 'gen-wither-gen-wither-o1-skeleton', 0, {
+      asPrinted: true,
+      strength: 1,
+      color: 'O',
+      hp: 1,
+    });
+    s = must(s, 1, { type: 'END_TURN' });
+    const debt0 = s.players[1].debtCount;
+    s = must(s, 0, {
+      type: 'DECLARE_ATTACK',
+      source: src(0, 0),
+      target: { kind: 'summon', player: 1, slot: 0 },
+    });
+    const bills = s.log.filter((l) => l.text?.includes('dies for')).length;
+    expect(s.players[1].slots[0]).toBeNull();
+    expect(s.players[1].debtCount - debt0, 'one death, one bill').toBe(1);
+    expect(bills, 'and one line saying so').toBe(1);
+  });
+
+
   it('returns one HP smaller each death and stays down at zero', () => {
     let s = game();
     s = place(s, 0, 'o1-skeleton', 0);
@@ -458,7 +483,9 @@ describe("Skeleton's fading recursion", () => {
         slot: 0,
       });
     };
+    const debt0 = s.players[0].debtCount;
     kill(s);
+    expect(s.players[0].debtCount - debt0, 'lap 1 bills the level alone').toBe(1);
     const first = s.players[0].hand[s.players[0].hand.length - 1];
     expect(first).toBe('gen-wither-o1-skeleton');
     expect(card(first).hp).toBe(2);
@@ -473,10 +500,12 @@ describe("Skeleton's fading recursion", () => {
     s.replaceQueue = [];
     s = must(s, 0, { type: 'PLAY_SUMMON', handIndex: s.players[0].hand.length - 1, slot: 0 });
     const handBefore = s.players[0].hand.length;
+    const debtLast = s.players[0].debtCount;
     kill(s);
     // A copy that would print 0 HP is not returned: the bone stays down.
     expect(s.players[0].hand.length).toBe(handBefore);
     expect(s.players[0].debt).toContain('gen-wither-gen-wither-o1-skeleton');
+    expect(s.players[0].debtCount - debtLast, 'the last lap bills once').toBe(1);
   });
 });
 
