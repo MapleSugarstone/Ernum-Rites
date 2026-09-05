@@ -21,7 +21,11 @@ npm run dev
 ```
 
 `check.cmd` runs the tests, both typechecks, and a bot-versus-bot sweep of every
-deck pairing.
+deck pairing. Those tests are invariants: the rules, the cards, the bot never
+making an illegal move, and the two engines agreeing. Tests of what the bot
+chooses on a given board live apart, since a card change can move them without
+anything being wrong: `npm run test:behaviour` for the TypeScript ones and
+`dotnet run --project csharp\Selatza.Tests -- --behaviour` for the C# ones.
 
 ## How a turn goes
 

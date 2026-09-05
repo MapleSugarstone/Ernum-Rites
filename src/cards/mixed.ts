@@ -687,13 +687,24 @@ export const mixedCards: CardDef[] = [
   yg.summon(2, 'krazbot', 'Krazbot', ['Machine', 'Living'], {
     str: 2,
     hp: 1,
-    text: 'Whenever you play a Machine or a Hedron, draw a card.',
+    text: 'Whenever you play a Machine or a Hedron, draw a card. Whenever an ally Machine or Hedron dies, take 1 debt and mill 1.',
     triggers: {
       onSummonPlayed: (c) => {
         const played = c.summonAt(c.targets[0]);
         if (!played || played.owner !== c.me) return;
         const f = card(played.cardId).factions;
         if (f?.includes('Machine') || f?.includes('Hedron')) c.draw(c.me, 1);
+      },
+      // Krazbot's own death is not one of these: onOtherDeath is the only
+      // death a body does not see for itself.
+      onOtherDeath: (c) => {
+        if (c.state.dyingOwner !== c.me) return;
+        const dead = c.state.dyingCardId;
+        if (!dead) return;
+        const f = card(dead).factions;
+        if (!f?.includes('Machine') && !f?.includes('Hedron')) return;
+        c.addDebt(c.me, 1, 'Krazbot logs the loss.');
+        c.mill(c.me, 1);
       },
     },
     powers: [

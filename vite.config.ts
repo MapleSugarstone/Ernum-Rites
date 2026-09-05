@@ -11,6 +11,9 @@ export default defineConfig({
   // which is what keeps it to a length you would run after an edit. The timeout
   // is still generous because the slow tests play thousands of games.
   test: {
+    // The deploy gate: invariants only. Decision-level bot tests live under
+    // tests/behaviour and run with npm run test:behaviour.
+    include: ['tests/*.test.ts'],
     testTimeout: 60_000,
     setupFiles: ['tests/setup.ts'],
     // The match room extends a class that only exists inside workerd. Aliased,

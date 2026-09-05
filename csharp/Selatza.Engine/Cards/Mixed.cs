@@ -601,7 +601,7 @@ public static class Mixed
 
         // --- Solar and Machine -------------------------------------------------
         Yg.Summon(2, "krazbot", "Krazbot", F(Faction.Machine, Faction.Living), str: 2, hp: 1,
-            text: "Whenever you play a Machine or a Hedron, draw a card.",
+            text: "Whenever you play a Machine or a Hedron, draw a card. Whenever an ally Machine or Hedron dies, take 1 debt and mill 1.",
             triggers: new Triggers
             {
                 OnSummonPlayed = c =>
@@ -610,6 +610,17 @@ public static class Mixed
                     if (played is null || played.Owner != c.Me) return;
                     var def = Registry.Card(played.CardId);
                     if (def.HasFaction(Faction.Machine) || def.HasFaction(Faction.Hedron)) c.Draw(c.Me, 1);
+                },
+                // Krazbot's own death is not one of these: OnOtherDeath is the
+                // only death a body does not see for itself.
+                OnOtherDeath = c =>
+                {
+                    if (c.State.DyingOwner != c.Me) return;
+                    if (c.State.DyingCardId is not { } dead) return;
+                    var def = Registry.Card(dead);
+                    if (!def.HasFaction(Faction.Machine) && !def.HasFaction(Faction.Hedron)) return;
+                    c.AddDebt(c.Me, 1, "Krazbot logs the loss.");
+                    c.Mill(c.Me, 1);
                 },
             },
             powers: Powers(new Power

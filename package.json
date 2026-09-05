@@ -10,6 +10,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit && tsc --noEmit -p worker/tsconfig.json",
     "test:watch": "vitest",
+    "test:behaviour": "vitest run --config vitest.behaviour.config.ts",
     "fuzz": "dotnet run -c Release --project csharp/Selatza.Train -- fuzz",
     "patterns": "dotnet run -c Release --project csharp/Selatza.Train -- patterns",
     "mirror": "dotnet run -c Release --project csharp/Selatza.Train -- mirror",

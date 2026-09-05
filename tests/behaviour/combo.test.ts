@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import '../src/cards';
+import '../../src/cards';
 import {
   candidateActions,
   chooseAction,
@@ -9,13 +9,13 @@ import {
   quickSearch,
   readEnemy,
   setSearchLimits,
-} from '../src/ai/bot';
-import { applyAction, createGame } from '../src/engine/engine';
-import { allCards, card } from '../src/engine/registry';
-import { deckIdentity, isLegalUnder } from '../src/engine/identity';
-import { DEBT_LIMIT, type GameState, type SummonInstance } from '../src/engine/state';
-import type { Action } from '../src/engine/actions';
-import type { PlayerIdx } from '../src/engine/types';
+} from '../../src/ai/bot';
+import { applyAction, createGame } from '../../src/engine/engine';
+import { allCards, card } from '../../src/engine/registry';
+import { deckIdentity, isLegalUnder } from '../../src/engine/identity';
+import { DEBT_LIMIT, type GameState, type SummonInstance } from '../../src/engine/state';
+import type { Action } from '../../src/engine/actions';
+import type { PlayerIdx } from '../../src/engine/types';
 
 /**
  * Positions the bot used to misplay, one per thing the searches were added for.

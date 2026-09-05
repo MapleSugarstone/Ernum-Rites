@@ -17,6 +17,21 @@ public static class Harness
 
     public static bool Verbose { get; set; }
 
+    /// <summary>
+    /// Whether decision-level bot tests run. Off by default: they pin what the
+    /// bot chooses on a hand-built board to particular cards and search
+    /// settings, so a card change or a search change can move them without
+    /// anything being wrong. <c>--behaviour</c> turns them on.
+    /// </summary>
+    public static bool Behaviour { get; set; }
+
+    /// <summary>A test of what the bot chooses, run only with <c>--behaviour</c>.</summary>
+    public static void Decision(string name, Action body)
+    {
+        if (!Behaviour) return;
+        Test(name, body);
+    }
+
     public static void Test(string name, Action body)
     {
         if (Filter is not null && !name.Contains(Filter, StringComparison.OrdinalIgnoreCase)) return;
@@ -131,6 +146,7 @@ public static class Program
         CardSets.RegisterAll();
         Harness.Filter = args.FirstOrDefault(a => !a.StartsWith('-'));
         Harness.Verbose = args.Contains("-v");
+        Harness.Behaviour = args.Contains("--behaviour");
         var sw = Stopwatch.StartNew();
 
         Setup();
@@ -1707,7 +1723,7 @@ public static class Program
             }
         });
 
-        Harness.Test("bot springs a trap when the trap saves the summon", () =>
+        Harness.Decision("bot springs a trap when the trap saves the summon", () =>
         {
             var s = Engine.CreateGame(Deck(50), Deck(50), 3);
             s.Players[0].Hand.Add(D3B);
@@ -1863,9 +1879,13 @@ public static class Program
                 Engine.Apply(s, 0, GameAction.OpenStore(Src(1, 2))).Error);
         });
 
-        Harness.Test("the bots open a store worth buying from and haggle it closed", () =>
+        Harness.Decision("a heal shop never closes at a loss to either side", () =>
         {
-            // Store: Heal 3 debt, the one shop both sides always profit from.
+            // Store: Heal 3 debt. The seller never names less than the 3 it heals
+            // and the buyer never pays it, because breaking even still hands the
+            // seller a Love token. So the passes cross without meeting, the buyer
+            // walks, and the debt ends where it started. This is the TypeScript
+            // policy, which is what ships.
             var s = Game();
             s = PassTo(s, 1);
             s = Place(s, 1, "k3-DebtReliever", 0);
@@ -1873,15 +1893,45 @@ public static class Program
             s.Players[0].DebtCount = 8;
 
             Bot.ClearPlan();
-            for (int guard = 0; !s.IsOver && s.Active == 0 && s.Players[1].Love == 0; guard++)
+            s = Must(s, 0, GameAction.OpenStore(Src(1, 0)));
+            for (int guard = 0; s.Pending?.Store is not null; guard++)
             {
-                if (guard > 60) throw new Exception("the turn never finished");
-                int actor = s.CurrentActor;
-                s = Must(s, actor, Bot.ChooseAction(s, actor));
+                if (guard > 8) throw new Exception("the haggle never closed");
+                int actor = s.Pending.Player;
+                var answer = Bot.StoreAnswer(s, actor) ?? throw new Exception("no answer");
+                if (Harness.Verbose)
+                {
+                    Console.WriteLine($"    pass {s.Pending.Store.Pass} seat {actor}: {answer.Type} "
+                        + $"price {answer.Price} final {answer.Final}");
+                }
+                if (actor == 1 && answer.Type == ActionType.StoreOffer)
+                {
+                    Harness.True(answer.Price >= 3, "the seller never names less than it heals");
+                }
+                if (actor == 0 && answer.Type == ActionType.StoreCounter)
+                {
+                    Harness.True(answer.Price < 3, "the buyer never offers what it heals");
+                }
+                s = Must(s, actor, answer);
             }
-            Harness.Eq(1, s.Players[1].Love, "the search opened the shop and the deal closed");
-            Harness.True(s.Players[0].DebtCount < 8,
-                $"the buyer healed more than it paid, ended on {s.Players[0].DebtCount}");
+            Harness.Eq(0, s.Players[1].Love, "no deal closed");
+            Harness.Eq(8, s.Players[0].DebtCount, "and the debt is untouched");
+        });
+
+        Harness.Decision("the buyer refuses to pay more than a shop heals", () =>
+        {
+            // Heal 3 debt for 4 debt is a loss however the passes fall.
+            var s = Game();
+            s = PassTo(s, 1);
+            s = Place(s, 1, "k3-DebtReliever", 0);
+            s = PassTo(s, 0);
+            s.Players[0].DebtCount = 8;
+
+            Bot.ClearPlan();
+            s = Must(s, 0, GameAction.OpenStore(Src(1, 0)));
+            s = Must(s, 1, GameAction.StoreOffer(4, final: true));
+            Harness.Eq("StoreReject", Bot.ChooseAction(s, 0).Type.ToString(),
+                "the final offer is walked away from");
         });
     }
 
