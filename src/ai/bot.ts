@@ -1253,6 +1253,22 @@ function potential(state: GameState, me: PlayerIdx): number {
   return total;
 }
 
+/**
+ * A Power that costs no mana and does not sap its body: the kind that can be
+ * fired again next step, which is what makes a flat step worth taking.
+ */
+function freeRepeat(state: GameState, me: PlayerIdx, action: Action): boolean {
+  if (action.type !== 'ACTIVATE_POWER') return false;
+  const src = action.source;
+  const p = state.players[me];
+  const summon = src.kind === 'leader' ? p.leader : src.kind === 'summon' ? p.slots[src.slot] : null;
+  if (!summon) return false;
+  const power = powersOf(summon, card(summon.cardId))[action.powerIndex];
+  if (!power) return false;
+  if (Object.values(power.cost).some((n) => (n ?? 0) > 0)) return false;
+  return !power.sapSelf && !power.oncePerTurn;
+}
+
 /** Whether an action hands the game to the opponent or ends it level. */
 function losesIt(state: GameState, me: PlayerIdx): boolean {
   return state.drawn || (state.winner !== null && state.winner !== me);
@@ -1311,11 +1327,21 @@ function burn(
   const line: Action[] = [];
   let cur = state;
 
+  // A body whose attack rises one point for every two debt gains nothing on
+  // every other free Power, and once the hand is full the card each one draws
+  // gains nothing either. A climb that demanded a gain on every step stopped
+  // on the first flat one, six Powers short of a kill it could have had. So one
+  // flat step on a free Power is allowed between gains: enough to see over a
+  // two-step rhythm, and a second flat step in a row still stops the climb.
+  let flat = 0;
   for (let step = 0; step < setup; step++) {
     if (!turnGoesOn(cur, me)) break;
     let pick: Action | null = null;
     let pickState: GameState | null = null;
-    let best = potential(cur, me);
+    let level: Action | null = null;
+    let levelState: GameState | null = null;
+    const standing = potential(cur, me);
+    let best = standing;
 
     for (const action of candidateActions(cur, me, w, true)) {
       const res = applyAction(cur, me, action);
@@ -1330,9 +1356,19 @@ function burn(
         best = p;
         pick = action;
         pickState = after;
+      } else if (!level && Math.abs(p - standing) <= 1e-9 && freeRepeat(cur, me, action)) {
+        level = action;
+        levelState = after;
       }
     }
 
+    if (pick && pickState) {
+      flat = 0;
+    } else if (level && levelState && flat < 1) {
+      flat++;
+      pick = level;
+      pickState = levelState;
+    }
     if (!pick || !pickState) break;
     line.push(pick);
     cur = pickState;

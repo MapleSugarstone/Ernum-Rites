@@ -232,14 +232,14 @@ describe('combo search', () => {
       .toBeGreaterThan(0);
   });
 
-  it('never spends past the debt that would lose it the game', () => {
-    // The rollout refuses any action that hands the opponent the game. This used
-    // to assert the whole line as well: the same board once pushed debt from 6
-    // to 24 through Experiment and killed a 22-debt leader. Scientist milling 3
-    // rather than 2 priced that power out of the rollout's evaluation, so the
-    // line is gone and only the guard it was carrying is checked here. What the
-    // bot chooses to do from this board is its own business; what it may not do
-    // is cross the limit.
+  it('spends up to the debt limit for a kill and never past it', () => {
+    // Twelve Experiments take the debt from 6 to 22 and Bone Known to 13, and
+    // Alchemize puts that on a 13 HP leader: a kill that stops one short of
+    // the limit. Milling 3 empties a 30-card deck on the way, so the last few
+    // draws cost fatigue debt too. The rollout once lost this line because a
+    // full hand and the every-other-point rhythm of Bone Known made every
+    // second Experiment a flat step, and its climb stopped on the first one.
+    // It may take a flat step now, and it may still never cross the limit.
     const s = board();
     const me = s.players[0];
     const foe = s.players[1];
@@ -254,9 +254,10 @@ describe('combo search', () => {
     me.mana.P = 2;
     foe.slots[0] = body(s, 'p3-helaks', 1, 6);
 
-    const { state } = playTurn(s, 0);
-    expect(state.players[0].debtCount, 'never crossed the limit').toBeLessThan(DEBT_LIMIT);
-    expect(state.winner, 'and never lost to its own debt').not.toBe(1);
+    const { state, line } = playTurn(s, 0);
+    expect(state.winner, `line: ${line.map((a) => a.type).join(' ')}`).toBe(0);
+    expect(state.players[0].debtCount, 'it spent almost the whole clock').toBeGreaterThan(20);
+    expect(state.players[0].debtCount, 'and never crossed it').toBeLessThan(DEBT_LIMIT);
   });
 
   it('never reads a Graft pairing off the evaluator alone', () => {

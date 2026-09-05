@@ -687,7 +687,7 @@ export const mixedCards: CardDef[] = [
   yg.summon(2, 'krazbot', 'Krazbot', ['Machine', 'Living'], {
     str: 2,
     hp: 1,
-    text: 'Whenever you play a Machine or a Hedron, draw a card. Whenever an ally Machine or Hedron dies, take 1 debt and mill 1.',
+    text: 'Whenever you play a Machine or a Hedron, draw a card. Whenever an ally Machine or Hedron dies, take 2 debt and mill 2.',
     triggers: {
       onSummonPlayed: (c) => {
         const played = c.summonAt(c.targets[0]);
@@ -703,8 +703,8 @@ export const mixedCards: CardDef[] = [
         if (!dead) return;
         const f = card(dead).factions;
         if (!f?.includes('Machine') && !f?.includes('Hedron')) return;
-        c.addDebt(c.me, 1, 'Krazbot logs the loss.');
-        c.mill(c.me, 1);
+        c.addDebt(c.me, 2, 'Krazbot logs the loss.');
+        c.mill(c.me, 2);
       },
     },
     powers: [

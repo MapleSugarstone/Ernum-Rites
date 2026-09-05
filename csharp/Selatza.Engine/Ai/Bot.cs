@@ -1155,6 +1155,21 @@ public static class Bot
     }
 
     /// <summary>Whether an action hands the game to the opponent or ends it level.</summary>
+    /// <summary>
+    /// A Power that costs no mana and does not sap its body: the kind that can
+    /// be fired again next step, which is what makes a flat step worth taking.
+    /// </summary>
+    private static bool FreeRepeat(GameState state, int me, GameAction action)
+    {
+        if (action.Type != ActionType.ActivatePower) return false;
+        var summon = state.Find(action.Source);
+        if (summon is null || summon.Owner != me) return false;
+        var powers = GameState.PowersOf(summon, Registry.Card(summon.CardId));
+        if (action.PowerIndex < 0 || action.PowerIndex >= powers.Length) return false;
+        var power = powers[action.PowerIndex];
+        return power.Cost.Total == 0 && !power.SapSelf && !power.OncePerTurn;
+    }
+
     private static bool LosesIt(GameState state, int me)
         => state.Drawn || (state.Winner >= 0 && state.Winner != me);
 
@@ -1210,12 +1225,22 @@ public static class Bot
         var line = new List<GameAction>();
         var cur = state;
 
+        // A body whose attack rises one point for every two debt gains nothing
+        // on every other free Power, and once the hand is full the card each
+        // one draws gains nothing either. A climb that demanded a gain on every
+        // step stopped on the first flat one, six Powers short of a kill it
+        // could have had. So one flat step on a free Power is allowed between
+        // gains, and a second flat step in a row still stops the climb.
+        int flat = 0;
         for (int step = 0; step < setup; step++)
         {
             if (!TurnGoesOn(cur, me)) break;
             GameAction? built = null;
             GameState? builtState = null;
-            double best = Potential(cur, me);
+            GameAction? level = null;
+            GameState? levelState = null;
+            double standing = Potential(cur, me);
+            double best = standing;
 
             foreach (var action in CandidateActions(cur, me, forKill: true))
             {
@@ -1235,8 +1260,23 @@ public static class Bot
                     built = action;
                     builtState = after;
                 }
+                else if (level is null && Math.Abs(pot - standing) <= 1e-9 && FreeRepeat(cur, me, action))
+                {
+                    level = action;
+                    levelState = after;
+                }
             }
 
+            if (built is not null && builtState is not null)
+            {
+                flat = 0;
+            }
+            else if (level is not null && levelState is not null && flat < 1)
+            {
+                flat++;
+                built = level;
+                builtState = levelState;
+            }
             if (built is null || builtState is null) break;
             line.Add(built);
             cur = builtState;
