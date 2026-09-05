@@ -650,11 +650,17 @@ export const tripleCards: CardDef[] = [
     ],
   }),
 
-  myr.summon('Hellmage', 'Hellmage', ['Spirit'], {
-    str: 2,
+  myr.summon('Hellmage', 'Hellmage', ['Spirit', 'Scholar'], {
+    str: 0,
     hp: 2,
     effectDamage: 1,
-    text: 'Effect Damage +1. At the end of your turn, every enemy character heals 1.',
+    text: 'Effect Damage +1. At the end of your turn, every enemy character heals 1. Store: Heal your leader for 10.',
+    store: {
+      // A bought effect reads as the buyer's, so the leader healed is theirs and
+      // so is the one this asks about.
+      useful: (state, user) => !!state.players[user].leader?.hp.some((h) => h.flipped),
+      effect: (c) => c.unflip({ kind: 'leader', player: c.me }, 10),
+    },
     triggers: {
       onEndTurn: (c) => {
         for (const foe of livingOpponents(c.state, c.me)) {
@@ -666,11 +672,11 @@ export const tripleCards: CardDef[] = [
       {
         name: 'Hellfire',
         cost: { K: 1, S: 1, P: 1 },
-        text: 'Deal 2 to every enemy character.',
+        text: 'Deal 1 to every enemy character.',
         sapSelf: true,
         effect: (c) => {
           for (const foe of livingOpponents(c.state, c.me)) {
-            for (const ref of c.summonsOf(foe, true)) c.damage(ref, 2);
+            for (const ref of c.summonsOf(foe, true)) c.damage(ref, 1);
           }
         },
       },

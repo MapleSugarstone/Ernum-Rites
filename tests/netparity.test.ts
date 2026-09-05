@@ -2,11 +2,13 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import '../src/cards';
+import { chooseAction, setNetwork } from '../src/ai/bot';
 import { loadBundle, type NetBundleJson } from '../src/ai/net/bundle';
 import { encode } from '../src/ai/net/encoder';
 import { valueOf } from '../src/ai/net/model';
 import { applyAction, createGame } from '../src/engine/engine';
 import { actionFromWire, type Replay } from '../src/engine/replay';
+import { currentActor } from '../src/engine/state';
 import type { PlayerIdx } from '../src/engine/types';
 
 /**
@@ -110,5 +112,34 @@ describe('network parity', () => {
       state = res.state;
     }
     expect(checked).toBe(fixture.samples.length);
+  });
+
+  run('steers the bot without breaking a turn', () => {
+    // The hook itself: with a network installed the search still returns a
+    // legal action at a planned turn, and removing the network restores the
+    // plain search. Play quality is the trainer's sweep to measure, not this.
+    const net = loadBundle(JSON.parse(readFileSync(BUNDLE, 'utf8')) as NetBundleJson);
+    const fixture = JSON.parse(readFileSync(FIXTURE, 'utf8')) as Fixture;
+    const replay = JSON.parse(
+      readFileSync(join(process.cwd(), 'replays', fixture.replay), 'utf8'),
+    ) as Replay;
+    let state = createGame(
+      replay.decks.map((d) => ({ name: d.name, leaderId: d.leaderId, cards: d.cards })),
+      replay.seed,
+      replay.startingPlayer as PlayerIdx,
+    );
+    for (let i = 0; i < Math.min(12, replay.steps.length); i++) {
+      const step = replay.steps[i];
+      const res = applyAction(state, step.actor as PlayerIdx, actionFromWire(step.action));
+      if (!res.ok) throw new Error(`step ${i} refused: ${res.error}`);
+      state = res.state;
+    }
+    try {
+      setNetwork(net, 0.15);
+      const action = chooseAction(state, currentActor(state));
+      expect(applyAction(state, currentActor(state), action).ok).toBe(true);
+    } finally {
+      setNetwork(null);
+    }
   });
 });

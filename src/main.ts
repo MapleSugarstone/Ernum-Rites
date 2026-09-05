@@ -174,9 +174,12 @@ import { currentTheme, initTheme, setTheme, type Theme } from './ui/theme';
 import { loadPrefs, savePrefs } from './ui/prefs';
 
 // The trained network ships inside the bundle and is decoded once at boot, so
-// the bot's first turn never waits on it. The weight is the one the trainer's
-// sweeps put ahead of the search alone.
-setNetwork(loadBundle(defaultNet as NetBundleJson), 0.15);
+// the bot's first turn never waits on it. The weight is how much it may adjust
+// the search's final choice: 0.15 is the setting the trainer's sweeps put ahead
+// of the search alone on the decks a network evolved with. It stays at 0 until
+// a network also clears the held-out sweep over the six starters, decks no
+// training agent ever holds; the first one measured minus three points there.
+setNetwork(loadBundle(defaultNet as NetBundleJson), 0);
 
 // --- ui state ---------------------------------------------------------------
 

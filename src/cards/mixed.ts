@@ -1338,9 +1338,9 @@ export const mixedCards: CardDef[] = [
       {
         name: 'Pummel',
         cost: { K: 1, P: 1 },
-        text: 'Deal 1 to an enemy summon and gain 1 Love.',
+        text: 'Deal 1 to a character and gain 1 Love.',
         sapSelf: true,
-        targets: [T.enemy()],
+        targets: [T.anyOrLeader('a character')],
         effect: (c) => {
           c.damage(c.targets[0], 1);
           c.gainLove(c.me, 1);
@@ -1348,7 +1348,7 @@ export const mixedCards: CardDef[] = [
       },
     ],
   }),
-  mr.spell('AbsurdlySpicyCandy', 'Absurdly Spicy Candy', { K: 3, P: 2 }, {
+  mr.spell('AbsurdlySpicyCandy', 'Absurdly Spicy Candy', { K: 2, P: 2 }, {
     text: 'Deal 1 to a character. Love: Effect Damage +1.',
     targets: [T.anyOrLeader('a character')],
     effect: (c) => {

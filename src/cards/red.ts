@@ -344,8 +344,18 @@ export const redCards: CardDef[] = [
       {
         name: 'Alchemize',
         cost: { P: 2 },
-        text: 'Destroy one of your summons, then deal its attack to an enemy character.',
-        targets: [T.ally('one of your summons'), T.enemyOrLeader()],
+        text: 'Destroy one of your unsapped summons, then deal its attack to an enemy character.',
+        // A sapped body has already spent its turn, so feeding it in was a free
+        // second use of it.
+        targets: [
+          {
+            kind: 'summon',
+            side: 'ally',
+            label: 'one of your unsapped summons',
+            filter: (a) => !!a.summon && !a.summon.sapped,
+          },
+          T.enemyOrLeader(),
+        ],
         effect: (c) => {
           const victim = c.summonAt(c.targets[0]);
           if (!victim) return;

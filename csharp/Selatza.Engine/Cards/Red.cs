@@ -305,8 +305,18 @@ public static class Red
             {
                 Name = "Alchemize",
                 Cost = new Cost(P: 2),
-                Text = "Destroy one of your summons, then deal its attack to an enemy character.",
-                Targets = Specs(Ally("one of your summons"), EnemyOrLeader()),
+                Text = "Destroy one of your unsapped summons, then deal its attack to an enemy character.",
+                // A sapped body has already spent its turn, so feeding it in was
+                // a free second use of it.
+                Targets = Specs(
+                    new TargetSpec
+                    {
+                        Kind = TargetKind.Summon,
+                        Side = Side.Ally,
+                        Label = "one of your unsapped summons",
+                        Filter = a => a.Summon is { Sapped: false },
+                    },
+                    EnemyOrLeader()),
                 Effect = c =>
                 {
                     var victim = c.SummonAt(c.Target(0));

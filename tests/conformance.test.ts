@@ -146,7 +146,15 @@ describe('card manifest', () => {
     text: string;
     flipText: string;
     targets: number;
-    powers: { name: string; cost: string; once: boolean; sap: boolean; hp: number; targets: number }[];
+    powers: {
+    name: string;
+    text: string;
+    cost: string;
+    once: boolean;
+    sap: boolean;
+    hp: number;
+    targets: number;
+  }[];
     flip: boolean;
     /**
      * Presence only, the way `flip` is. A predicate cannot be compared across
@@ -218,6 +226,7 @@ describe('card manifest', () => {
       targets: def.targets?.length ?? 0,
       powers: (def.powers ?? []).map((p) => ({
         name: p.name,
+        text: p.text,
         cost: costToString(p.cost),
         once: p.oncePerTurn ?? false,
         sap: p.sapSelf ?? false,

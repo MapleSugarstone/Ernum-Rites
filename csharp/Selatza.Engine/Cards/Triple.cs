@@ -615,9 +615,17 @@ public static class Triple
                 },
             })),
 
-        Myr.Summon("Hellmage", "Hellmage", F(Faction.Spirit), str: 2, hp: 2,
+        Myr.Summon("Hellmage", "Hellmage", F(Faction.Spirit, Faction.Scholar), str: 0, hp: 2,
             effectDamage: 1,
-            text: "Effect Damage +1. At the end of your turn, every enemy character heals 1.",
+            text: "Effect Damage +1. At the end of your turn, every enemy character heals 1. Store: Heal your leader for 10.",
+            store: new StoreDef
+            {
+                // A bought effect reads as the buyer's, so the leader healed is
+                // theirs and so is the one this asks about.
+                Useful = (state, user) =>
+                    state.Players[user].Leader is { } l && l.Hp.Exists(h => h.Flipped),
+                Effect = c => c.Unflip(TargetRef.Leader(c.Me), 10),
+            },
             triggers: new Triggers
             {
                 OnEndTurn = c => { foreach (var r in c.SummonsOf(c.Opp, true)) c.Unflip(r, 1); },
@@ -626,9 +634,9 @@ public static class Triple
             {
                 Name = "Hellfire",
                 Cost = new Cost(K: 1, S: 1, P: 1),
-                Text = "Deal 2 to every enemy character.",
+                Text = "Deal 1 to every enemy character.",
                 SapSelf = true,
-                Effect = c => { foreach (var r in c.SummonsOf(c.Opp, true)) c.Damage(r, 2); },
+                Effect = c => { foreach (var r in c.SummonsOf(c.Opp, true)) c.Damage(r, 1); },
             })),
     };
 

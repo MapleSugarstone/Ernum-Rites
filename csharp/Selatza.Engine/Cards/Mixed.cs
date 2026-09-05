@@ -1219,9 +1219,9 @@ public static class Mixed
             {
                 Name = "Pummel",
                 Cost = new Cost(K: 1, P: 1),
-                Text = "Deal 1 to an enemy summon and gain 1 Love.",
+                Text = "Deal 1 to a character and gain 1 Love.",
                 SapSelf = true,
-                Targets = Specs(Enemy()),
+                Targets = Specs(AnyOrLeader("a character")),
                 Effect = c =>
                 {
                     c.Damage(c.Target(0), 1);
@@ -1229,7 +1229,7 @@ public static class Mixed
                 },
             })),
 
-        Mr.Spell("AbsurdlySpicyCandy", "Absurdly Spicy Candy", new Cost(K: 3, P: 2),
+        Mr.Spell("AbsurdlySpicyCandy", "Absurdly Spicy Candy", new Cost(K: 2, P: 2),
             "Deal 1 to a character. Love: Effect Damage +1.",
             Specs(AnyOrLeader("a character")), c =>
             {
