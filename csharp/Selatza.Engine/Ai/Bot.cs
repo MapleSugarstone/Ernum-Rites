@@ -304,134 +304,341 @@ public static class Bot
         {
             var closed = Engine.Apply(s, open.Buyer, GameAction.StoreAccept());
             if (!closed.Ok) return SettleStore(state, w);
-            s = SettleChoices(closed.State!, open.Buyer, w);
+            s = AnswerPicks(closed.State!, w);
         }
         return s;
     }
 
     // --- the Store negotiation --------------------------------------------------
+    // A port of the TypeScript policy in src/ai/bot.ts, kept line for line where
+    // the languages allow. The TypeScript bot is what ships, so this side follows
+    // it: a deal the trainer or a balance run measures has to be the deal a
+    // player meets.
+
+    /// <summary>How near the debt limit a seller has to be before it deals at the floor.</summary>
+    private const int SellerPressure = 4;
+    /// <summary>Deferred picks a priced sale answers before it is scored.</summary>
+    private const int SalePicks = 2;
+    /// <summary>A hard stop on playing a negotiation forward. The five-pass cap ends it first.</summary>
+    private const int HaggleSteps = 8;
+
+    /// <summary>What a sale is worth to each side, with every price taken back out of it.</summary>
+    private sealed record SaleWorth(double Board, double Seller, int Healed, bool Dead)
+    {
+        /// <summary>The shop is gone, or the cheapest price on the slider ends the buyer.</summary>
+        public static readonly SaleWorth DeadSale = new(0, 0, 0, true);
+    }
+
+    /// <summary>Every price the seller's policy turns on, read off one sale.</summary>
+    private sealed record SellerBook(int Ask, int Take, int Least, bool Pressed, Func<int, double> Gain);
+
+    // Shops are priced once per decision and the price stands for the whole of
+    // it, searches included. Per thread, because the tournament plays one game
+    // per thread and a shared cache would price one game's shops off another.
+    [ThreadStatic] private static Dictionary<string, SaleWorth>? _shopPrices;
+    [ThreadStatic] private static Dictionary<string, int?>? _shopDeals;
+
+    private static void ClearShops()
+    {
+        _shopPrices?.Clear();
+        _shopDeals?.Clear();
+    }
+
+    /// <summary>The slider a window runs on, and 1 to 4 when its shop has left the board.</summary>
+    private static (int Min, int Max) WindowBounds(GameState state, PendingStoreWindow win)
+    {
+        var body = state.Find(win.Source);
+        var store = body is null ? null : Engine.StoreOf(body, Registry.Card(body.CardId));
+        return store is null ? (1, 4) : Engine.StorePriceBounds(store);
+    }
+
+    /// <summary>The debt a price actually charges, after the seller's Clearance Sale.</summary>
+    private static int PricePaid(GameState state, PendingStoreWindow win, int price) =>
+        Math.Max(1, price - (Engine.StoreBoosted(state, win.Seller) ? 1 : 0));
 
     /// <summary>
-    /// Evaluator points the bot will trade for one debt inside a Store window,
-    /// which is one HP card. Deliberately far below <c>w.Debt</c>: that weight
-    /// prices debt as a loss clock twenty-five points long, and a buyer holding
-    /// to it would refuse every price the slider can offer.
+    /// What the evaluator charges <paramref name="side"/> for carrying
+    /// <paramref name="amount"/> more debt, or credits it for carrying that much
+    /// less. Infinite once the amount reaches the limit, because that is a loss
+    /// rather than a price.
     /// </summary>
-    private const double PricePoints = 2.5;
-
-    /// <summary>Debt short of the limit at which no purchase is worth making.</summary>
-    private const int DebtSafety = 2;
-
-    /// <summary>Passes a settled negotiation cannot exceed: the cap plus both closes.</summary>
-    private const int MaxStorePasses = 8;
+    private static double DebtCost(GameState state, int side, int amount, BotWeights w)
+    {
+        int limit = Rules.DebtLimit;
+        int was = state.Players[side].DebtCount;
+        // Healing stops at nothing owed, the way clearing debt does.
+        int now = Math.Max(0, was + amount);
+        if (now >= limit) return double.PositiveInfinity;
+        double Panic(int n) => n >= limit - 2 ? w.DebtCliff : 0;
+        return DebtCharge(now, w) - DebtCharge(was, w) + Panic(now) - Panic(was);
+    }
 
     /// <summary>
-    /// The whole negotiation, from whatever pass it stands at. Both policies are
-    /// deterministic and the pass cap bounds the loop, so this always closes.
+    /// What a debt point buys. The evaluator scores an effect where it lands
+    /// rather than where it is played, so a shop has to be worth a card in hand
+    /// for every point of debt it charges. Debt the effect itself moves is never
+    /// lifted, because a debt point healed is worth exactly a debt point paid.
     /// </summary>
-    private static GameState SettleStore(GameState state, BotWeights w)
+    private static double TradeLift(BotWeights w) => w.Hand > 0 ? w.Debt / w.Hand : 1;
+
+    /// <summary>
+    /// Close the window at the cheapest price on a copy of the board and read
+    /// both sides' books off the evaluator. Every price is taken back out of
+    /// both deltas, so one simulation prices every rung of the slider. The
+    /// buyer's deferred pick is answered greedily first, otherwise every shop
+    /// that asks for a target reads as doing nothing.
+    /// </summary>
+    private static SaleWorth SaleWorthOf(GameState state, PendingStoreWindow win, BotWeights w)
+    {
+        var body = state.Find(win.Source);
+        var store = body is null ? null : Engine.StoreOf(body, Registry.Card(body.CardId));
+        if (store is null || state.IsOver) return SaleWorth.DeadSale;
+
+        var (min, _) = Engine.StorePriceBounds(store);
+        int paid = PricePaid(state, win, min);
+        if (double.IsInfinity(DebtCost(state, win.Buyer, paid, w))) return SaleWorth.DeadSale;
+
+        var sim = state.Clone();
+        sim.Pending = new Pending
+        {
+            Player = win.Buyer,
+            Store = new PendingStoreWindow
+            {
+                Seller = win.Seller,
+                Buyer = win.Buyer,
+                Source = win.Source,
+                Price = min,
+                Pass = 1,
+                Final = true,
+            },
+        };
+        var res = Engine.Apply(sim, win.Buyer, GameAction.StoreAccept());
+        if (!res.Ok) return SaleWorth.DeadSale;
+        var closed = AnswerPicks(res.State!, w);
+
+        // The price went on before the effect ran, so what the buyer owes now is
+        // the price less whatever the effect took back off.
+        int moved = closed.Players[win.Buyer].DebtCount - state.Players[win.Buyer].DebtCount;
+        double swing = DebtCost(state, win.Buyer, moved, w);
+        // A sale that ends the buyer prices at nothing rather than at infinity,
+        // which would read to them as a shop worth any price at all.
+        if (double.IsInfinity(swing)) return SaleWorth.DeadSale;
+        return new SaleWorth(
+            Evaluate(closed, win.Buyer, w) - Evaluate(state, win.Buyer, w) + swing,
+            Evaluate(closed, win.Seller, w) - Evaluate(state, win.Seller, w) - swing,
+            paid - moved,
+            false);
+    }
+
+    /// <summary>
+    /// What the buyer's debt ends up doing at a price: a cost to the buyer and
+    /// the same number as a gain to the seller. Negative when the effect heals
+    /// more than the price charges.
+    /// </summary>
+    private static double PriceSwing(GameState state, PendingStoreWindow win, SaleWorth worth, int price,
+        BotWeights w) =>
+        DebtCost(state, win.Buyer, PricePaid(state, win, price) - worth.Healed, w);
+
+    private static string ShopKey(PendingStoreWindow win)
+    {
+        var at = win.Source;
+        return $"{win.Seller}/{win.Buyer}/{at.Kind}/{at.Player}/{at.Index}";
+    }
+
+    private static SaleWorth WorthOf(GameState state, PendingStoreWindow win, BotWeights w)
+    {
+        _shopPrices ??= new Dictionary<string, SaleWorth>(StringComparer.Ordinal);
+        string key = ShopKey(win);
+        if (_shopPrices.TryGetValue(key, out var hit)) return hit;
+        var worth = SaleWorthOf(state, win, w);
+        _shopPrices[key] = worth;
+        return worth;
+    }
+
+    /// <summary>
+    /// The deal the two policies reach, held for the decision. Only the two
+    /// debt counts move it once the shop is priced, so they are what it is
+    /// filed under. Null when the buyer walks away.
+    /// </summary>
+    private static int? DealOn(GameState state, PendingStoreWindow win, SaleWorth worth, BotWeights w)
+    {
+        _shopDeals ??= new Dictionary<string, int?>(StringComparer.Ordinal);
+        string key = $"{ShopKey(win)}#{state.Players[win.Buyer].DebtCount}#{state.Players[win.Seller].DebtCount}";
+        if (_shopDeals.TryGetValue(key, out var hit)) return hit;
+        int? deal = SettledPrice(state, win, worth, w);
+        _shopDeals[key] = deal;
+        return deal;
+    }
+
+    /// <summary>Answer whatever pick a resolving effect queued, greedily, for its owner.</summary>
+    public static GameState AnswerPicks(GameState state, BotWeights w)
     {
         var s = state;
-        for (int i = 0; i < MaxStorePasses && s.Pending?.Store is not null; i++)
+        for (int i = 0; i < SalePicks && s.ChoiceQueue.Count > 0 && !s.IsOver; i++)
         {
-            int actor = s.Pending.Player;
-            if (StoreAnswer(s, actor, w) is not { } act) break;
-            var res = Engine.Apply(s, actor, act);
-            if (!res.Ok) break;
-            s = res.State!;
+            int who = s.ChoiceQueue[0].Player;
+            GameState? best = null;
+            double bestScore = double.NegativeInfinity;
+            foreach (var action in CandidateActions(s, who))
+            {
+                var res = Engine.Apply(s, who, action);
+                if (!res.Ok) continue;
+                double score = Evaluate(res.State!, who, w);
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    best = res.State!;
+                }
+            }
+            if (best is null) break;
+            s = best;
         }
         return s;
     }
 
-    /// <summary>
-    /// This seat's answer to an open Store window, or null when the window is
-    /// not theirs to answer.
-    ///
-    /// A policy rather than a search, because the evaluator cannot price an offer
-    /// that only pays off if the other side takes it. The seller asks one over
-    /// what it will settle for and takes any counter that meets the floor; the
-    /// buyer haggles once and then pays anything up to what the effect is worth.
-    /// </summary>
-    public static GameAction? StoreAnswer(GameState state, int me, BotWeights? w = null)
+    private static SellerBook SellerBookOf(GameState state, PendingStoreWindow win, SaleWorth worth, BotWeights w)
     {
-        if (state.Pending?.Store is not { } win || state.Pending.Player != me) return null;
-        w ??= BotWeights.Default;
-        var summon = state.Find(win.Source);
-        var store = summon is null ? null : Engine.StoreOf(summon, Registry.Card(summon.CardId));
-        var (min, max) = store is null ? (1, 4) : Engine.StorePriceBounds(store);
+        var (min, max) = WindowBounds(state, win);
+        double Gain(int price) => worth.Seller + PriceSwing(state, win, worth, price, w);
+        int least = min;
+        while (least < max && Gain(least) <= 0) least++;
+        return new SellerBook(
+            Math.Max(Math.Min(max, min + 2), least),
+            Math.Max(Math.Min(max, min + 1), least),
+            least,
+            state.Players[win.Seller].DebtCount >= Rules.DebtLimit - SellerPressure,
+            Gain);
+    }
 
-        if (me == win.Seller)
+    /// <summary>
+    /// Ask 2 over the floor and expect to be countered, take anything from 1
+    /// over the floor, and once the passes run out name 1 over the floor as
+    /// final. A price the sale loses money at is never offered or taken, and a
+    /// seller near the debt limit takes the floor when the sale still helps.
+    /// </summary>
+    private static GameAction SellerMove(GameState state, PendingStoreWindow win, SaleWorth worth, BotWeights w)
+    {
+        var book = SellerBookOf(state, win, worth, w);
+        if (win.Pass == 0) return GameAction.StoreOffer(book.Ask);
+        if (win.Pass >= 4) return GameAction.StoreOffer(book.Take, final: true);
+        int price = win.Price;
+        if (price >= 0 && book.Gain(price) > 0)
         {
-            // Ask one over the floor and expect to be haggled down to it.
-            int ask = Math.Min(max, min + 2);
-            int floor = Math.Min(max, min + 1);
-            if (win.Pass == 0) return GameAction.StoreOffer(ask);
-            // An even pass means the buyer's counter is on the table.
-            if (win.Pass % 2 == 0 && win.Price >= floor) return GameAction.StoreAccept();
-            // The seller has no walk-away, so at the cap the floor goes out final.
-            if (win.Pass >= 4) return GameAction.StoreOffer(floor, final: true);
-            return GameAction.StoreOffer(floor);
+            if (price >= book.Take) return GameAction.StoreAccept();
+            if (book.Pressed && price >= book.Least) return GameAction.StoreAccept();
         }
+        return GameAction.StoreOffer(book.Take);
+    }
 
-        // The buyer only ever answers a price, so an even pass is not a position
-        // the reducer can hand them. Walking away is legal from any of them.
-        if (win.Pass % 2 == 0) return GameAction.StoreReject();
-        int worth = StoreWorth(state, me, win, w);
-        var buyer = state.Players[me];
-        int paid = Math.Max(1, win.Price - (Engine.StoreBoosted(state, win.Seller) ? 1 : 0));
-        if (worth < min || buyer.DebtCount + paid >= Rules.DebtLimit - DebtSafety)
+    /// <summary>The dearest rung still worth paying for, or null when no price is.</summary>
+    private static int? BuyerCeiling(GameState state, PendingStoreWindow win, SaleWorth worth, BotWeights w)
+    {
+        if (worth.Dead) return null;
+        var (min, max) = WindowBounds(state, win);
+        double lifted = TradeLift(w) * worth.Board;
+        for (int p = max; p >= min; p--)
         {
-            return GameAction.StoreReject();
+            if (lifted >= PriceSwing(state, win, worth, p, w)) return p;
         }
-        // Haggle once, at the bottom of the slider, before saying yes to
-        // anything: a price worth paying is still worth paying one less. After
-        // that the answer is yes or no, because a second round of it only costs
-        // the search actions.
-        if (win.Pass == 1 && !win.Final && win.Price > min) return GameAction.StoreCounter(min);
-        if (win.Price <= worth) return GameAction.StoreAccept();
+        return null;
+    }
+
+    /// <summary>
+    /// Counter at the floor on the first answer and expect to pay more, then take
+    /// any price the effect is worth, name the highest that is when the seller's
+    /// is above it, and walk away only when even the floor is too much.
+    /// </summary>
+    private static GameAction BuyerMove(GameState state, PendingStoreWindow win, SaleWorth worth, BotWeights w)
+    {
+        var (min, _) = WindowBounds(state, win);
+        if (win.Price < 0) return GameAction.StoreReject();
+        int price = win.Price;
+        if (BuyerCeiling(state, win, worth, w) is not { } ceiling) return GameAction.StoreReject();
+        bool canCounter = !win.Final && win.Pass < 4 && win.Pass % 2 == 1;
+        if (canCounter && win.Pass <= 1 && price > min) return GameAction.StoreCounter(min);
+        if (price <= ceiling) return GameAction.StoreAccept();
+        if (canCounter) return GameAction.StoreCounter(ceiling);
         return GameAction.StoreReject();
     }
 
     /// <summary>
-    /// The most debt this buyer will pay for what is on offer, on the slider's
-    /// scale. Read by closing the deal on a copy of the state and adding back
-    /// the debt that copy paid, so the number prices the effect alone.
+    /// What the side the window is waiting on does about it. Always legal for
+    /// that side, because a stalled negotiation stalls the game: only the buyer
+    /// may walk away and the seller has to name a price.
     /// </summary>
-    private static int StoreWorth(GameState state, int me, PendingStoreWindow win, BotWeights w)
+    private static GameAction StoreMove(GameState state, PendingStoreWindow win, int player, BotWeights w,
+        SaleWorth? worth)
     {
-        var res = Engine.Apply(state, me, GameAction.StoreAccept());
-        if (!res.Ok) return 0;
-        var after = SettleChoices(res.State!, me, w);
-        if (after.Winner >= 0 && after.Winner != me) return 0;
-        int paid = Math.Max(1, win.Price - (Engine.StoreBoosted(state, win.Seller) ? 1 : 0));
-        int owed = state.Players[me].DebtCount;
-        double gain = Evaluate(after, me, w) - Evaluate(state, me, w)
-            + DebtCharge(owed + paid, w) - DebtCharge(owed, w);
-        if (gain <= 0) return 0;
-        return (int)Math.Floor(gain / PricePoints);
+        worth ??= WorthOf(state, win, w);
+        if (player == win.Seller)
+        {
+            // Nothing left to price: name the ceiling and let the buyer walk away.
+            if (worth.Dead && win.Pass > 0)
+            {
+                return GameAction.StoreOffer(WindowBounds(state, win).Max, final: true);
+            }
+            return SellerMove(state, win, worth, w);
+        }
+        return BuyerMove(state, win, worth, w);
+    }
+
+    /// <summary>This seat's answer to an open Store window, or null when the window is not theirs.</summary>
+    public static GameAction? StoreAnswer(GameState state, int me, BotWeights? w = null)
+    {
+        if (state.Pending?.Store is not { } win || state.Pending.Player != me) return null;
+        return StoreMove(state, win, me, w ?? BotWeights.Default, null);
     }
 
     /// <summary>
-    /// Answer whatever decision a bought effect queued for its buyer, greedily.
-    /// A Store collects at most one target, so one pass is the whole of it.
+    /// The price the two policies reach from an unopened window, or null when
+    /// the buyer walks away. Both ladders are deterministic, so the whole
+    /// negotiation comes to one comparison.
     /// </summary>
-    public static GameState SettleChoices(GameState state, int me, BotWeights w)
+    private static int? SettledPrice(GameState state, PendingStoreWindow win, SaleWorth worth, BotWeights w)
     {
-        if (state.ChoiceQueue.Count == 0 || state.ChoiceQueue[0].Player != me) return state;
-        GameState? best = null;
-        double bestScore = double.NegativeInfinity;
-        foreach (var action in CandidateActions(state, me))
+        if (BuyerCeiling(state, win, worth, w) is not { } ceiling) return null;
+        var book = SellerBookOf(state, win, worth, w);
+        var (min, _) = WindowBounds(state, win);
+        if (book.Pressed && book.Gain(min) > 0) return min;
+        return book.Take <= ceiling ? book.Take : null;
+    }
+
+    /// <summary>
+    /// Play a negotiation out to its close under both sides' policies. From the
+    /// top of a window the settlement is two actions rather than the five the
+    /// ladders would spend reaching it. A window found part-way through is
+    /// played out pass by pass.
+    /// </summary>
+    private static GameState SettleStore(GameState state, BotWeights w)
+    {
+        if (state.Pending?.Store is not { } open) return state;
+        var worth = WorthOf(state, open, w);
+
+        if (open.Pass == 0)
         {
-            var res = Engine.Apply(state, me, action);
-            if (!res.Ok) continue;
-            double score = Evaluate(res.State!, me, w);
-            if (score > bestScore)
+            int? deal = DealOn(state, open, worth, w);
+            var book = SellerBookOf(state, open, worth, w);
+            var priced = Engine.Apply(state, open.Seller,
+                GameAction.StoreOffer(deal ?? book.Take, final: true));
+            if (priced.Ok)
             {
-                bestScore = score;
-                best = res.State!;
+                if (priced.State!.Pending is null) return priced.State;
+                var closed = Engine.Apply(priced.State, open.Buyer,
+                    deal is null ? GameAction.StoreReject() : GameAction.StoreAccept());
+                if (closed.Ok) return closed.State!;
             }
         }
-        return best ?? state;
+
+        var s = state;
+        for (int step = 0; step < HaggleSteps; step++)
+        {
+            if (s.Pending?.Store is not { } win) break;
+            int actor = s.Pending.Player;
+            var res = Engine.Apply(s, actor, StoreMove(s, win, actor, w, worth));
+            if (!res.Ok) break;
+            s = res.State!;
+        }
+        return s;
     }
 
     private static List<TargetRef[]> TargetCombos(GameState state, int me, TargetSpec[]? specs,
@@ -482,7 +689,7 @@ public static class Bot
         return TargetCombos(state, me, lenient, def);
     }
 
-    public static List<GameAction> CandidateActions(GameState state, int me)
+    public static List<GameAction> CandidateActions(GameState state, int me, bool forKill = false)
     {
         var acts = new List<GameAction>();
         var p = state.Players[me];
@@ -514,11 +721,32 @@ public static class Bot
         if (state.Pending is not null)
         {
             if (state.Pending.Player != me) return acts;
-            // A Store window has one answer rather than a slider full of them:
-            // every price the search could try is a position it cannot score.
-            if (state.Pending.Store is not null)
+            if (state.Pending.Store is { } win)
             {
-                if (StoreAnswer(state, me) is { } only) acts.Add(only);
+                var (min, max) = WindowBounds(state, win);
+                if (me == win.Seller)
+                {
+                    // The seller must always answer with a price, and may take a counter.
+                    if (win.Pass % 2 != 0) return acts;
+                    foreach (int price in new[] { min, Math.Min(max, min + 1), Math.Min(max, min + 2) }.Distinct())
+                    {
+                        acts.Add(GameAction.StoreOffer(price, final: win.Pass >= 4));
+                    }
+                    if (win.Pass > 0 && win.Price >= 0) acts.Add(GameAction.StoreAccept());
+                }
+                else
+                {
+                    if (win.Pass % 2 != 1) return acts;
+                    if (win.Price >= 0) acts.Add(GameAction.StoreAccept());
+                    if (win.Price >= 0 && !win.Final && win.Pass < 4)
+                    {
+                        foreach (int price in new[] { min, Math.Max(min, win.Price - 1) }.Distinct())
+                        {
+                            if (price != win.Price) acts.Add(GameAction.StoreCounter(price));
+                        }
+                    }
+                    acts.Add(GameAction.StoreReject());
+                }
                 return acts;
             }
             bool wantsSpellTrap = state.Pending!.Spell is not null;
@@ -641,7 +869,21 @@ public static class Bot
                     src = TargetRef.Leader(pl);
                 }
                 if (Engine.StoreBlockers(state, me, src) is not null) continue;
-                acts.Add(pl == me ? GameAction.UseStore(src) : GameAction.OpenStore(src));
+                if (pl == me)
+                {
+                    acts.Add(GameAction.UseStore(src));
+                    continue;
+                }
+                // A kill search buys at the guaranteed price rather than haggling,
+                // so it is offered every shop: the piece that completes a kill is
+                // exactly the purchase the evaluator would refuse.
+                if (!forKill)
+                {
+                    var win = new PendingStoreWindow { Seller = pl, Buyer = me, Source = src };
+                    var worth = WorthOf(state, win, BotWeights.Default);
+                    if (DealOn(state, win, worth, BotWeights.Default) is null) continue;
+                }
+                acts.Add(GameAction.OpenStore(src));
             }
         }
 
@@ -659,15 +901,11 @@ public static class Bot
     private static GameAction PassAction(GameState state)
     {
         if (state.FlipQueue.Count > 0) return GameAction.DeclineFlip();
+        // Standing still is not on offer inside a negotiation: the buyer walks
+        // away or the seller names a price, so the policy answers for whichever.
         if (state.Pending?.Store is { } win)
         {
-            if (state.Pending.Player == win.Buyer) return GameAction.StoreReject();
-            // A silent seller has said the guaranteed ceiling: the top of the
-            // slider, final. The seller has no walk-away.
-            var shop = state.Find(win.Source);
-            var store = shop is null ? null : Engine.StoreOf(shop, Registry.Card(shop.CardId));
-            int max = store is null ? 4 : Engine.StorePriceBounds(store).Max;
-            return GameAction.StoreOffer(max, final: true);
+            return StoreMove(state, win, state.Pending.Player, BotWeights.Default, null);
         }
         if (state.Pending is not null) return GameAction.PassResponse();
         if (state.ChoiceQueue.Count > 0)
@@ -979,7 +1217,7 @@ public static class Bot
             GameState? builtState = null;
             double best = Potential(cur, me);
 
-            foreach (var action in CandidateActions(cur, me))
+            foreach (var action in CandidateActions(cur, me, forKill: true))
             {
                 var res = Engine.Apply(cur, me, action);
                 if (!res.Ok) continue;
@@ -1013,7 +1251,7 @@ public static class Bot
             double bestGain = double.NegativeInfinity;
             double bestBoard = double.NegativeInfinity;
 
-            foreach (var action in CandidateActions(cur, me))
+            foreach (var action in CandidateActions(cur, me, forKill: true))
             {
                 var res = Engine.Apply(cur, me, action);
                 if (!res.Ok) continue;
@@ -1231,7 +1469,9 @@ public static class Bot
                 }
             }
             if (next.Count == 0) break;
-            next.Sort((a, b) => b.Score.CompareTo(a.Score));
+            // Stable, like the TypeScript sort, so equal scores keep the order
+            // the candidates were generated in and the two bots pick alike.
+            next = next.OrderByDescending(l => l.Score).ToList();
             level = new List<Leaf>();
             foreach (var leaf in next)
             {
@@ -1242,7 +1482,7 @@ public static class Bot
             if (level.Count == 0) break;
         }
 
-        leaves.Sort((a, b) => b.Score.CompareTo(a.Score));
+        leaves = leaves.OrderByDescending(l => l.Score).ToList();
         return leaves;
     }
 
@@ -1258,7 +1498,7 @@ public static class Bot
     private static GameAction? FindLethal(GameState state, int me, int depth, ref int budget)
     {
         if (depth <= 0 || budget <= 0 || !TurnGoesOn(state, me)) return null;
-        foreach (var action in CandidateActions(state, me))
+        foreach (var action in CandidateActions(state, me, forKill: true))
         {
             // Shops are in because a purchase can be the step that completes a
             // kill: the piece is bought at the guaranteed price and played.
@@ -1299,7 +1539,11 @@ public static class Bot
     [ThreadStatic] private static Plan? _plan;
 
     /// <summary>Forget the planned turn. Exposed so a test can time one decision alone.</summary>
-    public static void ClearPlan() => _plan = null;
+    public static void ClearPlan()
+    {
+        _plan = null;
+        ClearShops();
+    }
 
     /// <summary>The next action of the standing plan, or null if there is nothing to follow.</summary>
     private static GameAction? Follow(GameState state, int me, string key)
@@ -1354,6 +1598,9 @@ public static class Bot
     public static GameAction ChooseAction(GameState state, int me, BotWeights? w = null)
     {
         w ??= BotWeights.Default;
+        // Shops are priced against the board this decision is made on and the
+        // price stands for the whole of it, searches included.
+        ClearShops();
 
         // Haggling is answered from the policy before any search: a price only
         // pays off if the other side takes it, which is not something the
@@ -1429,7 +1676,7 @@ public static class Bot
             if (!seen.Add(Digest.Of(leaf.State))) continue;
             ranked.Add(leaf);
         }
-        ranked.Sort((a, b) => b.Score.CompareTo(a.Score));
+        ranked = ranked.OrderByDescending(l => l.Score).ToList();
 
         // Playing the reply out costs a turn of simulation apiece, which is why
         // only the handful of leaves gathered above get one.
