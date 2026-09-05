@@ -1349,12 +1349,11 @@ export const mixedCards: CardDef[] = [
     ],
   }),
   mr.spell('AbsurdlySpicyCandy', 'Absurdly Spicy Candy', { K: 3, P: 2 }, {
-    text: 'Deal 2 to an enemy summon and 1 to the enemy leader. Love: Effect Damage +1.',
-    targets: [T.enemy()],
+    text: 'Deal 1 to a character. Love: Effect Damage +1.',
+    targets: [T.anyOrLeader('a character')],
     effect: (c) => {
       const n = c.spendLove(c.me);
-      c.damage(c.targets[0], 2 + n);
-      c.damage({ kind: 'leader', player: c.opp }, 1 + n);
+      c.damage(c.targets[0], 1 + n);
     },
   }),
   mr.spell('DeflateCurrency', 'Deflate Currency', { K: 1, P: 1 }, {

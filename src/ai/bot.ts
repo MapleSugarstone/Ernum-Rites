@@ -1,4 +1,7 @@
 import type { Action, SourceRef } from '../engine/actions';
+import type { NetBundle } from './net/bundle';
+import { encode } from './net/encoder';
+import { valueOf } from './net/model';
 import { digestOf } from '../engine/digest';
 import { effectiveStrength, reshuffleCost } from '../engine/effects';
 import {
@@ -150,6 +153,25 @@ export const defaultWeights: BotWeights = {
   trapWindow: 12,
   love: 0.6,
 };
+
+/** The correction a trained network may add to the turn's final ranking. */
+let network: NetBundle | null = null;
+let networkWeight = 0;
+/** Divisor that puts search scores on the network's [-1, 1] scale, as the trainer did. */
+const NET_SCALE = 200;
+
+/**
+ * Installs a trained network, or removes one with null. The network does not
+ * score positions on its own: it predicts how wrong the search's score was,
+ * and `weight` is the size of that nudge on the tanh scale the trainer used.
+ * The trainer's sweeps put the useful setting at 0.15, with anything past 0.35
+ * below the search alone.
+ */
+export function setNetwork(bundle: NetBundle | null, weight = 0.15): void {
+  network = bundle;
+  networkWeight = bundle ? weight : 0;
+  clearPlan();
+}
 
 const DECK_VALUE_CAP = 20;
 /** Leader HP below which the cliff term starts charging. */
@@ -640,11 +662,41 @@ function settleStore(state: GameState, w: BotWeights): GameState {
  * deterministic haggling policies instead, so the candidate that opened it is
  * valued by the deal it settles at.
  */
-function settle(state: GameState, w: BotWeights = defaultWeights): GameState {
+function settle(state: GameState, w: BotWeights = defaultWeights, buyOut = false): GameState {
   if (!state.pending) return state;
-  if (state.pending.kind === 'store') return settleStore(state, w);
+  if (state.pending.kind === 'store') return buyOut ? buyOutStore(state, w) : settleStore(state, w);
   const res = applyAction(state, state.pending.player, { type: 'PASS_RESPONSE' });
   return res.ok ? res.state : state;
+}
+
+/**
+ * Close a Store window at the price the rules guarantee. The seller has no
+ * walk-away, so the top of the slider is always on offer, and a kill search
+ * that needs what the shop sells takes it at that price rather than asking the
+ * evaluator whether the effect is worth the debt. The buyer's deferred pick is
+ * answered greedily so the bought effect lands. A window this cannot close
+ * falls back to the haggle.
+ */
+function buyOutStore(state: GameState, w: BotWeights): GameState {
+  const win = state.pending;
+  if (!win || win.kind !== 'store') return state;
+  let s = state;
+  if (win.player === win.seller) {
+    const offered = applyAction(s, win.seller, {
+      type: 'STORE_OFFER',
+      price: windowBounds(s, win).max,
+      final: true,
+    });
+    if (!offered.ok) return settleStore(state, w);
+    s = offered.state;
+  }
+  const open = s.pending;
+  if (open && open.kind === 'store' && open.player === open.buyer) {
+    const closed = applyAction(s, open.buyer, { type: 'STORE_ACCEPT' });
+    if (!closed.ok) return settleStore(state, w);
+    s = answerPicks(closed.state, w);
+  }
+  return s;
 }
 
 const MAX_COMBOS = 48;
@@ -697,8 +749,9 @@ export const fullSearch: SearchLimits = {
   maxThreatSteps: 24,
   threatLeaves: 6,
   maxReplySteps: 14,
-  lethalDepth: 3,
-  lethalBudget: 2500,
+  // Four because a kill that runs through a shop is buy, play, power, swing.
+  lethalDepth: 4,
+  lethalBudget: 4000,
 };
 
 /**
@@ -789,6 +842,7 @@ export function candidateActions(
   state: GameState,
   me: PlayerIdx,
   w: BotWeights = defaultWeights,
+  forKill = false,
 ): Action[] {
   const acts: Action[] = [];
   const p = state.players[me];
@@ -933,19 +987,24 @@ export function candidateActions(
         acts.push({ type: 'USE_STORE', source: src });
         continue;
       }
-      const win: PendingStore = {
-        kind: 'store',
-        player: pl,
-        seller: pl,
-        buyer: me,
-        source: src,
-        final: false,
-        pass: 0,
-        battle: null,
-        spell: null,
-      };
-      const worth = worthOf(state, win, w);
-      if (dealOn(state, win, worth, w) === null) continue;
+      // A kill search buys at the guaranteed price rather than haggling, so it
+      // is offered every shop: the piece that completes a kill is exactly the
+      // purchase the evaluator would refuse.
+      if (!forKill) {
+        const win: PendingStore = {
+          kind: 'store',
+          player: pl,
+          seller: pl,
+          buyer: me,
+          source: src,
+          final: false,
+          pass: 0,
+          battle: null,
+          spell: null,
+        };
+        const worth = worthOf(state, win, w);
+        if (dealOn(state, win, worth, w) === null) continue;
+      }
       acts.push({ type: 'OPEN_STORE', source: src });
     }
   }
@@ -1186,6 +1245,9 @@ function potential(state: GameState, me: PlayerIdx): number {
   }
   if (p.leader && !p.leader.sapped) total += effectiveStrength(state, p.leader);
   total += p.hand.length;
+  // A Love token is damage waiting on a Love line, so the setup phase counts
+  // gaining one as progress toward the swing.
+  total += p.love;
   const mana = availableMana(p);
   for (const kind of MANA_KINDS) total += mana[kind];
   return total;
@@ -1255,10 +1317,10 @@ function burn(
     let pickState: GameState | null = null;
     let best = potential(cur, me);
 
-    for (const action of candidateActions(cur, me, w)) {
+    for (const action of candidateActions(cur, me, w, true)) {
       const res = applyAction(cur, me, action);
       if (!res.ok) continue;
-      const after = settle(res.state, w);
+      const after = settle(res.state, w, true);
       if (after.winner === me) {
         return { state: after, line: [...line, action], damage: worstDrop(after) };
       }
@@ -1284,10 +1346,10 @@ function burn(
     let bestGain = Number.NEGATIVE_INFINITY;
     let bestBoard = Number.NEGATIVE_INFINITY;
 
-    for (const action of candidateActions(cur, me, w)) {
+    for (const action of candidateActions(cur, me, w, true)) {
       const res = applyAction(cur, me, action);
       if (!res.ok) continue;
-      const after = settle(res.state, w);
+      const after = settle(res.state, w, true);
       if (after.winner === me) {
         return { state: after, line: [...line, action], damage: worstDrop(after) };
       }
@@ -1521,11 +1583,15 @@ function findLethal(
   budget: { left: number },
 ): Action | null {
   if (depth <= 0 || budget.left <= 0 || !turnGoesOn(state, me)) return null;
-  for (const action of candidateActions(state, me)) {
+  for (const action of candidateActions(state, me, defaultWeights, true)) {
+    // Shops are in because a purchase can be the step that completes a kill:
+    // the piece is bought at the guaranteed price and played.
     if (
       action.type !== 'ACTIVATE_POWER' &&
       action.type !== 'DECLARE_ATTACK' &&
-      action.type !== 'CAST_SPELL'
+      action.type !== 'CAST_SPELL' &&
+      action.type !== 'USE_STORE' &&
+      action.type !== 'OPEN_STORE'
     ) {
       continue;
     }
@@ -1533,7 +1599,7 @@ function findLethal(
     budget.left--;
     const res = applyAction(state, me, action);
     if (!res.ok) continue;
-    const after = settle(res.state);
+    const after = settle(res.state, defaultWeights, true);
     if (after.winner === me) return action;
     if (findLethal(after, me, depth - 1, budget)) return action;
   }
@@ -1694,15 +1760,28 @@ export function chooseAction(
 
   // Playing the reply out costs a turn of simulation apiece, which is why only
   // the handful of leaves gathered above get one.
-  let best = stand;
-  let bestScore = Number.NEGATIVE_INFINITY;
-  for (const leaf of ranked) {
-    const total = outlook(leaf.state, me, w, leaf.score);
-    if (total > bestScore + 1e-6) {
-      bestScore = total;
-      best = leaf;
+  const totals = ranked.map((leaf) => outlook(leaf.state, me, w, leaf.score));
+  let pick = 0;
+  for (let i = 1; i < ranked.length; i++) {
+    if (totals[i] > totals[pick] + 1e-6) pick = i;
+  }
+
+  // These few comparisons decide the turn, so they are where a learned
+  // correction is worth spending: the search's score on the tanh scale the
+  // trainer used, plus the network's guess at how wrong that score is.
+  // Duels only: the network was trained at a two-seat table and the encoder
+  // reads one opponent.
+  if (network && networkWeight > 0 && state.players.length === 2) {
+    const net = network;
+    const scores = ranked.map(
+      (leaf, i) =>
+        Math.tanh(totals[i] / NET_SCALE) + networkWeight * valueOf(net, encode(leaf.state, me, net)),
+    );
+    pick = 0;
+    for (let i = 1; i < ranked.length; i++) {
+      if (scores[i] > scores[pick]) pick = i;
     }
   }
 
-  return begin(state, me, key, best.line) ?? pass;
+  return begin(state, me, key, ranked[pick].line) ?? pass;
 }

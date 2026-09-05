@@ -383,6 +383,62 @@ public sealed class SelatzaNet
         return net;
     }
 
+    /// <summary>
+    /// The network as the client reads it: the card order, the constant facts
+    /// the observation needs per column, the widths, and every tensor as base64
+    /// float32, with the card stem's static half already folded into its
+    /// per-column bias so the client never needs the static plane.
+    /// </summary>
+    public void ExportJson(string path)
+    {
+        int n = CardCount;
+        var cards = new string[n];
+        var masks = new int[n];
+        var limits = new int[n];
+        var tags = new int[n];
+        for (int i = 0; i < n; i++)
+        {
+            cards[i] = CardIndex.Id(i);
+            masks[i] = CardIndex.Mask(i);
+            limits[i] = CardIndex.CopyLimit(i);
+            tags[i] = (int)CardIndex.Tags(i);
+        }
+        var ps = new Dictionary<string, string>();
+        foreach (var p in _params) ps[p.Name] = Base64(p.W);
+        ps["stem.bias"] = Base64(((CardStem)_cardTower[0]).FoldedBias);
+        var doc = new Dictionary<string, object>
+        {
+            ["format"] = 1,
+            ["cards"] = cards,
+            ["masks"] = masks,
+            ["limits"] = limits,
+            ["tags"] = tags,
+            ["channels"] = new Dictionary<string, int>
+            {
+                ["card"] = Encoder.CardChannels,
+                ["entity"] = Encoder.EntityChannels,
+                ["scalar"] = Encoder.ScalarCount,
+                ["entities"] = Encoder.Entities,
+                ["perSide"] = Encoder.PerSide,
+            },
+            ["shape"] = new Dictionary<string, int>
+            {
+                ["cardStem"] = Shape.CardStem,
+                ["cardMid"] = Shape.CardMid,
+                ["entityWidth"] = Shape.EntityWidth,
+                ["entityHead"] = Shape.EntityHead,
+                ["scalarWidth"] = Shape.ScalarWidth,
+                ["trunkWidth"] = Shape.TrunkWidth,
+                ["headWidth"] = Shape.HeadWidth,
+            },
+            ["params"] = ps,
+        };
+        File.WriteAllText(path, System.Text.Json.JsonSerializer.Serialize(doc));
+    }
+
+    private static string Base64(float[] v) =>
+        Convert.ToBase64String(System.Runtime.InteropServices.MemoryMarshal.AsBytes(v.AsSpan()));
+
     /// <summary>A copy with the same weights, for a rival that will train away from it.</summary>
     public SelatzaNet CloneWeights(int seed)
     {

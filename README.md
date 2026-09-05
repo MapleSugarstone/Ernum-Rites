@@ -364,7 +364,9 @@ Double-click `train.cmd`, or:
 npm run train -- --rounds 120
 ```
 
-A population of agents plays a rated tournament against each other. Each one is
+The client ships the best of these networks inside its bundle and lets it adjust
+the bot's final choice each turn, so what the trainer learns reaches the game.
+The client loads the best of these networks at boot and lets it adjust the shipped bot’s final choice. A population of agents plays a rated tournament against each other. Each one is
 handed a leader of any level that it has to keep, fixing the colors its deck may
 run, each starts on a random legal deck, and whoever comes out of a round behind
 swaps cards out. Two copies of the shipped bot sit in the field on hand-built

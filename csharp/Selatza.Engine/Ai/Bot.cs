@@ -142,9 +142,10 @@ public static class Bot
     /// <summary>Actions the opponent is given to answer a position with.</summary>
     private static int MaxReplySteps => Light ? 4 : 14;
     /// <summary>Actions deep the exhaustive kill search will look.</summary>
-    private const int LethalDepth = 3;
+    // Four because a kill that runs through a shop is buy, play, power, swing.
+    private const int LethalDepth = 4;
     /// <summary>Applies that search spends before it gives up.</summary>
-    private static int LethalBudget => Light ? 200 : 2500;
+    private static int LethalBudget => Light ? 200 : 4000;
     /// <summary>
     /// How far short of a kill the rollout may come and still be worth an
     /// exhaustive check. The rollout takes the largest hit available at every
@@ -267,12 +268,45 @@ public static class Bot
     /// struck or refused, so the search reads a settled price rather than an
     /// open negotiation.
     /// </summary>
-    public static GameState Settle(GameState state, BotWeights? w = null)
+    public static GameState Settle(GameState state, BotWeights? w = null, bool buyOut = false)
     {
         if (state.Pending is null) return state;
-        if (state.Pending.Store is not null) return SettleStore(state, w ?? BotWeights.Default);
+        if (state.Pending.Store is not null)
+        {
+            return buyOut ? BuyOut(state, w ?? BotWeights.Default) : SettleStore(state, w ?? BotWeights.Default);
+        }
         var res = Engine.Apply(state, state.Pending.Player, GameAction.PassResponse());
         return res.Ok ? res.State! : state;
+    }
+
+    /// <summary>
+    /// Closes a Store window at the price the rules guarantee. The seller has no
+    /// walk-away, so the top of the slider is always on offer, and a kill search
+    /// that needs what the shop sells takes it at that price rather than asking
+    /// the evaluator whether the effect is worth the debt. The buyer's deferred
+    /// pick is answered greedily so the bought effect lands. A window this
+    /// cannot close falls back to the haggle.
+    /// </summary>
+    private static GameState BuyOut(GameState state, BotWeights w)
+    {
+        if (state.Pending?.Store is not { } win) return state;
+        var s = state;
+        if (s.Pending!.Player == win.Seller)
+        {
+            var shop = s.Find(win.Source);
+            var store = shop is null ? null : Engine.StoreOf(shop, Registry.Card(shop.CardId));
+            int max = store is null ? 4 : Engine.StorePriceBounds(store).Max;
+            var offered = Engine.Apply(s, win.Seller, GameAction.StoreOffer(max, final: true));
+            if (!offered.Ok) return SettleStore(state, w);
+            s = offered.State!;
+        }
+        if (s.Pending?.Store is { } open && s.Pending.Player == open.Buyer)
+        {
+            var closed = Engine.Apply(s, open.Buyer, GameAction.StoreAccept());
+            if (!closed.Ok) return SettleStore(state, w);
+            s = SettleChoices(closed.State!, open.Buyer, w);
+        }
+        return s;
     }
 
     // --- the Store negotiation --------------------------------------------------
@@ -875,6 +909,9 @@ public static class Bot
         }
         if (p.Leader is { Sapped: false }) total += Effects.EffectiveStrength(state, p.Leader);
         total += p.Hand.Count;
+        // A Love token is damage waiting on a Love line, so the setup phase
+        // counts gaining one as progress toward the swing.
+        total += p.Love;
         foreach (int pips in Engine.AvailableMana(p)) total += pips;
         return total;
     }
@@ -946,7 +983,7 @@ public static class Bot
             {
                 var res = Engine.Apply(cur, me, action);
                 if (!res.Ok) continue;
-                var after = Settle(res.State!, w);
+                var after = Settle(res.State!, w, buyOut: true);
                 if (after.Winner == me)
                 {
                     line.Add(action);
@@ -980,7 +1017,7 @@ public static class Bot
             {
                 var res = Engine.Apply(cur, me, action);
                 if (!res.Ok) continue;
-                var after = Settle(res.State!, w);
+                var after = Settle(res.State!, w, buyOut: true);
                 if (after.Winner == me)
                 {
                     line.Add(action);
@@ -1223,13 +1260,15 @@ public static class Bot
         if (depth <= 0 || budget <= 0 || !TurnGoesOn(state, me)) return null;
         foreach (var action in CandidateActions(state, me))
         {
+            // Shops are in because a purchase can be the step that completes a
+            // kill: the piece is bought at the guaranteed price and played.
             if (action.Type is not (ActionType.ActivatePower or ActionType.DeclareAttack
-                or ActionType.CastSpell)) continue;
+                or ActionType.CastSpell or ActionType.UseStore or ActionType.OpenStore)) continue;
             if (budget <= 0) break;
             budget--;
             var res = Engine.Apply(state, me, action);
             if (!res.Ok) continue;
-            var after = Settle(res.State!);
+            var after = Settle(res.State!, null, buyOut: true);
             if (after.Winner == me) return action;
             if (FindLethal(after, me, depth - 1, ref budget) is not null) return action;
         }

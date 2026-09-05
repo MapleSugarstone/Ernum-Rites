@@ -38,6 +38,8 @@
     "train:bench": "dotnet run -c Release --project csharp/Selatza.Train -- bench",
     "train:check": "dotnet run -c Release --project csharp/Selatza.Train -- gradcheck",
     "train:gauntlet": "dotnet run -c Release --project csharp/Selatza.Train -- gauntlet",
+    "net:export": "dotnet run -c Release --project csharp/Selatza.Train -- export-net --out src/ai/net/default.json",
+    "net:parity": "dotnet run -c Release --project csharp/Selatza.Train -- dump-obs --replay replays/012-sweetshop-store.json --every 5 --out conformance/net-parity.json",
     "worker:dev": "wrangler dev",
     "worker:deploy": "wrangler deploy"
   },

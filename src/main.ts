@@ -1,7 +1,9 @@
 // First, before any other module can fail to load: a boot error must land on
 // the player's screen rather than leave a blank page.
 import './ui/bootguard';
-import { chooseAction } from './ai/bot';
+import { chooseAction, setNetwork } from './ai/bot';
+import { loadBundle, type NetBundleJson } from './ai/net/bundle';
+import defaultNet from './ai/net/default.json';
 import { NetClient } from './net/client';
 import { nameProblem } from '../worker/protocol';
 import type { RoomKind } from '../worker/protocol';
@@ -170,6 +172,11 @@ import {
 } from './ui/dropdown';
 import { currentTheme, initTheme, setTheme, type Theme } from './ui/theme';
 import { loadPrefs, savePrefs } from './ui/prefs';
+
+// The trained network ships inside the bundle and is decoded once at boot, so
+// the bot's first turn never waits on it. The weight is the one the trainer's
+// sweeps put ahead of the search alone.
+setNetwork(loadBundle(defaultNet as NetBundleJson), 0.15);
 
 // --- ui state ---------------------------------------------------------------
 

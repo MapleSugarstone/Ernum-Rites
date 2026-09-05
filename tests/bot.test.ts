@@ -385,6 +385,32 @@ describe('store negotiation', () => {
     expect(chooseAction(s, 0).type).toBe('STORE_REJECT');
   });
 
+  it('buys the piece that completes a kill', () => {
+    // The enemy leader is a shopkeeper selling +2 attack, on 5 HP, and the only
+    // attacker on the table swings for 3. Nothing kills without the purchase,
+    // and the haggle would never make it: two points of attack are worth less
+    // to the evaluator than the debt. The kill search buys at the top of the
+    // slider and swings.
+    const s = shopFacing(SHOP);
+    s.players[1].slots[0] = null;
+    s.players[1].leader = body(s, 'k2-HotcakeSeller', 1, 5, true);
+    s.players[1].leader.storeStock = 1;
+    s.players[0].slots[0] = body(s, BODY, 0, 5);
+    clearPlan();
+    expect(chooseAction(s, 0)).toEqual({
+      type: 'OPEN_STORE',
+      source: { kind: 'leader', player: 1 },
+    });
+    // Played out with the bot in both chairs, the haggle closes and the swing
+    // lands before the turn ends.
+    let at = s;
+    for (let i = 0; i < 12 && at.winner === null; i++) {
+      const actor = currentActor(at);
+      at = step(at, actor, chooseAction(at, actor));
+    }
+    expect(at.winner).toBe(0);
+  });
+
   it('haggles from the floor and closes inside the pass cap', () => {
     // Both chairs on the bot. Nothing in the window may stall: the seller has
     // no walk-away, so a silent one hangs the game.

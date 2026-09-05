@@ -60,6 +60,8 @@ public static class Program
         {
             "train" => Train(args),
             "gauntlet" => Gauntlet(args),
+            "export-net" => ExportNet(args),
+            "dump-obs" => DumpObs(args),
             "probe" => Probe(args),
             "bench" => Bench(args),
             "deck" => Deck(args),
@@ -268,6 +270,80 @@ public static class Program
                     + (weight == 0 ? "(the bar)" : $"{(rate - baseline) * 100:+0.0;-0.0;0.0} points"));
             }
         }
+
+        // Decks the population never held, which is the generalisation number.
+        // A network that only helps the deck it evolved with is not the network
+        // the client wants, since the client plays whatever deck it is handed.
+        // The six starters are hand-built and never an agent's own deck, so they
+        // are held out by construction; --gauntlet-decks adds a folder of more.
+        if (cfg.Brains > 0 && cfg.GauntletGames > 0
+            && (Flag(args, "--gauntlet-starters") || Str(args, "--gauntlet-decks", "").Length > 0))
+        {
+            var carrier = run.Agents.Where(a => !a.ReferenceBot).OrderByDescending(a => a.Elo).First();
+            var weights = Str(args, "--gauntlet-weights", "0,0.15")
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(s => double.Parse(s, CultureInfo.InvariantCulture))
+                .ToList();
+            var held = new List<(string Name, string Leader, List<string> Cards)>();
+            if (Flag(args, "--gauntlet-starters"))
+            {
+                foreach (var d in CardSets.Starters) held.Add((d.Name, d.LeaderId, d.Cards.ToList()));
+            }
+            string dir = Str(args, "--gauntlet-decks", "");
+            if (dir.Length > 0 && Directory.Exists(dir))
+            {
+                foreach (var file in Directory.GetFiles(dir, "*.txt").OrderBy(f => f, StringComparer.Ordinal))
+                {
+                    string leader = "";
+                    var cards = LoadDeck(file, ref leader);
+                    if (leader.Length > 0 && cards.Count > 0)
+                    {
+                        held.Add((Path.GetFileNameWithoutExtension(file), leader, cards));
+                    }
+                }
+            }
+            var report = new System.Text.StringBuilder();
+            report.AppendLine($"held-out decks, {cfg.GauntletGames} games a setting, brain {carrier.Brain!.Name}");
+            var totals = new double[weights.Count];
+            foreach (var (name, leader, cards) in held)
+            {
+                var agent = new Agent
+                {
+                    Name = name,
+                    LeaderId = leader,
+                    Deck = cards,
+                    Brain = carrier.Brain,
+                    Config = carrier.Config.Clone(),
+                    Intel = carrier.Intel,
+                };
+                agent.Config.Temperature = 0;
+                agent.Config.Epsilon = 0;
+                var row = new System.Text.StringBuilder($"  {name,-24}");
+                for (int i = 0; i < weights.Count; i++)
+                {
+                    agent.Config.NetWeight = weights[i];
+                    var (w, l, d) = run.Gauntlet(agent, cfg.GauntletGames, cfg.Seed * 17 + 3);
+                    double rate = (w + 0.5 * d) / cfg.GauntletGames;
+                    totals[i] += rate;
+                    row.Append($"  {weights[i]:0.00}: {rate,5:P0}");
+                }
+                report.AppendLine(row.ToString());
+            }
+            if (held.Count > 0)
+            {
+                var mean = new System.Text.StringBuilder($"  {"mean",-24}");
+                for (int i = 0; i < weights.Count; i++)
+                {
+                    mean.Append($"  {weights[i]:0.00}: {totals[i] / held.Count,5:P0}");
+                }
+                report.AppendLine(mean.ToString());
+                report.AppendLine($"  correction {weights[^1]:0.00} versus the search alone: "
+                    + $"{(totals[^1] - totals[0]) / held.Count * 100:+0.0;-0.0;0.0} points over {held.Count} decks");
+            }
+            Console.WriteLine();
+            Console.Write(report.ToString());
+            File.WriteAllText(Path.Combine(cfg.OutDir, "generalization.txt"), report.ToString());
+        }
         Console.WriteLine($"written to {Path.GetFullPath(cfg.OutDir)}");
         return 0;
     }
@@ -285,33 +361,172 @@ public static class Program
         var cfg = ConfigFrom(args);
         var rng = new Gauss(cfg.Seed);
 
-        string leaderArg = Str(args, "--leader", "");
-        string leader = leaderArg.Length > 0 ? leaderArg : DeckGen.RandomLeader(cfg.LeaderPool, rng);
-        var deckPath = Str(args, "--deck", "");
-        List<string> deck = deckPath.Length > 0 && File.Exists(deckPath)
-            ? LoadDeck(deckPath, ref leader)
-            : DeckGen.Random(leader, cfg.Deck, rng);
+        // The decks to carry the network: one named or random deck, or with
+        // --starters all six hand-built ones, which no training agent ever holds
+        // and so are the generalisation test of a saved network.
+        var decks = new List<(string Name, string Leader, List<string> Cards)>();
+        if (Flag(args, "--starters"))
+        {
+            foreach (var d in CardSets.Starters) decks.Add((d.Name, d.LeaderId, d.Cards.ToList()));
+        }
+        else
+        {
+            string leaderArg = Str(args, "--leader", "");
+            string leader = leaderArg.Length > 0 ? leaderArg : DeckGen.RandomLeader(cfg.LeaderPool, rng);
+            var deckPath = Str(args, "--deck", "");
+            List<string> deck = deckPath.Length > 0 && File.Exists(deckPath)
+                ? LoadDeck(deckPath, ref leader)
+                : DeckGen.Random(leader, cfg.Deck, rng);
+            decks.Add((deckPath.Length > 0 ? Path.GetFileNameWithoutExtension(deckPath) : "learned", leader, deck));
+        }
 
         var brain = new Brain { Name = "loaded", Net = net };
         brain.EnsureReplicas(Math.Max(1, cfg.Threads), 99);
-        var agent = new Agent
-        {
-            Name = "learned",
-            LeaderId = leader,
-            Deck = deck,
-            Brain = brain,
-            Config = cfg.Agent,
-            Intel = cfg.Intel,
-        };
-        agent.Config.NetWeight = 1;
-        agent.Config.Temperature = 0;
-        agent.Config.Epsilon = 0;
 
+        // The same sweep the end of a training run prints: one deck, the same
+        // games, at several sizes of correction, with zero as the bar.
+        var weights = Str(args, "--net-weights", "0,0.15,0.35,0.6,1")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(s => double.Parse(s, CultureInfo.InvariantCulture))
+            .ToList();
         var run = new Tournament(new TournamentConfig
         { Agents = 0, Brains = 1, Anchors = 0, Rounds = 0, Threads = cfg.Threads, Seed = cfg.Seed });
-        var (w, l, d) = run.Gauntlet(agent, games, cfg.Seed * 13);
-        Console.WriteLine($"{Path.GetFileName(netPath)} on {agent.LeaderName} ({agent.Colors}) "
-            + $"over {games} games: {w}-{l}-{d} ({(w + 0.5 * d) / games:P0})");
+        var totals = new double[weights.Count];
+        foreach (var (name, leader, deck) in decks)
+        {
+            var agent = new Agent
+            {
+                Name = name,
+                LeaderId = leader,
+                Deck = deck,
+                Brain = brain,
+                Config = cfg.Agent.Clone(),
+                Intel = cfg.Intel,
+            };
+            agent.Config.Temperature = 0;
+            agent.Config.Epsilon = 0;
+            Console.WriteLine($"{Path.GetFileName(netPath)} on {name}: {agent.LeaderName} ({agent.Colors}) "
+                + $"against the shipped bot on starter decks, {games} games each setting.");
+            Console.WriteLine("  correction   record        win rate   versus the evaluator");
+            double baseline = 0;
+            for (int i = 0; i < weights.Count; i++)
+            {
+                agent.Config.NetWeight = weights[i];
+                var (w, l, d) = run.Gauntlet(agent, games, cfg.Seed * 13);
+                double rate = (w + 0.5 * d) / games;
+                totals[i] += rate;
+                if (i == 0) baseline = rate;
+                Console.WriteLine($"  {weights[i],10:0.00}   {w,3}-{l,3}-{d,-3}   {rate,8:P0}   "
+                    + (i == 0 ? "(the bar)" : $"{(rate - baseline) * 100:+0.0;-0.0;0.0} points"));
+            }
+        }
+        if (decks.Count > 1)
+        {
+            Console.WriteLine($"mean over {decks.Count} decks:");
+            for (int i = 0; i < weights.Count; i++)
+            {
+                double rate = totals[i] / decks.Count;
+                Console.WriteLine($"  {weights[i],10:0.00}   {rate,8:P0}   "
+                    + (i == 0 ? "(the bar)" : $"{(rate - totals[0] / decks.Count) * 100:+0.0;-0.0;0.0} points"));
+            }
+        }
+        return 0;
+    }
+
+    /// <summary>Writes a trained network as the bundle the client loads.</summary>
+    private static int ExportNet(string[] args)
+    {
+        string netPath = Str(args, "--net", Path.Combine("runs", "latest", "net0.snn"));
+        string outPath = Str(args, "--out", Path.Combine("src", "ai", "net", "default.json"));
+        if (!File.Exists(netPath))
+        {
+            Console.Error.WriteLine($"no network at {netPath}");
+            return 1;
+        }
+        var net = SelatzaNet.Load(netPath);
+        net.ExportJson(outPath);
+        Console.WriteLine($"wrote {outPath} ({new FileInfo(outPath).Length / 1024:N0} KB, "
+            + $"{net.ParameterCount:N0} weights, {CardIndex.Count} cards)");
+        return 0;
+    }
+
+    /// <summary>
+    /// Observations and values along a recorded game, for the client's parity
+    /// test: both encoders and both forward passes must agree on these floats.
+    /// The tracker is blind and built fresh at each position, which is the read
+    /// the client reconstructs from the public zones.
+    /// </summary>
+    private static int DumpObs(string[] args)
+    {
+        string replayPath = Str(args, "--replay", "");
+        string netPath = Str(args, "--net", "");
+        string outPath = Str(args, "--out", Path.Combine("conformance", "net-parity.json"));
+        int every = Math.Max(1, Int(args, "--every", 7));
+        if (!File.Exists(replayPath) || !File.Exists(netPath))
+        {
+            Console.Error.WriteLine("dump-obs needs --replay <file> and --net <file>");
+            return 2;
+        }
+        var replay = Replay.Load(replayPath);
+        var net = SelatzaNet.Load(netPath);
+        var a = DeckGen.ToDeckList(replay.Decks[0].Name, replay.Decks[0].LeaderId, replay.Decks[0].Cards);
+        var b = DeckGen.ToDeckList(replay.Decks[1].Name, replay.Decks[1].LeaderId, replay.Decks[1].Cards);
+        var state = Engine.CreateGame(a, b, replay.Seed, replay.StartingPlayer);
+        var samples = new List<Dictionary<string, object>>();
+        var buf = new float[net.SampleSize];
+        for (int i = 0; i <= replay.Steps.Count; i++)
+        {
+            if (i % every == 0 && !state.IsOver)
+            {
+                for (int seat = 0; seat < 2; seat++)
+                {
+                    var intel = new Intel(seat, IntelConfig.Blind, 1);
+                    intel.Begin(state);
+                    var enc = new Encoder(seat, intel, state);
+                    enc.Encode(state, buf, 0);
+                    float value = net.Value(buf, 1)[0];
+                    // Sparse: an observation is mostly zeros, and the fixture
+                    // is checked into the repository.
+                    var idx = new List<int>();
+                    var val = new List<float>();
+                    for (int j = 0; j < buf.Length; j++)
+                    {
+                        if (buf[j] == 0) continue;
+                        idx.Add(j);
+                        val.Add(buf[j]);
+                    }
+                    samples.Add(new Dictionary<string, object>
+                    {
+                        ["step"] = i,
+                        ["seat"] = seat,
+                        ["size"] = buf.Length,
+                        ["idx"] = Convert.ToBase64String(
+                            System.Runtime.InteropServices.MemoryMarshal.AsBytes(idx.ToArray().AsSpan())),
+                        ["val"] = Convert.ToBase64String(
+                            System.Runtime.InteropServices.MemoryMarshal.AsBytes(val.ToArray().AsSpan())),
+                        ["value"] = value,
+                    });
+                }
+            }
+            if (i == replay.Steps.Count) break;
+            var step = replay.Steps[i];
+            var res = Engine.Apply(state, step.Actor, Replays.ParseAction(step.Action));
+            if (!res.Ok)
+            {
+                Console.Error.WriteLine($"step {i} refused: {res.Error}");
+                return 1;
+            }
+            state = res.State!;
+        }
+        var doc = new Dictionary<string, object>
+        {
+            ["replay"] = Path.GetFileName(replayPath),
+            ["net"] = Path.GetFileName(netPath),
+            ["every"] = every,
+            ["samples"] = samples,
+        };
+        File.WriteAllText(outPath, System.Text.Json.JsonSerializer.Serialize(doc));
+        Console.WriteLine($"wrote {samples.Count} samples to {outPath}");
         return 0;
     }
 

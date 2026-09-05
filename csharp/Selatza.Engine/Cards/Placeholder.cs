@@ -41,6 +41,7 @@ public static class Placeholder
             Color.O => new Cost(O: 1),
             Color.R => new Cost(R: 1),
             Color.F => new Cost(F: 1),
+            Color.K => new Cost(K: 1),
             _ => new Cost(S: 1),
         },
         Num = $"TX{Colors.Letter(c)}",

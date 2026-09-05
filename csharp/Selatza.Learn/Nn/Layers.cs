@@ -230,6 +230,9 @@ public sealed class CardStem : Layer
         ps.Add(_b);
     }
 
+    /// <summary>The static half already folded in, <c>[channel * cards + card]</c>, for export.</summary>
+    public float[] FoldedBias => _bias;
+
     public override void AfterStep()
     {
         Array.Clear(_bias);

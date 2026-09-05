@@ -1230,12 +1230,11 @@ public static class Mixed
             })),
 
         Mr.Spell("AbsurdlySpicyCandy", "Absurdly Spicy Candy", new Cost(K: 3, P: 2),
-            "Deal 2 to an enemy summon and 1 to the enemy leader. Love: Effect Damage +1.",
-            Specs(Enemy()), c =>
+            "Deal 1 to a character. Love: Effect Damage +1.",
+            Specs(AnyOrLeader("a character")), c =>
             {
                 int n = c.SpendLove(c.Me);
-                c.Damage(c.Target(0), 2 + n);
-                c.Damage(TargetRef.Leader(c.Opp), 1 + n);
+                c.Damage(c.Target(0), 1 + n);
             }),
 
         Mr.Spell("DeflateCurrency", "Deflate Currency", new Cost(K: 1, P: 1),
