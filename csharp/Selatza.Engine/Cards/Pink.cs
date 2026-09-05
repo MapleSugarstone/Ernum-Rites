@@ -68,7 +68,8 @@ public static class Pink
 
         K.Summon(1, "candymouse", "Candy Mouse", F(Faction.Saccharine, Faction.Beast),
             str: 2, hp: 3,
-            text: "Battlecry: Scry 3 for a Saccharine.",
+            entersSapped: true,
+            text: "Arrives sapped. Battlecry: Scry 3 for a Saccharine.",
             triggers: new Triggers
             { OnEnter = c => c.Dig(c.Me, 3, d => d.HasFaction(Faction.Saccharine)) }),
 
@@ -84,7 +85,8 @@ public static class Pink
 
         K.Summon(1, "icecreambird", "Ice Cream Bird", F(Faction.Saccharine, Faction.Beast),
             str: 3, hp: 2,
-            text: "Battlecry: Scry 2 for any card.",
+            entersSapped: true,
+            text: "Arrives sapped. Battlecry: Scry 2 for any card.",
             triggers: new Triggers { OnEnter = c => c.Dig(c.Me, 2, d => true) },
             flipText: "Gain 1 Love.",
             flip: c => c.GainLove(c.Me, 1)),
@@ -231,7 +233,8 @@ public static class Pink
 
         K.Summon(2, "PrivateDetective", "Private Detective",
             F(Faction.Mortal, Faction.Scholar), str: 3, hp: 3,
-            text: "Battlecry: Scry 4 for any card. Store: Scry 4 for any card.",
+            entersSapped: true,
+            text: "Arrives sapped. Battlecry: Scry 4 for any card. Store: Scry 4 for any card.",
             triggers: new Triggers { OnEnter = c => c.Dig(c.Me, 4, _ => true) },
             store: new StoreDef
             {

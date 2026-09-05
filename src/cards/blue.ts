@@ -52,22 +52,26 @@ export const blueCards: CardDef[] = [
     str: 1,
     hp: 2,
     flipText: 'Catch a spent HP card off the attached character.',
+    flipCost: { mana: { F: 1 } },
     flip: (c) => c.catch(holderRef(c), 1),
   }),
   k.summon(1, 'lilfish', 'Lilfish', ['Fish'], {
+    entersSapped: true,
     str: 1,
     hp: 2,
-    text: 'Battlecry: Draw a card.',
+    text: 'Arrives sapped. Battlecry: Draw a card.',
     triggers: {
       onEnter: (c) => c.draw(c.me, 1),
     },
     flipText: 'Catch a spent HP card off the attached character.',
+    flipCost: { mana: { F: 1 } },
     flip: (c) => c.catch(holderRef(c), 1),
   }),
   k.summon(1, 'longfish', 'Longfish', ['Fish'], {
     str: 3,
     hp: 2,
     flipText: 'Catch a spent HP card off the attached character.',
+    flipCost: { mana: { F: 1 } },
     flip: (c) => c.catch(holderRef(c), 1),
   }),
   k.summon(1, 'octopi', 'Octopi', ['Fish'], {
@@ -78,11 +82,13 @@ export const blueCards: CardDef[] = [
         name: 'Eight Hands',
         cost: { F: 1 },
         text: 'Unsap an ally summon.',
+        sapSelf: true,
         targets: [T.ally()],
         effect: (c) => c.unsap(c.targets[0]),
       },
     ],
     flipText: 'Catch a spent HP card off the attached character.',
+    flipCost: { mana: { F: 1 } },
     flip: (c) => c.catch(holderRef(c), 1),
   }),
   k.summon(1, 'seabunny', 'Sea Bunny', ['Fish', 'Beast'], {
@@ -107,6 +113,7 @@ export const blueCards: CardDef[] = [
       },
     },
     flipText: 'Catch a spent HP card off the attached character.',
+    flipCost: { mana: { F: 1 } },
     flip: (c) => c.catch(holderRef(c), 1),
   }),
   k.summon(1, 'seasnake', 'Sea Snake', ['Fish', 'Beast'], {
@@ -134,6 +141,7 @@ export const blueCards: CardDef[] = [
       },
     },
     flipText: 'Catch a spent HP card off the attached character.',
+    flipCost: { mana: { F: 1 } },
     flip: (c) => c.catch(holderRef(c), 1),
   }),
   k.summon(1, 'whaleshark', 'Whale Shark', ['Fish', 'Beast'], {
@@ -274,9 +282,10 @@ export const blueCards: CardDef[] = [
     ],
   }),
   k.summon(2, 'riverfolk', 'Riverfolk', ['Fish', 'Mortal'], {
+    entersSapped: true,
     str: 2,
     hp: 3,
-    text: 'Deathrattle: Draw 2 cards.',
+    text: 'Arrives sapped. Deathrattle: Draw 2 cards.',
     triggers: { onDeath: (c) => c.draw(c.me, 2) },
     powers: [
       {
@@ -441,7 +450,20 @@ export const blueCards: CardDef[] = [
   }),
   k.summon(3, 'riverdrinker', 'River Drinker', ['Fish', 'Spirit'], {
     str: 1,
-    hp: 5,
+    hp: 3,
+    text: 'Strike: If the enemy has Redirection, deal 5 to it first. If it dies this way, eat it.',
+    triggers: {
+      // Redirection already forces the attack onto that body, so the defender
+      // is the one being asked about. `redirectTargets` reads the same printed
+      // line this does.
+      onAttack: (c) => {
+        const d = battleDefender(c.state);
+        if (!d) return;
+        const body = c.summonAt(d);
+        if (!body || !card(body.cardId).redirect) return;
+        c.damageAndEat(d, 5);
+      },
+    },
     powers: [
       {
         name: 'Drink Deep',
@@ -552,6 +574,7 @@ export const blueCards: CardDef[] = [
       c.draw(c.me, 1);
     },
     flipText: 'Catch a spent HP card off the attached character.',
+    flipCost: { mana: { F: 1 } },
     flip: (c) => c.catch(holderRef(c), 1),
   }),
   k.spell('error', 'Error', { F: 1, C: 1 }, {

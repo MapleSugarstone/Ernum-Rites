@@ -1624,9 +1624,12 @@ describe('flips worth asking about', () => {
   it('will not trade a mill for a draw off an empty deck', () => {
     const s = game();
     const rat = offer('s1-fluterat', leaderRef);
-    s.players[0].deck = [D1];
+    // Read off the card rather than written down here: the rule is that the
+    // deck has to outlast the mill, whatever the mill is tuned to.
+    const mill = card('s1-fluterat').flipCost!.mill!;
+    s.players[0].deck = Array(mill).fill(D1);
     expect(flipWouldFire(s, rat)).toBe(false);
-    s.players[0].deck = [D1, D1];
+    s.players[0].deck = Array(mill + 1).fill(D1);
     expect(flipWouldFire(s, rat)).toBe(true);
   });
 

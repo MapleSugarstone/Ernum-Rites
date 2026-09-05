@@ -99,7 +99,7 @@ public static class Kit
             Action<FlipCtx>? flip = null, string? flipText = null, FlipCost? flipCost = null,
             Func<FlipCtx, bool>? flipUseful = null,
             bool stationary = false, bool redirect = false, bool spellImmune = false,
-            bool reborn = false, bool frenzy = false)
+            bool reborn = false, bool frenzy = false, bool entersSapped = false)
             => new()
             {
                 Id = $"n{level}-{file}",
@@ -114,6 +114,7 @@ public static class Kit
                 Reborn = reborn,
                 Frenzy = frenzy,
                 Redirect = redirect,
+                EntersSapped = entersSapped,
                 SpellImmune = spellImmune,
                 Factions = factions ?? Array.Empty<Faction>(),
                 Text = text,
@@ -184,7 +185,8 @@ public static class Kit
             bool cursePotency = false, bool muffleFlips = false,
             bool stationary = false, bool redirect = false, bool spellImmune = false,
             bool reborn = false, bool frenzy = false, bool voidsDiscard = false,
-            bool neutral = false, Color[]? identity = null, StoreDef? store = null)
+            bool neutral = false, Color[]? identity = null, StoreDef? store = null,
+            bool entersSapped = false)
         {
             var b = LevelBase[level];
             return new CardDef
@@ -209,6 +211,7 @@ public static class Kit
                 Reborn = reborn,
                 Frenzy = frenzy,
                 Redirect = redirect,
+                EntersSapped = entersSapped,
                 SpellImmune = spellImmune,
                 Neutral = neutral,
                 Factions = factions ?? Array.Empty<Faction>(),
@@ -357,7 +360,8 @@ public static class Kit
             string? flipText = null, int effectDamage = 0,
             bool cursePotency = false, bool stationary = false, bool redirect = false,
             bool spellImmune = false, bool reborn = false, bool frenzy = false,
-            bool neutral = false, bool debtAmplify = false, StoreDef? store = null)
+            bool neutral = false, bool debtAmplify = false, StoreDef? store = null,
+            bool entersSapped = false)
         {
             var b = LevelBase[level];
             return new CardDef
@@ -378,6 +382,7 @@ public static class Kit
                 Reborn = reborn,
                 Frenzy = frenzy,
                 Redirect = redirect,
+                EntersSapped = entersSapped,
                 SpellImmune = spellImmune,
                 Factions = factions ?? Array.Empty<Faction>(),
                 Text = text,
@@ -476,7 +481,7 @@ public static class Kit
             int? str = null, int? hp = null, string? text = null,
             Power[]? powers = null, Triggers? triggers = null, bool freeSpells = false,
             bool spellImmune = false, bool redirect = false, int effectDamage = 0,
-            StoreDef? store = null)
+            StoreDef? store = null, bool entersSapped = false)
         {
             var b = LevelBase[level];
             var slug = new string(file.ToLowerInvariant()
@@ -495,6 +500,7 @@ public static class Kit
                 FreeSpells = freeSpells,
                 SpellImmune = spellImmune,
                 Redirect = redirect,
+                EntersSapped = entersSapped,
                 EffectDamage = effectDamage,
                 Store = store,
                 Factions = factions ?? Array.Empty<Faction>(),

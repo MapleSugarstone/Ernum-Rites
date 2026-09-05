@@ -68,9 +68,10 @@ export const pinkCards: CardDef[] = [
     },
   }),
   k.summon(1, 'candymouse', 'Candy Mouse', ['Saccharine', 'Beast'], {
+    entersSapped: true,
     str: 2,
     hp: 3,
-    text: 'Battlecry: Scry 3 for a Saccharine.',
+    text: 'Arrives sapped. Battlecry: Scry 3 for a Saccharine.',
     triggers: {
       onEnter: (c) => c.dig(c.me, 3, (d) => !!d.factions?.includes('Saccharine')),
     },
@@ -88,9 +89,10 @@ export const pinkCards: CardDef[] = [
     },
   }),
   k.summon(1, 'icecreambird', 'Ice Cream Bird', ['Saccharine', 'Beast'], {
+    entersSapped: true,
     str: 3,
     hp: 2,
-    text: 'Battlecry: Scry 2 for any card.',
+    text: 'Arrives sapped. Battlecry: Scry 2 for any card.',
     triggers: { onEnter: (c) => c.dig(c.me, 2, () => true) },
     flipText: 'Gain 1 Love.',
     flip: (c) => c.gainLove(c.me, 1),
@@ -244,9 +246,10 @@ export const pinkCards: CardDef[] = [
     },
   }),
   k.summon(2, 'PrivateDetective', 'Private Detective', ['Mortal', 'Scholar'], {
+    entersSapped: true,
     str: 3,
     hp: 3,
-    text: 'Battlecry: Scry 4 for any card. Store: Scry 4 for any card.',
+    text: 'Arrives sapped. Battlecry: Scry 4 for any card. Store: Scry 4 for any card.',
     triggers: { onEnter: (c) => c.dig(c.me, 4, () => true) },
     store: {
       useful: (state, user) => state.players[user].deck.length > 0,

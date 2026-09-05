@@ -72,6 +72,7 @@ public static class Manifest
             + $"\"storeLeaderDiscount\":{(c.Store?.LeaderDiscount ?? 0)},"
             + $"\"storeTargets\":{(c.Store?.Targets?.Length ?? 0)},"
             + $"\"storeUseful\":{L(c.Store?.Useful is not null)},"
+            + $"\"entersSapped\":{L(c.EntersSapped)},"
             + $"\"storeBoost\":{L(c.StoreBoost)}"
             + "}";
     }

@@ -250,12 +250,12 @@ public static class Purple
             {
                 Name = "Experiment",
                 Cost = new Cost(),
-                Text = "Mill 2 and take 1 debt, then draw a card.",
+                Text = "Mill 3 and take 1 debt, then draw a card.",
                 // The debt is what stops this repeating forever: it charges nothing
                 // and taps nothing, so the only ceiling is the debt you can carry.
                 Effect = c =>
                 {
-                    c.Mill(c.Me, 2);
+                    c.Mill(c.Me, 3);
                     c.AddDebt(c.Me, 1);
                     c.Draw(c.Me, 1);
                 },
@@ -467,7 +467,7 @@ public static class Purple
                 foreach (var r in c.SummonsOf(c.Opp)) c.Wound(r, 2);
             }),
 
-        K.Spell("bonedivination", "Bone Divination", new Cost(),
+        K.Spell("bonedivination", "Bone Divination", new Cost(O: 1),
             "Scry 4 for a summon.", null, c =>
             {
                 c.Dig(c.Me, 4, d => d.Type == CardType.Summon);
@@ -517,7 +517,7 @@ public static class Purple
             "An enemy summon loses 3 attack until end of turn.",
             Specs(Enemy()), c => c.BuffStrength(c.Target(0), -3, ModDuration.Turn)),
 
-        K.Spell("wishingclaw", "Wishing Claw", new Cost(), "Draw 3 cards and take 2 debt.",
+        K.Spell("wishingclaw", "Wishing Claw", new Cost(O: 1), "Draw 3 cards and take 2 debt.",
             null, c =>
             {
                 c.Draw(c.Me, 3);

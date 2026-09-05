@@ -31,9 +31,9 @@ public static class Yellow
                 })),
 
         K.Summon(1, "fluterat", "Flute Rat", F(Faction.Beast, Faction.Living), str: 1, hp: 2,
-            flipText: "Mill 1: draw 2 cards.",
-            flipCost: new FlipCost { Mill = 1 },
-            flipUseful: c => c.State.Players[c.Me].Deck.Count >= 2,
+            flipText: "Mill 4: draw 2 cards.",
+            flipCost: new FlipCost { Mill = 4 },
+            flipUseful: c => c.State.Players[c.Me].Deck.Count >= 5,
             flip: c => c.Draw(c.Me, 2)),
 
         K.Summon(1, "livingboot", "Living Boot", F(Faction.Living), str: 2, hp: 4,
@@ -120,7 +120,8 @@ public static class Yellow
             flip: c => c.Reinforce(c.HolderRef, 2)),
 
         K.Summon(1, "starbird", "Starbird", F(Faction.Star, Faction.Beast), str: 2, hp: 2,
-            text: "Deathrattle: Draw a card.",
+            entersSapped: true,
+            text: "Arrives sapped. Deathrattle: Draw a card.",
             triggers: new Triggers { OnDeath = c => c.Draw(c.Me, 1) },
             flipText: "Destroy the attached summon, and the top card of your deck becomes a sapped supporter.",
             flipCost: new FlipCost { Mana = new Cost(S: 1) },

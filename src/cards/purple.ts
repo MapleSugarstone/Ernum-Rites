@@ -281,11 +281,11 @@ export const purpleCards: CardDef[] = [
       {
         name: 'Experiment',
         cost: {},
-        text: 'Mill 2 and take 1 debt, then draw a card.',
+        text: 'Mill 3 and take 1 debt, then draw a card.',
         // The debt is what stops this repeating forever: it charges nothing and
         // taps nothing, so the only ceiling is how much debt you can carry.
         effect: (c) => {
-          c.mill(c.me, 2);
+          c.mill(c.me, 3);
           c.addDebt(c.me, 1);
           c.draw(c.me, 1);
         },
@@ -515,7 +515,7 @@ export const purpleCards: CardDef[] = [
       for (const ref of c.summonsOf(c.opp)) c.wound(ref, 2);
     },
   }),
-  k.spell('bonedivination', 'Bone Divination', {}, {
+  k.spell('bonedivination', 'Bone Divination', { O: 1 }, {
     text: 'Scry 4 for a summon.',
     effect: (c) => {
       c.dig(c.me, 4, (d) => d.type === 'summon');
@@ -567,7 +567,7 @@ export const purpleCards: CardDef[] = [
     targets: [T.enemy()],
     effect: (c) => c.buffStrength(c.targets[0], -3, 'turn'),
   }),
-  k.spell('wishingclaw', 'Wishing Claw', {}, {
+  k.spell('wishingclaw', 'Wishing Claw', { O: 1 }, {
     text: 'Draw 3 cards and take 2 debt.',
     effect: (c) => {
       c.draw(c.me, 3);

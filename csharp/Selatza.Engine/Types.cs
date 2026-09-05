@@ -806,6 +806,14 @@ public sealed class CardDef
     public bool Redirect { get; init; }
 
     /// <summary>
+    /// Arrives sapped, so the body has spent its turn on the way in. Set on
+    /// cards whose value lands the moment they are played, which would
+    /// otherwise be a free body on top of a free effect. Leaders are exempt:
+    /// they are seated at the start rather than played.
+    /// </summary>
+    public bool EntersSapped { get; init; }
+
+    /// <summary>
     /// Reborn. The first time this body would die it returns to its slot with
     /// 1 HP instead, once per body. It reaches no zone and charges no debt on
     /// that first death, so nothing that answers a Deathrattle answers this.

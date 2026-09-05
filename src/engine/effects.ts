@@ -309,6 +309,7 @@ export function newSummon(
   // A shop opens stocked: only self-use is gated on the turn a body entered,
   // so a store placed mid-turn (a replacement, a token) sells at once.
   const def = card(cardId);
+  if (def.entersSapped && !s.isLeader) s.sapped = true;
   if (def.store) {
     const stage = state.players[owner].stage;
     s.storeStock = stage && tryCard(stage)?.storeBoost ? 2 : 1;
@@ -1635,6 +1636,16 @@ export function makeEffectCtx(
         eater = outer;
       }
       return true;
+    },
+    damageAndEat: (target: TargetRef, amount: number) => {
+      if (ctxBlocked(target) || !source) return;
+      const outer = eater;
+      eater = source;
+      try {
+        dealDamage(state, target, amount + effectDamageOf(state, me));
+      } finally {
+        eater = outer;
+      }
     },
     emptySlot: (player: PlayerIdx) => {
       const i = state.players[player].slots.findIndex((s) => s === null);

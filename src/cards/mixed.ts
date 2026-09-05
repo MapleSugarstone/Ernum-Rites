@@ -686,7 +686,7 @@ export const mixedCards: CardDef[] = [
   // --- Solar and Machine -----------------------------------------------------
   yg.summon(2, 'krazbot', 'Krazbot', ['Machine', 'Living'], {
     str: 2,
-    hp: 3,
+    hp: 1,
     text: 'Whenever you play a Machine or a Hedron, draw a card.',
     triggers: {
       onSummonPlayed: (c) => {

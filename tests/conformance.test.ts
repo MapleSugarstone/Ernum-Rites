@@ -174,6 +174,7 @@ describe('card manifest', () => {
     storeLeaderDiscount: number;
     storeTargets: number;
     storeUseful: boolean;
+    entersSapped: boolean;
     storeBoost: boolean;
   }
 
@@ -247,6 +248,7 @@ describe('card manifest', () => {
       storeLeaderDiscount: def.store?.leaderDiscount ?? 0,
       storeTargets: def.store?.targets?.length ?? 0,
       storeUseful: !!def.store?.useful,
+      entersSapped: !!def.entersSapped,
       storeBoost: !!def.storeBoost,
     };
   }

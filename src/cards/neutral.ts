@@ -45,9 +45,9 @@ export const neutralCards: CardDef[] = [
   n.summon(1, 'Thing', 'Thing', [], {
     str: 2,
     hp: 3,
-    flipText: 'Heal the attached character for 3.',
+    flipText: 'Heal the attached character for 2.',
     flipCost: { mana: { C: 1 } },
-    flip: (c) => c.unflip(holderRef(c), 3),
+    flip: (c) => c.unflip(holderRef(c), 2),
   }),
   n.summon(1, 'Wallguy', 'Wallguy', ['Hedron'], {
     str: 1,
@@ -65,9 +65,10 @@ export const neutralCards: CardDef[] = [
     hp: 5,
   }),
   n.summon(1, 'weirdBird', 'Weird Bird', ['Beast'], {
+    entersSapped: true,
     str: 2,
     hp: 3,
-    text: 'Battlecry: Scry 2 for any card.',
+    text: 'Arrives sapped. Battlecry: Scry 2 for any card.',
     triggers: { onEnter: (c) => c.dig(c.me, 2, () => true) },
   }),
   n.summon(2, 'Deedsigner', 'Deedsigner', ['Mortal'], {
@@ -115,9 +116,10 @@ export const neutralCards: CardDef[] = [
     },
   }),
   n.summon(2, 'SecretLetter', 'Secret Letter', [], {
+    entersSapped: true,
     str: 3,
     hp: 2,
-    text: 'Battlecry: Draw a card.',
+    text: 'Arrives sapped. Battlecry: Draw a card.',
     triggers: { onEnter: (c) => c.draw(c.me, 1) },
   }),
   n.summon(2, 'Smithee', 'Smithee', ['Mortal'], {
@@ -138,9 +140,10 @@ export const neutralCards: CardDef[] = [
       } },
   }),
   n.summon(2, 'Sorter', 'Sorter', ['Mortal'], {
+    entersSapped: true,
     str: 2,
     hp: 3,
-    text: 'Battlecry: Scry 3 for any card.',
+    text: 'Arrives sapped. Battlecry: Scry 3 for any card.',
     triggers: { onEnter: (c) => c.dig(c.me, 3, () => true) },
   }),
   n.summon(2, 'Starfly', 'Starfly', ['Star'], {

@@ -600,7 +600,7 @@ public static class Mixed
             Specs(AllyOrLeader()), c => c.Unflip(c.Target(0), 4)),
 
         // --- Solar and Machine -------------------------------------------------
-        Yg.Summon(2, "krazbot", "Krazbot", F(Faction.Machine, Faction.Living), str: 2, hp: 3,
+        Yg.Summon(2, "krazbot", "Krazbot", F(Faction.Machine, Faction.Living), str: 2, hp: 1,
             text: "Whenever you play a Machine or a Hedron, draw a card.",
             triggers: new Triggers
             {

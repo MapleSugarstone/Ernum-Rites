@@ -29,7 +29,7 @@
     {"actor": 1, "action": {"type":"PLAY_SUMMON","handIndex":2,"slot":1,"targets":[]}, "digest": "b4698ebcbdd6ab6a"},
     {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":1,"index":1},"target":{"kind":"summon","player":0,"index":1}}, "digest": "1a465fdc217387fc"},
     {"actor": 1, "action": {"type":"PAY_FLIP"}, "digest": "6fcd1c2747b4b5eb"},
-    {"actor": 0, "action": {"type":"REPLACE_SUMMON","handIndex":0,"targets":[]}, "digest": "9027706c9c96f34f"},
+    {"actor": 0, "action": {"type":"REPLACE_SUMMON","handIndex":0,"targets":[]}, "digest": "755ee26770835f76"},
     {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":1,"index":0},"target":{"kind":"summon","player":0,"index":1}}, "digest": "7e85d850b26b5d7d"},
     {"actor": 1, "action": {"type":"DECLINE_FLIP"}, "digest": "df0a41c8a4f87f06"},
     {"actor": 0, "action": {"type":"REPLACE_SUMMON","handIndex":2,"targets":[]}, "digest": "c10b696e8629ce4a"},

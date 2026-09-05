@@ -784,6 +784,13 @@ export interface CardDef {
    */
   redirect?: boolean;
   /**
+   * Arrives sapped, so the body has spent its turn on the way in. Set on cards
+   * whose value lands the moment they are played, which would otherwise be a
+   * free body on top of a free effect. Leaders are exempt: they are seated at
+   * the start rather than played.
+   */
+  entersSapped?: boolean;
+  /**
    * Spell Immunity. No spell or trap may choose this body as a target, from
    * either side of the table. Combat and triggers still reach it.
    */
@@ -1039,6 +1046,13 @@ export interface EffectCtx {
    * this effect. No debt is charged: the card never reaches the debt zone.
    */
   devour(target: TargetRef): boolean;
+  /**
+   * Damage that eats what it kills. The eater is held for the length of the
+   * blow, so a body that dies to it goes face down under the summon running
+   * this effect rather than into the debt zone; one that survives is only
+   * damaged.
+   */
+  damageAndEat(target: TargetRef, amount: number): void;
   reviveFromDebt(player: PlayerIdx, match: (c: CardDef) => boolean): CardDef | null;
   /** Takes the card at a debt-pile index, healing its level off the debt counter. */
   removeFromDebt(player: PlayerIdx, index: number): string | null;

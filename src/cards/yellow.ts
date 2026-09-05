@@ -32,11 +32,12 @@ export const yellowCards: CardDef[] = [
   k.summon(1, 'fluterat', 'Flute Rat', ['Beast', 'Living'], {
     str: 1,
     hp: 2,
-    flipText: 'Mill 1: draw 2 cards.',
-    flipCost: { mill: 1 },
-    // One card left is the mill itself, and the draw behind it would be off an
-    // empty deck: paying that costs debt rather than buying a card.
-    flipUseful: (c) => c.deckLeft(c.me) >= 2,
+    flipText: 'Mill 4: draw 2 cards.',
+    flipCost: { mill: 4 },
+    // A deck no deeper than the mill is spent by the mill itself, and the draw
+    // behind it would be off an empty deck: paying that costs debt rather than
+    // buying a card.
+    flipUseful: (c) => c.deckLeft(c.me) >= 5,
     flip: (c) => c.draw(c.me, 2),
   }),
   k.summon(1, 'livingboot', 'Living Boot', ['Living'], { str: 2, hp: 4,
@@ -127,9 +128,10 @@ export const yellowCards: CardDef[] = [
     flip: (c) => c.reinforce(holderRef(c), 2),
   }),
   k.summon(1, 'starbird', 'Starbird', ['Star', 'Beast'], {
+    entersSapped: true,
     str: 2,
     hp: 2,
-    text: 'Deathrattle: Draw a card.',
+    text: 'Arrives sapped. Deathrattle: Draw a card.',
     triggers: { onDeath: (c) => c.draw(c.me, 1) },
     flipText: 'Destroy the attached summon, and the top card of your deck becomes a sapped supporter.',
     flipCost: { mana: { S: 1 } },

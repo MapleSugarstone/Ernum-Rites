@@ -49,22 +49,26 @@ public static class Blue
             text: "Battlecry: Mill the enemy 1.",
             triggers: new Triggers { OnEnter = c => c.Mill(c.Opp, 1) }, str: 1, hp: 2,
             flipText: "Catch a spent HP card off the attached character.",
+            flipCost: new FlipCost { Mana = new Cost(F: 1) },
             flip: c => c.Catch(c.HolderRef, 1)),
 
         K.Summon(1, "lilfish", "Lilfish", F(Faction.Fish),
             str: 1,
             hp: 2,
-            text: "Battlecry: Draw a card.",
+            entersSapped: true,
+            text: "Arrives sapped. Battlecry: Draw a card.",
             triggers: new Triggers
             {
                 OnEnter = c => c.Draw(c.Me, 1),
             },
             flipText: "Catch a spent HP card off the attached character.",
+            flipCost: new FlipCost { Mana = new Cost(F: 1) },
             flip: c => c.Catch(c.HolderRef, 1)),
 
         K.Summon(1, "longfish", "Longfish", F(Faction.Fish), str: 3, hp: 2,
             text: "",
             flipText: "Catch a spent HP card off the attached character.",
+            flipCost: new FlipCost { Mana = new Cost(F: 1) },
             flip: c => c.Catch(c.HolderRef, 1)),
 
         K.Summon(1, "octopi", "Octopi", F(Faction.Fish), str: 1, hp: 3,
@@ -73,10 +77,12 @@ public static class Blue
                 Name = "Eight Hands",
                 Cost = new Cost(F: 1),
                 Text = "Unsap an ally summon.",
+                SapSelf = true,
                 Targets = Specs(Ally()),
                 Effect = c => c.Unsap(c.Target(0)),
             }),
             flipText: "Catch a spent HP card off the attached character.",
+            flipCost: new FlipCost { Mana = new Cost(F: 1) },
             flip: c => c.Catch(c.HolderRef, 1)),
 
         K.Summon(1, "seabunny", "Sea Bunny", F(Faction.Fish, Faction.Beast), str: 1, hp: 2,
@@ -99,6 +105,7 @@ public static class Blue
                 },
             },
             flipText: "Catch a spent HP card off the attached character.",
+            flipCost: new FlipCost { Mana = new Cost(F: 1) },
             flip: c => c.Catch(c.HolderRef, 1)),
 
         K.Summon(1, "seasnake", "Sea Snake", F(Faction.Fish, Faction.Beast),
@@ -122,6 +129,7 @@ public static class Blue
                 OnDefend = c => { if (c.State.BattleAttacker is { } a) c.Damage(a, 2); },
             },
             flipText: "Catch a spent HP card off the attached character.",
+            flipCost: new FlipCost { Mana = new Cost(F: 1) },
             flip: c => c.Catch(c.HolderRef, 1)),
 
         K.Summon(1, "whaleshark", "Whale Shark", F(Faction.Fish, Faction.Beast), str: 1, hp: 4,
@@ -254,7 +262,8 @@ public static class Blue
         K.Summon(2, "riverfolk", "Riverfolk", F(Faction.Fish, Faction.Mortal),
             str: 2,
             hp: 3,
-            text: "Deathrattle: Draw 2 cards.",
+            entersSapped: true,
+            text: "Arrives sapped. Deathrattle: Draw 2 cards.",
             triggers: new Triggers { OnDeath = c => c.Draw(c.Me, 2) },
             powers: Powers(new Power
             {
@@ -413,7 +422,21 @@ public static class Blue
             })),
 
         K.Summon(3, "riverdrinker", "River Drinker", F(Faction.Fish, Faction.Spirit),
-            str: 1, hp: 5,
+            str: 1, hp: 3,
+            text: "Strike: If the enemy has Redirection, deal 5 to it first. If it dies this way, eat it.",
+            triggers: new Triggers
+            {
+                // Redirection already forces the attack onto that body, so the
+                // defender is the one being asked about. RedirectTargets reads
+                // the same printed line this does.
+                OnAttack = c =>
+                {
+                    if (c.State.BattleDefender is not { } d) return;
+                    if (c.SummonAt(d) is not { } body) return;
+                    if (!Registry.Card(body.CardId).Redirect) return;
+                    c.DamageAndEat(d, 5);
+                },
+            },
             powers: Powers(new Power
             {
                 Name = "Drink Deep",
@@ -515,6 +538,7 @@ public static class Blue
                 c.Draw(c.Me, 1);
             },
             flipText: "Catch a spent HP card off the attached character.",
+            flipCost: new FlipCost { Mana = new Cost(F: 1) },
             flip: c => c.Catch(c.HolderRef, 1)),
 
         K.Spell("error", "Error", new Cost(F: 1, C: 1), "The enemy Mills 4.",

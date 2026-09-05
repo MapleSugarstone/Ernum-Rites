@@ -41,6 +41,7 @@ export interface Extra {
   annihilateAfterCast?: boolean;
   stationary?: boolean;
   redirect?: boolean;
+  entersSapped?: boolean;
   spellImmune?: boolean;
   reborn?: boolean;
   frenzy?: boolean;
@@ -173,6 +174,7 @@ function base(
   if (extra.annihilateAfterCast) def.annihilateAfterCast = extra.annihilateAfterCast;
   if (extra.stationary) def.stationary = extra.stationary;
   if (extra.redirect) def.redirect = extra.redirect;
+  if (extra.entersSapped) def.entersSapped = extra.entersSapped;
   if (extra.spellImmune) def.spellImmune = extra.spellImmune;
   if (extra.reborn) def.reborn = extra.reborn;
   if (extra.frenzy) def.frenzy = extra.frenzy;

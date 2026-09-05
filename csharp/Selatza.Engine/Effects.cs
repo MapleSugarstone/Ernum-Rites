@@ -244,6 +244,12 @@ public sealed class EffectCtx
     /// this effect. No debt is charged: the card never reaches the debt zone.
     /// </summary>
     public bool Devour(TargetRef t) => !Blocked(t) && Effects.Devour(State, Source, t);
+
+    public void DamageAndEat(TargetRef t, int amount)
+    {
+        if (Blocked(t)) return;
+        Effects.DamageAndEat(State, Source, t, amount + Effects.EffectDamageOf(State, Me));
+    }
     public CardDef? ReviveFromDebt(int player, Func<CardDef, bool> match) =>
         Effects.ReviveFromDebt(State, player, match);
 
@@ -909,6 +915,7 @@ public static class Effects
             EnteredTurn = state.Turn,
             Override = over,
         };
+        if (Registry.Card(cardId).EntersSapped && !isLeader) s.Sapped = true;
         // A shop opens stocked: only self-use is gated on the turn a body
         // entered, so a store placed mid-turn sells at once.
         if (Registry.Card(cardId).Store is not null)
@@ -1174,6 +1181,20 @@ public static class Effects
         try { DestroySummon(state, victim); }
         finally { _eater = outer; }
         return true;
+    }
+
+    /// <summary>
+    /// Damage that eats what it kills. The eater is held for the length of the
+    /// blow, so a body that dies to it goes face down under the source rather
+    /// than into the debt zone; one that survives is only damaged.
+    /// </summary>
+    public static void DamageAndEat(GameState state, SummonInstance? source, TargetRef t, int amount)
+    {
+        if (source is null) return;
+        var outer = _eater;
+        _eater = source;
+        try { DealDamage(state, t, amount); }
+        finally { _eater = outer; }
     }
 
     public static void DestroySummon(GameState state, SummonInstance summon)
