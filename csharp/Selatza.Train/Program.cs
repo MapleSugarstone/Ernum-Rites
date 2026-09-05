@@ -190,6 +190,7 @@ public static class Program
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .ToList(),
             SnapshotEvery = Int(args, "--snapshot-every", 1),
+            FreshDecks = Flag(args, "--fresh-decks"),
             NetWeightStart = noNet ? 0 : Dbl(args, "--net-weight-start", 0.0),
             EvolveGap = Dbl(args, "--evolve-gap", 60),
             NetWeightEnd = noNet ? 0 : Dbl(args, "--net-weight-end", 0.2),

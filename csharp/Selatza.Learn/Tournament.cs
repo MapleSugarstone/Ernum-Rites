@@ -80,6 +80,17 @@ public sealed class TournamentConfig
 
     /// <summary>Rounds between snapshots. One means a crash costs a single round.</summary>
     public int SnapshotEvery { get; set; } = 1;
+
+    /// <summary>
+    /// Every game is played on two freshly generated random decks, so the
+    /// networks see the whole card pool uniformly rather than the metagame the
+    /// population evolves into. A value function learned inside an evolving
+    /// metagame measured neutral to harmful on decks it never held, and this is
+    /// the regime for the opposite goal: play any deck it is handed. Ratings
+    /// then say something about the brain rather than a deck, the card and deck
+    /// reports mean nothing, and the held-out starter sweep is the number.
+    /// </summary>
+    public bool FreshDecks { get; set; }
 }
 
 /// <summary>
@@ -243,7 +254,9 @@ public sealed class Tournament
                 for (int g = 0; g < _cfg.GamesPerPairing; g++)
                 {
                     int seed = unchecked(_cfg.Seed * 1_000_003 + _round * 7919 + p * 131 + g * 17);
-                    var m = Match.Play(a, b, seed, g % 2, p, res.StoreA, res.StoreB);
+                    var seatA = _cfg.FreshDecks ? Fresh(a, unchecked(seed * 3 + 1)) : a;
+                    var seatB = _cfg.FreshDecks ? Fresh(b, unchecked(seed * 3 + 2)) : b;
+                    var m = Match.Play(seatA, seatB, seed, g % 2, p, res.StoreA, res.StoreB);
                     res.Turns += m.Turns;
                     res.Games.Add((m.Turns, m.Reason, m.FatigueKill, m.SawFatigue));
                     if (m.Winner == 0) res.WinsA++;
@@ -291,6 +304,27 @@ public sealed class Tournament
         RebuildGlobalStats();
         MutateLosers();
         AppendCensus();
+    }
+
+    /// <summary>
+    /// The same brain on a random leader and deck for one game. Anchors keep
+    /// their starter deck, since they are the ladder's fixed point.
+    /// </summary>
+    private Agent Fresh(Agent agent, int seed)
+    {
+        if (agent.ReferenceBot) return agent;
+        var rng = new Gauss(seed);
+        string leader = DeckGen.RandomLeader(_cfg.LeaderPool, rng);
+        return new Agent
+        {
+            Name = agent.Name,
+            LeaderId = leader,
+            Deck = DeckGen.Random(leader, _cfg.Deck, rng),
+            Brain = agent.Brain,
+            Config = agent.Config,
+            Intel = agent.Intel,
+            Elo = agent.Elo,
+        };
     }
 
     /// <summary>One game's worth of rating movement, from A's point of view.</summary>

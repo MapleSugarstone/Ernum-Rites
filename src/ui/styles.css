@@ -1516,6 +1516,18 @@ button.on {
 }
 .pipart img:last-child { margin-right: 0; }
 
+/* Dragging a body onto a target and dragging a card out of the hand are the
+   game's own gestures. A touch screen hands the browser first refusal on every
+   one of them, and the pan it starts instead cancels the pointer stream a few
+   pixels in, which left a phone with no way to declare an attack or play a
+   card. Named on the elements a drag begins from rather than on the board, so
+   nothing else on the page loses its scrolling. */
+[data-act='slot'],
+[data-act='leader'],
+[data-act='hand'] {
+  touch-action: none;
+}
+
 /* --- the card itself ------------------------------------------------------- */
 
 .card {
@@ -2627,10 +2639,17 @@ body.dragging .bookgrid .card {
 .notice {
   position: absolute;
   /* Over the middle slot and clear of the divider, the same place a prompt
-     lands, since the two say the same kind of thing. */
-  left: calc(50% + var(--hand-shift, 0px));
+     lands, since the two say the same kind of thing. Both edges are named for
+     the reason .fxbanner names them: given only a left edge the panel shrinks
+     to fit half the screen, and a phone then wraps the line into a column. The
+     nudge onto the middle slot moves to the transform. */
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  width: fit-content;
+  max-width: calc(100% - 24px);
   top: 31%;
-  transform: translate(-50%, -50%);
+  transform: translate(var(--hand-shift, 0px), -50%);
   z-index: 80;
   pointer-events: none;
   display: grid;
@@ -2650,7 +2669,6 @@ body.dragging .bookgrid .card {
    Fixed rather than absolute, because there is no positioned stage to sit in. */
 .notice.floating {
   position: fixed;
-  left: 50%;
   top: 22%;
   z-index: 960;
 }
@@ -2675,13 +2693,13 @@ body.dragging .bookgrid .card {
 @keyframes noticein {
   from {
     opacity: 0;
-    transform: translate(-50%, calc(-50% + 14px)) scale(0.94);
+    transform: translate(var(--hand-shift, 0px), calc(-50% + 14px)) scale(0.94);
   }
 }
 @keyframes noticeout {
   to {
     opacity: 0;
-    transform: translate(-50%, calc(-50% - 10px));
+    transform: translate(var(--hand-shift, 0px), calc(-50% - 10px));
   }
 }
 
@@ -5011,10 +5029,14 @@ body.mobile .draftwait .prompt {
    the gold arrow runs from its source card to the cursor. */
 
 .fxbanner {
-  position: absolute;
-  top: 14px;
-  left: 50%;
-  transform: translateX(-50%);
+  /* In the layer's flow rather than pinned to its top corner. Absolute, it took
+     its width from the room between one edge and the container's, which on a
+     phone is half a screen to wrap a sentence in and grew the pill into a tall
+     block over the row it was asking the player to click. Out of flow it also
+     left the layer no height to hug, so the low anchor put it under the stage.
+     The layer centres it; position is here only for z-index to bite. */
+  position: relative;
+  margin: 14px 0;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -5033,7 +5055,7 @@ body.mobile .draftwait .prompt {
 }
 @keyframes bannerin {
   from {
-    transform: translate(-50%, -20px);
+    transform: translateY(-20px);
     opacity: 0;
   }
 }
@@ -5717,12 +5739,15 @@ body.mobile {
   /* Card size is normally set by viewport height, which is right on a desktop
      where height is what runs out first. On a phone width runs out first, so the
      card takes whichever of the two is more binding.
-     The width term is the lane budget divided five ways: 220px covers the two
-     gutters, the board padding, the four gaps between slots and the sliver each
-     unit carries beyond its card. Floored so it stops shrinking before it stops
-     being a card. */
-  --cw-board: min(clamp(44px, 9.5vh, 74px), max(40px, calc((100vw - 150px) / 6.05)));
-  --cwn-board: min(clamp(44, calc(9.5 * var(--vhn) / 100), 74), max(40, calc((var(--vwn) - 150) / 6.05)));
+     The width term is the row solved for the card. Five units of cw + 10, the
+     four 6px gaps between them, a left gutter of 1.02 cw, a 44px right gutter,
+     6px of board padding either side and the two 6px gaps around the lane come
+     to 6.02 cw + 142, so a card wider than (100vw - 142px) / 6.02 does not fit
+     the row it is standing in. Nothing floors it: the board clips, so a card
+     held above the width that fits is not a readable card, it is a field slot
+     drawn off the side of the screen. */
+  --cw-board: min(clamp(44px, 9.5vh, 74px), calc((100vw - 142px) / 6.02));
+  --cwn-board: min(clamp(44, calc(9.5 * var(--vhn) / 100), 74), calc((var(--vwn) - 142) / 6.02));
 }
 
 /* Everything the width budget above accounts for, tightened to earn the room. */
@@ -5730,10 +5755,10 @@ body.mobile .side {
   grid-template-columns: calc(var(--cw-board) * 1.02) minmax(0, 1fr) 44px;
 }
 body.mobile .lane {
-  gap: 8px;
+  gap: 6px;
 }
 body.mobile .unit {
-  width: calc(var(--cw-board) + 16px);
+  width: calc(var(--cw-board) + 10px);
 }
 
 /* One column: the lane gets everything. */
@@ -5751,6 +5776,16 @@ body.mobile .stage {
    their card backs, but being cut in half is worse than either. */
 body.mobile .promptlayer {
   top: 8px;
+}
+
+/* Most prompts are read and answered in the panel itself, so covering the other
+   player's supporters and the row under them costs nothing. A prompt answered
+   by tapping the board is the exception, and up here it covers the targets it
+   is asking for. syncPromptAnchor measures that and sets this class, which
+   drops the panel to the foot of the stage. */
+body.mobile .promptlayer.lowprompt {
+  top: auto;
+  bottom: 8px;
 }
 
 /* The inspector slides up over the board rather than taking a column from it.
@@ -5790,6 +5825,19 @@ body.mobile .flipcallout {
    like everything else was, so none of them tightened when the table did. */
 body.mobile {
   --hpw: calc(var(--cw-board) * 0.42);
+}
+
+/* The well is 74% of the lane with 84px held clear for its label, which on a
+   phone is a third of the row: three supporters already stood outside the well
+   and over the deck pile. It takes the full lane width here and gives up the
+   label, the same trade the pile captions took. The rounded well and the cards
+   lying in it are what say the row is the supporters. */
+body.mobile .supportrow {
+  width: 100%;
+  padding: 2px 8px;
+}
+body.mobile .supportlabel {
+  display: none;
 }
 
 /* A caption that outgrows its slot runs into the next one's, and two slot labels
@@ -5833,6 +5881,12 @@ body.mobile .debtstack {
 body.mobile .zlabel {
   font-size: 9px;
   white-space: nowrap;
+}
+/* Deck and discard fit the gutter on one line, "debt 0/25" does not, and nowrap
+   ran it out over the lane. That one takes two lines here. */
+body.mobile .debtzone .zlabel {
+  white-space: normal;
+  line-height: 1.2;
 }
 body.mobile .zempty,
 body.mobile .zmore {
@@ -5918,10 +5972,17 @@ body.mobile .topbar button {
 body.mobile .ehwho {
   /* Smaller than the desktop 14 but still ahead of the 11 it was. */
   font-size: 12px;
+  /* Anchored to the right of the fan, which on a phone leaves the name less
+     room than it takes, and with no left edge to stop at it ran off the side of
+     the bar. Bounded here, so a name too long for the gap ellipsises instead. */
+  left: 4px;
 }
 /* Cut shorter so a long name cannot run under the fan on a narrow screen. */
 body.mobile .ehname {
   max-width: 11ch;
+  /* A flex item will not shrink under its own text without this, so the cap
+     above is the only thing the truncation had to work with. */
+  min-width: 0;
 }
 body.mobile .topbar label {
   display: none;

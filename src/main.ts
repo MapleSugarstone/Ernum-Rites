@@ -2757,6 +2757,10 @@ function stageUnit(state: GameState, player: PlayerIdx): string {
 function supportRow(state: GameState, player: PlayerIdx): string {
   const p = state.players[player];
   const mine = player === viewSeat();
+  // An effect that picks a supporter tells you to click a ringed one, and the
+  // well drew its cards without ever asking whether they were legal, so a sap
+  // asked its question over a row with no ring anywhere in it.
+  const cands = candidateKeys();
   const cells = p.supporters
     .map((s, i) => {
       const def = card(s.cardId);
@@ -2768,11 +2772,14 @@ function supportRow(state: GameState, player: PlayerIdx): string {
       // Lying at 90 degrees puts a card's name end on its right, so the stack
       // runs against DOM order: each card covers the one after it, and what
       // stays showing is the half you can read it by.
+      const classes = cands.has(refKey({ kind: 'supporter', player, index: i }))
+        ? ['supportcard', 'targetable']
+        : ['supportcard'];
       return `<span class="support${s.sapped ? ' sapped' : ''}${mine ? ' mine' : ''}"
         style="z-index:${p.supporters.length - i}"
         data-act="support" data-player="${player}" data-index="${i}"
         title="${esc(def.name)} · pays ${esc(pays)}${s.sapped ? ' · spent' : ''}"
-        >${renderCard(def, { classes: ['supportcard'] })}</span>`;
+        >${renderCard(def, { classes })}</span>`;
     })
     .join('');
   const pool = poolHtml(p.mana);
@@ -3572,10 +3579,13 @@ function promptHtml(state: GameState): string {
       }
     }
     if (buttons.length === 0) return '';
-    const hint =
-      s.owner === me
-        ? 'Drag it onto a ringed target to attack, or use a power.'
-        : 'Open the Store to haggle over a price.';
+    // A phone declares an attack by tapping the target rather than dragging onto
+    // it, and the drag is the gesture the panel is in the way of on that screen.
+    const touch = document.body.classList.contains('mobile');
+    const swing = touch
+      ? 'Tap a ringed target to attack, or use a power.'
+      : 'Drag it onto a ringed target to attack, or use a power.';
+    const hint = s.owner === me ? swing : 'Open the Store to haggle over a price.';
     return `<div class="prompt">
       <h2>${esc(def.name)}</h2>
       <p>${esc(hint)}</p>
@@ -3633,6 +3643,45 @@ function renderPrompt(): void {
       if (out && out.textContent !== v) out.textContent = v;
     }
   }
+}
+
+/**
+ * Which end of the stage the prompt sits at, measured against what it asks for.
+ *
+ * The layer is anchored to the top, which on a phone is the other player's
+ * supporter well and, for a tall panel, their row under it. That is the right
+ * place for a question the panel answers itself and the wrong one for a
+ * question answered by tapping the board: a sap asking which supporter to spend
+ * printed itself over the supporters it was asking about. Rather than name the
+ * prompts that want a tap, the panel is measured against the rings on screen.
+ * It moves to the foot of the stage when it covers one, and only while the foot
+ * covers fewer, so an effect reaching for your own back row leaves it up top. A
+ * desktop has the bar above the board to sit in and never moves.
+ */
+function syncPromptAnchor(): void {
+  const layer = document.getElementById('prompt');
+  if (!layer) return;
+  layer.classList.remove('lowprompt');
+  if (!document.body.classList.contains('mobile')) return;
+  const panel = layer.firstElementChild;
+  const stage = document.querySelector('.stage');
+  if (!panel || !stage) return;
+  const rings = Array.from(
+    document.querySelectorAll('.board .targetable, .board .attackable'),
+    (el) => el.getBoundingClientRect(),
+  );
+  if (rings.length === 0) return;
+  const box = panel.getBoundingClientRect();
+  const covers = (top: number, bottom: number) =>
+    rings.filter(
+      (r) => r.bottom > top && r.top < bottom && r.right > box.left && r.left < box.right,
+    ).length;
+  const high = covers(box.top, box.bottom);
+  if (high === 0) return;
+  // The 8px the low rule leaves under the panel, so the two agree on where it
+  // lands and this measures the position it is about to take.
+  const foot = stage.getBoundingClientRect().bottom - 8;
+  if (covers(foot - box.height, foot) < high) layer.classList.add('lowprompt');
 }
 
 // --- hand -------------------------------------------------------------------
@@ -4811,6 +4860,7 @@ function render(): void {
   renderDeclaration();
   syncLunge();
   renderArrow();
+  syncPromptAnchor();
   maybeAutoChoice();
   maybeAutoPass();
   maybeAutoDecline();
