@@ -449,7 +449,7 @@ public static class Pink
             flipCost: new FlipCost { Mana = new Cost(K: 1) },
             flip: c => c.ReturnThis()),
 
-        K.Stage("FieldClearanceSale", "Field: Clearance Sale", new Cost(K: 3, C: 1),
+        K.Stage("FieldClearanceSale", "Field: Clearance Sale", new Cost(K: 2, C: 1),
             "Your Stores may be used twice per turn and cost 1 less. At the start of your turn, draw a card. When another player buys from one of your Stores, heal 1 debt.",
             hooks: new StageHooks
             {

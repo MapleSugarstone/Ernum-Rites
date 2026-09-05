@@ -484,7 +484,7 @@ export const pinkCards: CardDef[] = [
       c.returnThis();
     },
   }),
-  k.stage('FieldClearanceSale', 'Field: Clearance Sale', { K: 3, C: 1 }, {
+  k.stage('FieldClearanceSale', 'Field: Clearance Sale', { K: 2, C: 1 }, {
     text: 'Your Stores may be used twice per turn and cost 1 less. At the start of your turn, draw a card. When another player buys from one of your Stores, heal 1 debt.',
     storeBoost: true,
     stageHooks: {
