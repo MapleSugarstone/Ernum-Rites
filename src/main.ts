@@ -2803,7 +2803,7 @@ function supportRow(state: GameState, player: PlayerIdx): string {
   const droppable = mine && ui.drag?.mode === 'play' && ui.drag.canSupport;
   // The whole well is the drop target, labelled so it reads as a place rather
   // than as whatever happens to be sitting in it.
-  return `<div class="supportrow${droppable ? ' droppable' : ''}" style="--soverlap:${overlap}" data-act="supportrow" data-player="${player}">
+  return `<div class="supportrow${droppable ? ' droppable' : ''}" style="--soverlap:${overlap}" data-soverlap="${overlap}" data-act="supportrow" data-player="${player}">
     <span class="zlabel supportlabel">supporters</span>
     ${cells}${pool ? `<span class="manapool">${pool}</span>` : ''}${love}
   </div>`;
@@ -3642,6 +3642,39 @@ function renderPrompt(): void {
       const out = document.getElementById('storepriceval');
       if (out && out.textContent !== v) out.textContent = v;
     }
+  }
+}
+
+/**
+ * How far the supporters overlap, measured rather than counted.
+ *
+ * The table of counts the row prints is tuned against a desktop well. A phone
+ * well is a third of that width, so a row the table calls uncrowded still runs
+ * off the board, and it took the lane with it: the well is the widest thing in
+ * the middle column, and everything centred in that column moved over by half
+ * of what the row overhung by. The count is still the ceiling, so a row with
+ * room keeps the spacing it was tuned for; this only ever tightens.
+ */
+function syncSupportOverlap(): void {
+  for (const row of document.querySelectorAll<HTMLElement>('.supportrow')) {
+    const cards = row.querySelectorAll<HTMLElement>('.support');
+    const n = cards.length;
+    const printed = Number(row.dataset.soverlap ?? 0) || 0;
+    if (n < 2) continue;
+    const cs = getComputedStyle(row);
+    // clientWidth is the padding box, so it is the room the row is allowed
+    // rather than the room its contents took.
+    const room = row.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    // Both are set off --sw and neither moves with the margin being solved for.
+    const cardW = cards[0].offsetWidth;
+    const sw = cards[0].offsetHeight;
+    const gap = parseFloat(cs.columnGap) || 0;
+    if (!(room > 0) || !cardW || !sw) continue;
+    // Every card after the first gives back the same margin. Solved for it.
+    const fit = (room - n * cardW - (n - 1) * gap) / ((n - 1) * sw);
+    // The floor leaves a sliver of each card showing, which is what the row is
+    // read by; past it the board clips rather than the cards disappearing.
+    row.style.setProperty('--soverlap', String(Math.max(-0.98, Math.min(printed, fit))));
   }
 }
 
@@ -4860,6 +4893,7 @@ function render(): void {
   renderDeclaration();
   syncLunge();
   renderArrow();
+  syncSupportOverlap();
   syncPromptAnchor();
   maybeAutoChoice();
   maybeAutoPass();

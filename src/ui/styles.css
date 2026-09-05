@@ -669,6 +669,12 @@ button.on {
 }
 .midcol {
   display: grid;
+  /* Named, and named as minmax(0, 1fr), because an auto column takes its width
+     from the widest thing in it. A crowded supporter row is wider than the lane,
+     which grew this column past the box holding it, and the lane, centred in the
+     column rather than in the box, was carried out over the deck gutter with it.
+     Capped here, the row overflows on its own and the lane stays put. */
+  grid-template-columns: minmax(0, 1fr);
   justify-items: center;
   gap: 5px;
   min-width: 0;
