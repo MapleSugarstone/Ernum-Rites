@@ -362,23 +362,20 @@ public static class Pink
             })),
 
         K.Summon(3, "InfiniteLove", "Infinite Love", F(Faction.Saccharine, Faction.Beast),
-            str: 3, hp: 5,
-            powers: Powers(new Power
+            str: 1, hp: 1,
+            text: "Arrives sapped. Battlecry, Love: Gains +1 attack and 1 HP off your deck.",
+            triggers: new Triggers
             {
-                Name = "Adore",
-                Cost = new Cost(),
-                Text = "Love: Gains +1 attack and 1 HP off your deck.",
-                SapSelf = true,
-                NeedsLove = true,
-                Effect = c =>
+                OnEnter = c =>
                 {
                     if (c.Self is not { } me) return;
+                    c.Sap(me);
                     int n = c.SpendLove(c.Me);
                     if (n <= 0) return;
                     c.BuffStrength(me, n, ModDuration.Permanent);
                     c.Reinforce(me, n);
                 },
-            })),
+            }),
 
         K.Summon(3, "LastLollipop", "Last Lollipop", F(Faction.Saccharine), str: 3, hp: 7,
             redirect: true, stationary: true,
@@ -404,15 +401,10 @@ public static class Pink
                 Cost = new Cost(),
                 Text = "Spend 1 HP off this: gain 1 Love.",
                 SapSelf = true,
+                HpCost = 1,
                 Effect = c =>
                 {
                     if (c.Self is not { } me) return;
-                    var body = c.SummonAt(me);
-                    if (body is null || body.RemainingHp <= 1)
-                    {
-                        c.Log("Not enough left to lick.");
-                        return;
-                    }
                     c.RawDamage(me, 1);
                     c.GainLove(c.Me, 1);
                 },

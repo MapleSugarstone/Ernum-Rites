@@ -32,7 +32,7 @@ public static class Manifest
     private static string Entry(CardDef c)
     {
         var powers = (c.Powers ?? Array.Empty<Power>())
-            .Select(p => $"{{\"name\":{J(p.Name)},\"cost\":{J(p.Cost.ToString())},\"once\":{L(p.OncePerTurn)},\"sap\":{L(p.SapSelf)},\"targets\":{(p.Targets?.Length ?? 0)}}}");
+            .Select(p => $"{{\"name\":{J(p.Name)},\"cost\":{J(p.Cost.ToString())},\"once\":{L(p.OncePerTurn)},\"sap\":{L(p.SapSelf)},\"hp\":{p.HpCost},\"targets\":{(p.Targets?.Length ?? 0)}}}");
         var factions = (c.Factions ?? Array.Empty<Faction>())
             .Select(f => J(f.ToString()));
         var identity = c.Identity is null

@@ -55,6 +55,9 @@ const CLIPS = {
 
   // --- cards with a voice of their own --------------------------------------
   kapigras: 'Sounds/kapigras.wav',
+  misfortune: 'Sounds/GodOfMisfortune.mp3',
+  umbral: 'Sounds/UmbralStrike.mp3',
+  gunshot: 'Sounds/GunForHire.mp3',
   handcuffs: 'Sounds/Handcuffs.mp3',
   graft: 'Sounds/graft.wav',
   joke: 'Sounds/joke.wav',

@@ -606,6 +606,10 @@ public static class Engine
             return "Already used this turn.";
         }
         if (power.NeedsLove && state.Players[player].Love <= 0) return "No Love to spend.";
+        // Checked here rather than inside the effect, because the sap and the
+        // mana are already spent by the time an effect runs: a body that cannot
+        // pay used to be sapped for nothing and told so afterwards.
+        if (power.HpCost > 0 && summon.RemainingHp <= power.HpCost) return "Not enough HP to spend.";
         if (!CanPay(state.Players[player], power.Cost)) return "Not enough mana.";
         return null;
     }
@@ -684,11 +688,11 @@ public static class Engine
             Choices.Run(state, choice, new ChoicePick());
             return;
         }
-        if (refs.Length == 1)
-        {
-            Choices.Run(state, choice, new ChoicePick(Ref: refs[0]));
-            return;
-        }
+        // Asked even when only one body is legal. A buyer has paid for this and
+        // is owed the sight of what it lands on, and the one case where the list
+        // narrows to a single target is the case they can least predict:
+        // Redirection pulls every aim onto one body, so resolving it silently
+        // read as the effect picking an enemy at random.
         state.ChoiceQueue.Add(choice);
     }
 

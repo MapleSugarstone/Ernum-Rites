@@ -146,7 +146,7 @@ describe('card manifest', () => {
     text: string;
     flipText: string;
     targets: number;
-    powers: { name: string; cost: string; once: boolean; sap: boolean; targets: number }[];
+    powers: { name: string; cost: string; once: boolean; sap: boolean; hp: number; targets: number }[];
     flip: boolean;
     /**
      * Presence only, the way `flip` is. A predicate cannot be compared across
@@ -221,6 +221,7 @@ describe('card manifest', () => {
         cost: costToString(p.cost),
         once: p.oncePerTurn ?? false,
         sap: p.sapSelf ?? false,
+        hp: p.hpCost ?? 0,
         targets: p.targets?.length ?? 0,
       })),
       flip: !!def.flip,

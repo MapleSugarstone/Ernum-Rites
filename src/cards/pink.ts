@@ -1,5 +1,5 @@
 import type { CardDef, TargetSpec } from '../engine/types';
-import { battleAttacker, colorOf, livingOpponents, remainingHp } from '../engine/state';
+import { battleAttacker, colorOf, livingOpponents } from '../engine/state';
 import { card } from '../engine/registry';
 import { T, colorKit, selfRef } from './build';
 
@@ -392,24 +392,20 @@ export const pinkCards: CardDef[] = [
     ],
   }),
   k.summon(3, 'InfiniteLove', 'Infinite Love', ['Saccharine', 'Beast'], {
-    str: 3,
-    hp: 5,
-    powers: [
-      {
-        name: 'Adore',
-        cost: {},
-        text: 'Love: Gains +1 attack and 1 HP off your deck.',
-        sapSelf: true,
-        needsLove: true,
-        effect: (c) => {
-          const me = selfRef(c);
-          const n = c.spendLove(c.me);
-          if (!me || n <= 0) return;
-          c.buffStrength(me, n, 'permanent');
-          c.reinforce(me, n);
-        },
+    str: 1,
+    hp: 1,
+    text: 'Arrives sapped. Battlecry, Love: Gains +1 attack and 1 HP off your deck.',
+    triggers: {
+      onEnter: (c) => {
+        const me = selfRef(c);
+        if (!me) return;
+        c.sap(me);
+        const n = c.spendLove(c.me);
+        if (n <= 0) return;
+        c.buffStrength(me, n, 'permanent');
+        c.reinforce(me, n);
       },
-    ],
+    },
   }),
   k.summon(3, 'LastLollipop', 'Last Lollipop', ['Saccharine'], {
     str: 3,
@@ -435,14 +431,10 @@ export const pinkCards: CardDef[] = [
         cost: {},
         text: 'Spend 1 HP off this: gain 1 Love.',
         sapSelf: true,
+        hpCost: 1,
         effect: (c) => {
           const me = selfRef(c);
           if (!me) return;
-          const body = c.summonAt(me);
-          if (!body || remainingHp(body) <= 1) {
-            c.log('Not enough left to lick.');
-            return;
-          }
           c.rawDamage(me, 1);
           c.gainLove(c.me, 1);
         },

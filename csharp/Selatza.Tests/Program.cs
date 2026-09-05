@@ -185,7 +185,7 @@ public static class Program
             Harness.False(third.Ok, "and no more");
         });
 
-        Harness.Test("Sap Burst is free but taps, and runs Pinelyte out of HP", () =>
+        Harness.Test("Sap Burst is free but taps, and stops when Pinelyte cannot pay", () =>
         {
             var s = Game();
             s = Place(s, 0, "p2-pinelyte", 0);
@@ -204,9 +204,13 @@ public static class Program
             s = Must(s, 0, GameAction.ActivatePower(Src(0, 0), 0, target));
             Harness.Eq(1, s.Players[0].Slots[0]!.RemainingHp, "next turn it burns the last 2");
             s = PassTo(s, 0);
-            s = Must(s, 0, GameAction.ActivatePower(Src(0, 0), 0, target));
-            Harness.Eq(1, s.Players[0].Slots[0]!.RemainingHp,
+            // At 1 HP the cost cannot be paid, so the power is refused outright.
+            // It used to be accepted: the sap was taken, the effect found nothing
+            // to spend and said so, and the turn was gone for nothing.
+            Harness.False(Engine.Apply(s, 0, GameAction.ActivatePower(Src(0, 0), 0, target)).Ok,
                 "at 1 HP there is nothing left to spend");
+            Harness.Eq(1, s.Players[0].Slots[0]!.RemainingHp, "so the HP is untouched");
+            Harness.False(s.Players[0].Slots[0]!.Sapped, "and the body is not sapped for nothing");
         });
 
         Harness.Test("Kapigras reforms as an Oil copy of the enemy leader", () =>

@@ -586,6 +586,12 @@ export interface Power {
    * anything, so with 0 Love it is refused rather than wasting the sap.
    */
   needsLove?: boolean;
+  /**
+   * HP this summon spends off itself as part of the cost. It has to survive
+   * paying, so a body down to this many cards is refused rather than sapped for
+   * an effect that cannot happen.
+   */
+  hpCost?: number;
   effect: EffectFn;
 }
 

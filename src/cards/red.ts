@@ -1,4 +1,4 @@
-import { battleAttacker, battleDefender, remainingHp } from '../engine/state';
+import { battleAttacker, battleDefender } from '../engine/state';
 import { effectiveStrength } from '../engine/effects';
 import type { CardDef } from '../engine/types';
 import { T, colorKit, selfRef } from './build';
@@ -248,16 +248,12 @@ export const redCards: CardDef[] = [
         name: 'Sap Burst',
         cost: {},
         sapSelf: true,
+        hpCost: 2,
         text: 'Spend 2 HP off this: deal 3 to an enemy summon.',
         targets: [T.enemy()],
         effect: (c) => {
           const me = selfRef(c);
           if (!me) return;
-          const body = c.summonAt(me);
-          if (!body || remainingHp(body) <= 2) {
-            c.log('Not enough sap.');
-            return;
-          }
           c.rawDamage(me, 2);
           c.damage(c.targets[0], 3);
         },

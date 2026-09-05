@@ -619,6 +619,13 @@ public sealed class Power
     /// </summary>
     public bool NeedsLove { get; init; }
 
+    /// <summary>
+    /// HP this summon spends off itself as part of the cost. It has to survive
+    /// paying, so a body down to this many cards is refused rather than sapped
+    /// for an effect that cannot happen.
+    /// </summary>
+    public int HpCost { get; init; }
+
     public required Action<EffectCtx> Effect { get; init; }
 }
 

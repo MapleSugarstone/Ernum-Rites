@@ -767,7 +767,9 @@ function cardRefPattern(): RegExp {
  */
 function ruleText(text: string, edmg = 0): string {
   const html = withEffectDamage(esc(text), edmg)
-    .replace(/Battlecry:/g, '<span class="kw-bc">Battlecry:</span>')
+    // The comma form is for a Battlecry that is also a Love line, which would
+    // otherwise print "Battlecry: Love:" to earn its colour.
+    .replace(/Battlecry[:,]/g, (m) => `<span class="kw-bc">${m}</span>`)
     .replace(/Deathrattle:/g, '<span class="kw-dr">Deathrattle:</span>')
     .replace(/Strike:/g, '<span class="kw-st">Strike:</span>')
     // Candy's two keywords wear their own colours, the way the triggers do.
@@ -1582,10 +1584,37 @@ const POWER_VOICE: Record<string, Sfx> = {
   // Candy Axeman's is a bolt of Pepper damage rather than anything Candy does,
   // and its colour alone would have it speak in Candy's smaller voice.
   Chop: 'pepperBolt',
+  'Umbral Slash': 'umbral',
+};
+
+/**
+ * Cards that speak when their own turn begins, keyed by card id.
+ *
+ * An awake trigger fires during the turn handover rather than from an action of
+ * its own, so there is nothing in the switch below to hang it on and it is read
+ * off the diff the way an arriving leader is.
+ */
+const AWAKE_VOICE: Record<string, Sfx> = {
+  'm-mgp-godofmisfortune': 'misfortune',
+};
+
+/** Stores whose effect has a voice of its own, keyed by the body's card id. */
+const STORE_VOICE: Record<string, Sfx> = {
+  'k2-GunForHire': 'gunshot',
 };
 
 function cue(name: Sfx, at = 0, gain?: number): void {
   soundCues.push({ name, at, gain });
+}
+
+/**
+ * The voice of a Store effect, cued where the effect lands rather than where it
+ * was bought. A Store that asks for a target resolves on the choice, which is a
+ * later action than the sale, and the clip is for the thing it hits.
+ */
+function cueStore(sourceId: string | undefined, at: number): void {
+  const voice = sourceId ? STORE_VOICE[sourceId] : undefined;
+  if (voice) cue(voice, at);
 }
 
 /** What a card sounds like when it goes off. Never silent, whatever the card. */
@@ -1661,6 +1690,14 @@ function computeSoundFx(prev: GameState, next: GameState, action: Action, actor:
       // A sale closing is the big one.
       cue('spellK');
       break;
+    case 'RESOLVE_CHOICE': {
+      // Where a bought effect actually happens: the sale settles the price, the
+      // choice settles what it lands on. It rides the same stagger the
+      // annihilation does, which is the moment the shot is being heard for.
+      const asked = prev.choiceQueue[0];
+      if (asked?.effect === 'store-effect') cueStore(asked.source, landed + 200);
+      break;
+    }
     case 'SAP_SUPPORTER':
       cue('sap');
       break;
@@ -1674,6 +1711,16 @@ function computeSoundFx(prev: GameState, next: GameState, action: Action, actor:
     const arrived = next.players[seat].leader;
     if (prev.players[seat].leader || !arrived) continue;
     cue(CARD_VOICE[card(arrived.cardId).id] ?? 'play');
+  }
+
+  // The awake step ran for whoever the turn just landed on, so anything of
+  // theirs with a voice for it speaks now.
+  if (next.turn !== prev.turn || next.active !== prev.active) {
+    for (const { summon } of allSummons(next)) {
+      if (summon.owner !== next.active) continue;
+      const voice = AWAKE_VOICE[summon.cardId];
+      if (voice) cue(voice);
+    }
   }
 
   // --- what happened on the board ------------------------------------------

@@ -215,13 +215,12 @@ public static class Red
                 Name = "Sap Burst",
                 Cost = new Cost(),
                 SapSelf = true,
+                HpCost = 2,
                 Text = "Spend 2 HP off this: deal 3 to an enemy summon.",
                 Targets = Specs(Enemy()),
                 Effect = c =>
                 {
                     if (c.Self is not { } me) return;
-                    var body = c.SummonAt(me);
-                    if (body is null || body.RemainingHp <= 2) { c.Log("Not enough sap."); return; }
                     c.RawDamage(me, 2);
                     c.Damage(c.Target(0), 3);
                 },
