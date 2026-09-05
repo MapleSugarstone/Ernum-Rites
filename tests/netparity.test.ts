@@ -96,7 +96,9 @@ describe('network parity', () => {
           if (Math.abs(mine[j] - theirs[j]) > 1e-5) {
             throw new Error(
               `step ${i} seat ${sample.seat}: ${whereIs(j, net.cards.length, net.cardChannels, net.entityChannels, net.entities)} `
-                + `is ${mine[j]} here and ${theirs[j]} in the trainer`,
+                + `is ${mine[j]} here and ${theirs[j]} in the trainer. `
+                + 'After a card change, run `npm run net:refresh` to regenerate the bundle and this fixture; '
+                + 'if the cards have not changed, the two encoders have drifted.',
             );
           }
         }
