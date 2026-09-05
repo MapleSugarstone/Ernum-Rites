@@ -171,6 +171,7 @@ describe('card manifest', () => {
     /** Presence only, the way `flip` is. */
     store: boolean;
     storeSurcharge: number;
+    storeLeaderDiscount: number;
     storeTargets: number;
     storeUseful: boolean;
     storeBoost: boolean;
@@ -243,6 +244,7 @@ describe('card manifest', () => {
       stage: stageList(def),
       store: !!def.store,
       storeSurcharge: def.store?.surcharge ?? 0,
+      storeLeaderDiscount: def.store?.leaderDiscount ?? 0,
       storeTargets: def.store?.targets?.length ?? 0,
       storeUseful: !!def.store?.useful,
       storeBoost: !!def.storeBoost,

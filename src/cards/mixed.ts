@@ -1328,9 +1328,10 @@ export const mixedCards: CardDef[] = [
   rm.summon(3, 'RedSweets', 'Red Sweets', ['Mortal', 'Scholar'], {
     str: 3,
     hp: 4,
-    text: 'Store: Take any card from your deck into your hand. Store costs +3.',
+    text: 'Store: Take any card from your deck into your hand. Store costs +8. Leader: Store costs 5 less.',
     store: {
-      surcharge: 3,
+      surcharge: 8,
+      leaderDiscount: 5,
       useful: (state, user) => state.players[user].deck.length > 0,
       effect: (c) => c.search(c.me, () => true),
     },

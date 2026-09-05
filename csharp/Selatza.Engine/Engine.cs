@@ -617,8 +617,21 @@ public static class Engine
     // --- stores --------------------------------------------------------------
 
     /// <summary>The Store a body's card prints, or null when it was played as something else.</summary>
-    public static StoreDef? StoreOf(SummonInstance s, CardDef def) =>
-        s.Override is null ? def.Store : null;
+    public static StoreDef? StoreOf(SummonInstance s, CardDef def)
+    {
+        if (s.Override is not null) return null;
+        var store = def.Store;
+        if (store is null || store.LeaderDiscount == 0 || !s.IsLeader) return store;
+        // Floored at nothing: a Store priced under its base would put the bottom
+        // of the haggle slider below the 1 debt every sale is worth.
+        return new StoreDef
+        {
+            Surcharge = Math.Max(0, store.Surcharge - store.LeaderDiscount),
+            Targets = store.Targets,
+            Useful = store.Useful,
+            Effect = store.Effect,
+        };
+    }
 
     /// <summary>Whether this player's stage doubles their shops and discounts their prices.</summary>
     public static bool StoreBoosted(GameState state, int player)

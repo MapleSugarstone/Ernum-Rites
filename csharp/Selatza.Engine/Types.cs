@@ -640,6 +640,12 @@ public sealed class StoreDef
 {
     /// <summary>Added to the self-use price and to every offered price.</summary>
     public int Surcharge { get; init; }
+    /// <summary>
+    /// Taken off the surcharge while this card is leading, so a Store can be
+    /// priced one way in a slot and another from the leader seat. Applied by
+    /// StoreOf, which every price already reads its Store through.
+    /// </summary>
+    public int LeaderDiscount { get; init; }
     /// <summary>At most one: the target is collected as a deferred choice.</summary>
     public TargetSpec[]? Targets { get; init; }
     /// <summary>Whether the store could do anything for this user right now.</summary>

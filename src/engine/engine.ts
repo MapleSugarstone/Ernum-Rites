@@ -576,7 +576,13 @@ export function readyAttackers(state: GameState, player: PlayerIdx): SourceRef[]
 
 /** The Store a body's card prints, or null when it was played as something else. */
 export function storeOf(s: SummonInstance, def: CardDef): StoreDef | null {
-  return s.override ? null : (def.store ?? null);
+  if (s.override) return null;
+  const store = def.store;
+  if (!store || !store.leaderDiscount || !s.isLeader) return store ?? null;
+  // Floored at nothing: a Store priced under its base would put the bottom of
+  // the haggle slider below the 1 debt every sale is worth.
+  const surcharge = Math.max(0, (store.surcharge ?? 0) - store.leaderDiscount);
+  return { ...store, surcharge };
 }
 
 /** Whether this player's stage doubles their shops and discounts their prices. */

@@ -606,6 +606,12 @@ export interface Power {
 export interface StoreDef {
   /** Added to the self-use price and to every offered price. */
   surcharge?: number;
+  /**
+   * Taken off the surcharge while this card is leading, so a Store can be priced
+   * one way in a slot and another from the leader seat. Applied by `storeOf`,
+   * which every price already reads its Store through.
+   */
+  leaderDiscount?: number;
   /** At most one: a bought target is collected as a deferred choice. */
   targets?: TargetSpec[];
   /**

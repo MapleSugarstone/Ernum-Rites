@@ -69,6 +69,7 @@ public static class Manifest
             // across two languages, but whether a card carries one can be.
             + $"\"store\":{L(c.Store is not null)},"
             + $"\"storeSurcharge\":{(c.Store?.Surcharge ?? 0)},"
+            + $"\"storeLeaderDiscount\":{(c.Store?.LeaderDiscount ?? 0)},"
             + $"\"storeTargets\":{(c.Store?.Targets?.Length ?? 0)},"
             + $"\"storeUseful\":{L(c.Store?.Useful is not null)},"
             + $"\"storeBoost\":{L(c.StoreBoost)}"

@@ -617,9 +617,10 @@ public static class Triple
 
         Myr.Summon("Hellmage", "Hellmage", F(Faction.Spirit, Faction.Scholar), str: 0, hp: 2,
             effectDamage: 1,
-            text: "Effect Damage +1. At the end of your turn, every enemy character heals 1. Store: Heal your leader for 10.",
+            text: "Effect Damage +1. At the end of your turn, every enemy character heals 1. Store: Heal your leader for 10. Store costs +2.",
             store: new StoreDef
             {
+                Surcharge = 2,
                 // A bought effect reads as the buyer's, so the leader healed is
                 // theirs and so is the one this asks about.
                 Useful = (state, user) =>

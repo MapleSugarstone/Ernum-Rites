@@ -1208,10 +1208,11 @@ public static class Mixed
             })),
 
         Rm.Summon(3, "RedSweets", "Red Sweets", F(Faction.Mortal, Faction.Scholar), str: 3, hp: 4,
-            text: "Store: Take any card from your deck into your hand. Store costs +3.",
+            text: "Store: Take any card from your deck into your hand. Store costs +8. Leader: Store costs 5 less.",
             store: new StoreDef
             {
-                Surcharge = 3,
+                Surcharge = 8,
+                LeaderDiscount = 5,
                 Useful = (state, user) => state.Players[user].Deck.Count > 0,
                 Effect = c => c.Search(c.Me, _ => true),
             },
