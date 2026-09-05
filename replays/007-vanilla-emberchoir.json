@@ -29,14 +29,14 @@
     {"actor": 0, "action": {"type":"PLAY_SUMMON","handIndex":5,"slot":1,"targets":[]}, "digest": "ad575238aef91ce8"},
     {"actor": 0, "action": {"type":"PLAY_SUPPORTER","handIndex":0}, "digest": "fa2ec4fe84f0eaf1"},
     {"actor": 0, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":0,"index":0},"target":{"kind":"summon","player":1,"index":1}}, "digest": "7d214d42841ad149"},
-    {"actor": 1, "action": {"type":"REPLACE_SUMMON","handIndex":1,"targets":[]}, "digest": "1b7d6f6e07fa8504"},
-    {"actor": 0, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":0,"index":1},"target":{"kind":"summon","player":1,"index":2}}, "digest": "e30812363e01a501"},
-    {"actor": 1, "action": {"type":"REPLACE_SUMMON","handIndex":3,"targets":[]}, "digest": "3921638f0446169b"},
-    {"actor": 0, "action": {"type":"END_TURN"}, "digest": "50daa0594fabb809"},
-    {"actor": 1, "action": {"type":"PLAY_SUPPORTER","handIndex":0}, "digest": "c2aa090003b19d0b"},
-    {"actor": 1, "action": {"type":"CAST_SPELL","handIndex":2,"targets":[]}, "digest": "c767776a909e0dba"}
+    {"actor": 1, "action": {"type":"REPLACE_SUMMON","handIndex":4,"targets":[]}, "digest": "63827e5640871832"},
+    {"actor": 0, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":0,"index":1},"target":{"kind":"summon","player":1,"index":1}}, "digest": "e717ad8648263a92"},
+    {"actor": 1, "action": {"type":"REPLACE_SUMMON","handIndex":1,"targets":[]}, "digest": "a95080684e982515"},
+    {"actor": 0, "action": {"type":"END_TURN"}, "digest": "76d8ee5ea244d880"},
+    {"actor": 1, "action": {"type":"PLAY_SUPPORTER","handIndex":0}, "digest": "23de7b1423651262"},
+    {"actor": 1, "action": {"type":"CAST_SPELL","handIndex":2,"targets":[]}, "digest": "0ae75c2f01de0e9b"}
   ],
-  "finalDigest": "c767776a909e0dba",
+  "finalDigest": "0ae75c2f01de0e9b",
   "winner": 1,
   "winReason": "Vanilla Dummies (P1) lost their leader."
 }

@@ -3,7 +3,7 @@ import type { NetBundle } from './net/bundle';
 import { encode } from './net/encoder';
 import { valueOf } from './net/model';
 import { digestOf } from '../engine/digest';
-import { effectiveStrength, reshuffleCost } from '../engine/effects';
+import { effectDamageOf, effectiveStrength, reshuffleCost } from '../engine/effects';
 import {
   applyAction,
   availableMana,
@@ -128,6 +128,28 @@ export interface BotWeights {
    * token a sale earns and a Love engine reads as progress.
    */
   love: number;
+  /**
+   * Per body in a slot that carries a Deathrattle. What the trigger does is
+   * the card's business and the search reads it by playing the death out; this
+   * is the standing value of a death that has not happened yet, so the bot
+   * deploys such a body ahead of a vanilla of the same stats and does not
+   * trade into an enemy one as if it were free. Untuned.
+   */
+  deathrattle: number;
+  /**
+   * Per standing trigger on a body in a slot, Battlecry and Deathrattle
+   * excepted: one has fired and the other has its own weight. A body that
+   * cycles a card whenever a spell is cast, or strikes when it is attacked, is
+   * worth more than its stat line every turn it stands, and the search only
+   * reads the trigger by playing it out inside its horizon. Untuned.
+   */
+  trigger: number;
+  /**
+   * Per point of Effect Damage a side's spells currently get. It makes every
+   * damage spell in hand and in the deck bigger, so it is priced as standing
+   * value and counted as progress by the rollout's setup phase. Untuned.
+   */
+  effectDamage: number;
 }
 
 export const defaultWeights: BotWeights = {
@@ -152,7 +174,32 @@ export const defaultWeights: BotWeights = {
   reply: 0.6,
   trapWindow: 12,
   love: 0.6,
+  deathrattle: 1.5,
+  trigger: 1,
+  effectDamage: 2,
 };
+
+/** Trigger hooks that keep firing while the body stands. */
+const STANDING_HOOKS = [
+  'onAttack',
+  'onDefend',
+  'onAwake',
+  'onEndTurn',
+  'onOtherDeath',
+  'onSpellCast',
+  'onEnemySpellCast',
+  'onEnemyPower',
+  'onStoreSold',
+  'onStoreBought',
+] as const;
+
+function standingHooks(def: CardDef): number {
+  const t = def.triggers;
+  if (!t) return 0;
+  let n = 0;
+  for (const hook of STANDING_HOOKS) if (t[hook]) n++;
+  return n;
+}
 
 /** The correction a trained network may add to the turn's final ranking. */
 let network: NetBundle | null = null;
@@ -239,13 +286,17 @@ export function evaluate(state: GameState, me: PlayerIdx, w = defaultWeights): n
 
     for (const s of p.slots) {
       if (!s) continue;
+      const def = card(s.cardId);
       score +=
         sign *
         (w.strength * scoredStrength(state, s) +
           w.hp * remainingHp(s) +
-          w.level * levelOf(s, card(s.cardId)) -
-          w.wound * s.wounds);
+          w.level * levelOf(s, def) -
+          w.wound * s.wounds +
+          (def.triggers?.onDeath ? w.deathrattle : 0) +
+          w.trigger * standingHooks(def));
     }
+    score += sign * w.effectDamage * effectDamageOf(state, side);
 
     // Cards in hand are not interchangeable, and the game says so with levels.
     let hand = 0;
@@ -1248,6 +1299,11 @@ function potential(state: GameState, me: PlayerIdx): number {
   // A Love token is damage waiting on a Love line, so the setup phase counts
   // gaining one as progress toward the swing.
   total += p.love;
+  // Deathrattles, stages and Effect Damage are priced by the evaluator and not
+  // here. This measure is a proxy for the damage a turn can be made to hold,
+  // and counting them here diluted it: a climb that credited a stage or a
+  // Deathrattle body built toward those instead of toward the swing, and the
+  // threat it then measured was wrong by four points on random decks.
   const mana = availableMana(p);
   for (const kind of MANA_KINDS) total += mana[kind];
   return total;
@@ -1311,6 +1367,7 @@ function burn(
   steps: number,
   w: BotWeights,
   setup = 0,
+  patient = false,
 ): Rollout {
   // Damage is tracked per seat and reported as the worst any one of them took,
   // because a threat is a threat against somebody in particular.
@@ -1330,9 +1387,12 @@ function burn(
   // A body whose attack rises one point for every two debt gains nothing on
   // every other free Power, and once the hand is full the card each one draws
   // gains nothing either. A climb that demanded a gain on every step stopped
-  // on the first flat one, six Powers short of a kill it could have had. So one
-  // flat step on a free Power is allowed between gains: enough to see over a
-  // two-step rhythm, and a second flat step in a row still stops the climb.
+  // on the first flat one, six Powers short of a kill it could have had. So a
+  // patient climb may take one flat step on a free Power between gains: enough
+  // to see over a two-step rhythm, and a second flat step in a row still stops
+  // it. Only the kill searches are patient. The threat measure is not, because
+  // a longer climb there inflated what a board still threatened and the bot
+  // held pieces it should have cashed: measured at four points on random decks.
   let flat = 0;
   for (let step = 0; step < setup; step++) {
     if (!turnGoesOn(cur, me)) break;
@@ -1356,7 +1416,7 @@ function burn(
         best = p;
         pick = action;
         pickState = after;
-      } else if (!level && Math.abs(p - standing) <= 1e-9 && freeRepeat(cur, me, action)) {
+      } else if (patient && !level && Math.abs(p - standing) <= 1e-9 && freeRepeat(cur, me, action)) {
         level = action;
         levelState = after;
       }
@@ -1480,7 +1540,7 @@ function replyOf(state: GameState, foe: PlayerIdx, w: BotWeights): GameState {
   if (limits.maxReplySteps <= 0) return state;
   const race = burn(state, foe, limits.maxBurnSteps, w);
   if (race.state.winner === foe) return race.state;
-  const built = burn(state, foe, limits.maxBurnSteps, w, limits.maxSetupSteps);
+  const built = burn(state, foe, limits.maxBurnSteps, w, limits.maxSetupSteps, true);
   if (built.state.winner === foe) return built.state;
 
   let s = state;
@@ -1763,7 +1823,7 @@ export function chooseAction(
     const opener = begin(state, me, key, race.line);
     if (opener) return opener;
   }
-  const built = burn(state, me, limits.maxBurnSteps, w, limits.maxSetupSteps);
+  const built = burn(state, me, limits.maxBurnSteps, w, limits.maxSetupSteps, true);
   if (built.state.winner === me) {
     const opener = begin(state, me, key, built.line);
     if (opener) return opener;

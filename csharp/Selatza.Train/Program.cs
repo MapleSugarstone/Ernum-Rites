@@ -366,9 +366,25 @@ public static class Program
         // --starters all six hand-built ones, which no training agent ever holds
         // and so are the generalisation test of a saved network.
         var decks = new List<(string Name, string Leader, List<string> Cards)>();
+        string folder = Str(args, "--decks", "");
         if (Flag(args, "--starters"))
         {
             foreach (var d in CardSets.Starters) decks.Add((d.Name, d.LeaderId, d.Cards.ToList()));
+        }
+        else if (folder.Length > 0 && Directory.Exists(folder))
+        {
+            // A folder of deck files, the evolved decks of earlier runs for
+            // instance. Starters are combo-poor, so a held-out set built from
+            // decks that evolved around a kill is the harder test.
+            foreach (var file in Directory.GetFiles(folder, "*.txt").OrderBy(f => f, StringComparer.Ordinal))
+            {
+                string leader = "";
+                var cards = LoadDeck(file, ref leader);
+                if (leader.Length > 0 && cards.Count > 0)
+                {
+                    decks.Add((Path.GetFileNameWithoutExtension(file), leader, cards));
+                }
+            }
         }
         else
         {

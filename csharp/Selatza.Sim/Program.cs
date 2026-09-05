@@ -30,6 +30,8 @@ public static class Program
         {
             "sweep" => Sweep(games),
             "duel" => Duel(games),
+            "versus" => Versus(games, ArgInt(args, "--threads", Environment.ProcessorCount),
+                ArgStr(args, "--decks", "random"), ArgStr(args, "--set", ""), ArgInt(args, "--seed", 1), Flag2(args, "--self")),
             "tune" => Tune(games, ArgInt(args, "--rounds", 3),
                 ArgInt(args, "--threads", Environment.ProcessorCount),
                 ArgStr(args, "--only", ""), ArgStr(args, "--decks", "random")),
@@ -52,6 +54,8 @@ public static class Program
         int i = Array.IndexOf(args, name);
         return i >= 0 && i + 1 < args.Length ? args[i + 1] : fallback;
     }
+
+    private static bool Flag2(string[] args, string name) => Array.IndexOf(args, name) >= 0;
 
     private static int ArgInt(string[] args, string name, int fallback)
     {
@@ -256,13 +260,16 @@ public static class Program
 
         Parallel.For(0, games, opts, g =>
         {
-            // The deck turns over half as fast as the seat, so a deck is never
-            // tied to a seat.
-            var d = decks[g];
+            // The deck and the seed turn over half as fast as the seat, so every
+            // game is played twice with the seats swapped and whatever a seat is
+            // worth cancels exactly. This once indexed the deck by the game as
+            // well, which the comment above it already denied, and a weight set
+            // against its own copy read 45 percent that way.
+            var d = decks[g / 2];
             int seatA = g % 2;
             Bot.ClearPlan();
             var other = new DeckList { Name = "B", LeaderId = d.LeaderId, Cards = d.Cards };
-            var s = Engine.CreateGame(d, other, seed + g * 7919);
+            var s = Engine.CreateGame(d, other, seed + (g / 2) * 7919);
             int actions = 0;
             while (!s.IsOver && actions < 8000 && s.Turn < 400)
             {
@@ -280,6 +287,74 @@ public static class Program
             }
         });
         return (aWins, bWins);
+    }
+
+    /// <summary>
+    /// The current bot against the snapshot in <see cref="PreviousBot"/>, on
+    /// the same decks and seeds with the seats alternating, so the deck and the
+    /// seat are out of the comparison and only the change is left. This is the
+    /// answer to "is the new bot better", measured rather than argued.
+    /// </summary>
+    private static int Versus(int games, int threads, string pool, string set, int seed, bool self)
+    {
+        // --set Name=value,... overrides weights on the current side only, so a
+        // new term can be measured with and without the search change it came
+        // with: zero it here and what is left is the search.
+        var current = new BotWeights();
+        foreach (var pair in set.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var parts = pair.Split('=');
+            var field = typeof(BotWeights).GetField(parts[0].Trim(),
+                BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)
+                ?? throw new ArgumentException($"no weight named {parts[0]}");
+            field.SetValue(current, double.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture));
+        }
+        var decks = new DeckList[games];
+        for (int g = 0; g < games; g++) decks[g] = DeckFor(pool, g);
+        var result = new MatchupResult();
+        var gate = new object();
+        var opts = new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, threads) };
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        // Paired: every deck and seed is played twice with the seats swapped,
+        // so whatever the seat is worth cancels exactly and a bot against its
+        // own copy scores 50 by construction. Alternating the seat game by game
+        // over different decks did not: the snapshot against itself read 44.9
+        // percent over 600 games that way.
+        Parallel.For(0, games, opts, g =>
+        {
+            var d = decks[g / 2];
+            int seatNow = g % 2;
+            Bot.ClearPlan();
+            PreviousBot.ClearPlan();
+            var other = new DeckList { Name = "B", LeaderId = d.LeaderId, Cards = d.Cards };
+            var s = Engine.CreateGame(d, other, 4_000_037 + seed * 104_729 + (g / 2) * 7919);
+            int actions = 0;
+            while (!s.IsOver && actions < 8000 && s.Turn < 400)
+            {
+                int actor = s.CurrentActor;
+                var action = actor == seatNow && !self
+                    ? Bot.ChooseAction(s, actor, current)
+                    : PreviousBot.ChooseAction(s, actor);
+                var res = Engine.Apply(s, actor, action);
+                if (!res.Ok) break;
+                s = res.State!;
+                actions++;
+            }
+            lock (gate)
+            {
+                if (s.Winner == seatNow) result.WinsA++;
+                else if (s.Winner >= 0) result.WinsB++;
+                else result.Draws++;
+            }
+        });
+
+        Console.WriteLine($"current bot{(set.Length > 0 ? $" with {set}" : "")} versus the previous snapshot "
+            + $"over {pool} decks, {games} games, {sw.Elapsed.TotalSeconds:0}s");
+        Console.WriteLine($"  current {result.WinsA} - previous {result.WinsB} - drawn {result.Draws}");
+        Console.WriteLine($"  current wins {result.RateA:P1}, 95% interval {result.Confidence95}"
+            + (result.Decisive ? " (decisive)" : " (inside the noise)"));
+        return 0;
     }
 
     /// <summary>

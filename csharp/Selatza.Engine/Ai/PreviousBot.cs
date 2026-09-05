@@ -1,110 +1,13 @@
 namespace Selatza.Ai;
 
-public sealed class BotWeights
-{
-    public double LeaderHp = 8;
-    public double Debt = 12;
-    /// <summary>Panic term once a player is within two debt of losing.</summary>
-    public double DebtCliff = 40;
-    /// <summary>
-    /// How much of the debt charge is deferred to the late points. At 0 every
-    /// point costs <see cref="Debt"/>. At 1 the charge is quadratic in the count
-    /// and reaches the same total at the limit, so the first points are nearly
-    /// free and the last ones cost double. This is the term that lets the bot
-    /// take a debt now for something later.
-    /// </summary>
-    public double DebtCurve = 0;
-    /// <summary>
-    /// Charged per point a leader is below <c>LeaderCliffAt</c>, on top of the
-    /// flat rate. The last points of a leader are worth more than the first, and
-    /// a flat rate says otherwise: it prices nine HP spared off a leader on
-    /// thirty at exactly what it prices nine spared off a leader on ten.
-    /// </summary>
-    public double LeaderCliff = 6;
-    public double Strength = 3;
-    public double Hp = 2.5;
-    public double Level = 2;
-    public double Wound = 2;
-    public double Hand = 1.5;
-    /// <summary>Extra per level above 1 for a card in hand, so a hand is not just a count.</summary>
-    public double HandLevel = 1;
-    /// <summary>Worth more than the card is in hand, so it always makes its land drop.</summary>
-    public double Supporter = 2;
-    public double Deck = 0.15;
-    /// <summary>
-    /// Per level 3 card still in the deck, capped. The bot reads its own deck
-    /// while it plans, so "my answer is still in there" is a fact available to it
-    /// rather than a guess, and a deck holding its win condition is worth more
-    /// than the same number of cards without it.
-    /// </summary>
-    public double DeckLevel = 0.5;
-    public double Stage = 3;
-    /// <summary>
-    /// Per point of the enemy's nearer clock the standing board could still take
-    /// off next turn. Priced below <see cref="LeaderHp"/> because the opponent
-    /// gets a turn to answer, which is what keeps the bot spending small Powers
-    /// for chip damage while holding the pieces of something larger.
-    /// </summary>
-    public double Threat = 4;
-    /// <summary>A kill that is already assembled but not reachable until next turn.</summary>
-    public double StandingKill = 60;
-    /// <summary>
-    /// How much of a position's score is read after the opponent has answered
-    /// it rather than where it stands. The rest is read where it stands,
-    /// because the reply is a greedy guess and a position should not be judged
-    /// entirely on one guess about it.
-    /// </summary>
-    public double Reply = 0.6;
-    /// <summary>What opening a response window costs when they certainly hold a trap.</summary>
-    public double TrapWindow = 12;
-    /// <summary>
-    /// Per Love token held. Slightly good: below a card in hand, because a token
-    /// only pays off through a Love line, but above zero so a seller counts the
-    /// token a sale earns and a Love engine reads as progress.
-    /// </summary>
-    public double Love = 0.6;
-    /// <summary>
-    /// Per body in a slot that carries a Deathrattle. What the trigger does is
-    /// the card's business and the search reads it by playing the death out;
-    /// this is the standing value of a death that has not happened yet, so the
-    /// bot deploys such a body ahead of a vanilla of the same stats and does
-    /// not trade into an enemy one as if it were free. Untuned.
-    /// </summary>
-    public double Deathrattle = 1.5;
-    /// <summary>
-    /// Per standing trigger on a body in a slot, Battlecry and Deathrattle
-    /// excepted: one has fired and the other has its own weight. A body that
-    /// cycles a card whenever a spell is cast, or strikes when it is attacked,
-    /// is worth more than its stat line every turn it stands, and the search
-    /// only reads the trigger by playing it out inside its horizon. Untuned.
-    /// </summary>
-    public double Trigger = 1;
-    /// <summary>
-    /// Per point of Effect Damage a side's spells currently get. It makes every
-    /// damage spell in hand and in the deck bigger, so it is priced as standing
-    /// value and counted as progress by the rollout's setup phase. Untuned.
-    /// </summary>
-    public double EffectDamage = 2;
-
-    public static readonly BotWeights Default = new();
-}
-
 /// <summary>
-/// A searching bot, identical in shape to src/ai/bot.ts. Every part of it plays
-/// actions out on copies of the state and reads the result, so it knows nothing
-/// about any particular card and a new card needs no bot support at all.
-///
-/// Three searches run on an open turn, each covering what the others miss.
-/// <see cref="Burn"/> plays the turn out choosing whichever action takes the most
-/// off the enemy's clocks, and is the only part that can find a long combo,
-/// because it never consults the evaluator about whether a step looks sensible.
-/// <see cref="SearchTurn"/> is a beam over sequences of this turn's actions,
-/// which is what orders a turn correctly: a Power fired before the body that
-/// owns it attacks and saps. <see cref="ThreatBonus"/> measures what the board
-/// left standing could still do if the turn came round again, which is the
-/// reason to hold a combo rather than spend it for chip damage.
+/// The bot as deployed on 2026-09-05 at 08:29 (commit 5c429af), kept whole so
+/// the current bot can be measured against it in mirror matches: run
+/// <c>Selatza.Sim versus</c>. Replace the body with a newer snapshot whenever
+/// the question is asked again; never edit it in place.
 /// </summary>
-public static class Bot
+#pragma warning disable
+public static class PreviousBot
 {
     private const int DeckValueCap = 20;
     /// <summary>Leader HP below which the cliff term starts charging.</summary>
@@ -136,25 +39,6 @@ public static class Bot
     }
 
     [ThreadStatic] public static ILeafChooser? Chooser;
-
-    /// <summary>Trigger hooks that keep firing while the body stands.</summary>
-    private static int StandingHooks(CardDef def)
-    {
-        var t = def.Triggers;
-        if (t is null) return 0;
-        int n = 0;
-        if (t.OnAttack is not null) n++;
-        if (t.OnDefend is not null) n++;
-        if (t.OnAwake is not null) n++;
-        if (t.OnEndTurn is not null) n++;
-        if (t.OnOtherDeath is not null) n++;
-        if (t.OnSpellCast is not null) n++;
-        if (t.OnEnemySpellCast is not null) n++;
-        if (t.OnEnemyPower is not null) n++;
-        if (t.OnStoreSold is not null) n++;
-        if (t.OnStoreBought is not null) n++;
-        return n;
-    }
 
     /// <summary>What carrying this much debt costs, on the evaluator's scale.</summary>
     public static double DebtCharge(double debt, BotWeights w)
@@ -260,15 +144,11 @@ public static class Bot
             foreach (var s in p.Slots)
             {
                 if (s is null) continue;
-                var def = Registry.Card(s.CardId);
                 score += sign * (w.Strength * ScoredStrength(state, s)
                     + w.Hp * s.RemainingHp
-                    + w.Level * GameState.LevelOf(s, def)
-                    - w.Wound * s.Wounds
-                    + (def.Triggers?.OnDeath is not null ? w.Deathrattle : 0)
-                    + w.Trigger * StandingHooks(def));
+                    + w.Level * GameState.LevelOf(s, Registry.Card(s.CardId))
+                    - w.Wound * s.Wounds);
             }
-            score += sign * w.EffectDamage * Effects.EffectDamageOf(state, side);
 
             // Cards in hand are not interchangeable, and the game says so with levels.
             double hand = 0;
@@ -1195,32 +1075,11 @@ public static class Bot
         // A Love token is damage waiting on a Love line, so the setup phase
         // counts gaining one as progress toward the swing.
         total += p.Love;
-        // Deathrattles, stages and Effect Damage are priced by the evaluator and
-        // not here. This measure is a proxy for the damage a turn can be made
-        // to hold, and counting them here diluted it: a climb that credited a
-        // stage or a Deathrattle body built toward those instead of toward the
-        // swing, and the threat it then measured was wrong by four points on
-        // random decks.
         foreach (int pips in Engine.AvailableMana(p)) total += pips;
         return total;
     }
 
     /// <summary>Whether an action hands the game to the opponent or ends it level.</summary>
-    /// <summary>
-    /// A Power that costs no mana and does not sap its body: the kind that can
-    /// be fired again next step, which is what makes a flat step worth taking.
-    /// </summary>
-    private static bool FreeRepeat(GameState state, int me, GameAction action)
-    {
-        if (action.Type != ActionType.ActivatePower) return false;
-        var summon = state.Find(action.Source);
-        if (summon is null || summon.Owner != me) return false;
-        var powers = GameState.PowersOf(summon, Registry.Card(summon.CardId));
-        if (action.PowerIndex < 0 || action.PowerIndex >= powers.Length) return false;
-        var power = powers[action.PowerIndex];
-        return power.Cost.Total == 0 && !power.SapSelf && !power.OncePerTurn;
-    }
-
     private static bool LosesIt(GameState state, int me)
         => state.Drawn || (state.Winner >= 0 && state.Winner != me);
 
@@ -1257,7 +1116,7 @@ public static class Bot
     /// zero it strikes at once, which is the right line about as often, so both
     /// are tried and whichever kills is the one used.
     /// </summary>
-    private static Rollout Burn(GameState state, int me, int steps, BotWeights w, int setup = 0, bool patient = false)
+    private static Rollout Burn(GameState state, int me, int steps, BotWeights w, int setup = 0)
     {
         // Damage is tracked per seat and reported as the worst any one of them
         // took, because a threat is a threat against somebody in particular.
@@ -1276,25 +1135,12 @@ public static class Bot
         var line = new List<GameAction>();
         var cur = state;
 
-        // A body whose attack rises one point for every two debt gains nothing
-        // on every other free Power, and once the hand is full the card each
-        // one draws gains nothing either. A climb that demanded a gain on every
-        // step stopped on the first flat one, six Powers short of a kill it
-        // could have had. So a patient climb may take one flat step on a free
-        // Power between gains, and a second flat step in a row still stops it.
-        // Only the kill searches are patient: a longer climb in the threat
-        // measure inflated what a board still threatened, and the bot held
-        // pieces it should have cashed, measured at four points on random decks.
-        int flat = 0;
         for (int step = 0; step < setup; step++)
         {
             if (!TurnGoesOn(cur, me)) break;
             GameAction? built = null;
             GameState? builtState = null;
-            GameAction? level = null;
-            GameState? levelState = null;
-            double standing = Potential(cur, me);
-            double best = standing;
+            double best = Potential(cur, me);
 
             foreach (var action in CandidateActions(cur, me, forKill: true))
             {
@@ -1314,23 +1160,8 @@ public static class Bot
                     built = action;
                     builtState = after;
                 }
-                else if (patient && level is null && Math.Abs(pot - standing) <= 1e-9 && FreeRepeat(cur, me, action))
-                {
-                    level = action;
-                    levelState = after;
-                }
             }
 
-            if (built is not null && builtState is not null)
-            {
-                flat = 0;
-            }
-            else if (level is not null && levelState is not null && flat < 1)
-            {
-                flat++;
-                built = level;
-                builtState = levelState;
-            }
             if (built is null || builtState is null) break;
             line.Add(built);
             cur = builtState;
@@ -1445,7 +1276,7 @@ public static class Bot
     {
         var race = Burn(state, foe, MaxBurnSteps, w);
         if (race.State.Winner == foe) return race.State;
-        var built = Burn(state, foe, MaxBurnSteps, w, MaxSetupSteps, patient: true);
+        var built = Burn(state, foe, MaxBurnSteps, w, MaxSetupSteps);
         if (built.State.Winner == foe) return built.State;
 
         var s = state;
@@ -1744,7 +1575,7 @@ public static class Bot
         {
             return finisher;
         }
-        var built = Burn(state, me, MaxBurnSteps, w, MaxSetupSteps, patient: true);
+        var built = Burn(state, me, MaxBurnSteps, w, MaxSetupSteps);
         if (built.State.Winner == me && Begin(state, me, key, built.Line) is { } assembled)
         {
             return assembled;
