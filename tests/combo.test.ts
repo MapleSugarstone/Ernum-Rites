@@ -232,10 +232,14 @@ describe('combo search', () => {
       .toBeGreaterThan(0);
   });
 
-  it('stops one point short of the debt that would lose it the game', () => {
-    // The same line against a leader that costs 22 debt. It goes to 24 of a
-    // limit of 25 in a duel and stops, because the rollout refuses any action that hands
-    // the opponent the game and never any action short of that.
+  it('never spends past the debt that would lose it the game', () => {
+    // The rollout refuses any action that hands the opponent the game. This used
+    // to assert the whole line as well: the same board once pushed debt from 6
+    // to 24 through Experiment and killed a 22-debt leader. Scientist milling 3
+    // rather than 2 priced that power out of the rollout's evaluation, so the
+    // line is gone and only the guard it was carrying is checked here. What the
+    // bot chooses to do from this board is its own business; what it may not do
+    // is cross the limit.
     const s = board();
     const me = s.players[0];
     const foe = s.players[1];
@@ -251,10 +255,8 @@ describe('combo search', () => {
     foe.slots[0] = body(s, 'p3-helaks', 1, 6);
 
     const { state } = playTurn(s, 0);
-    expect(state.winner).toBe(0);
-    expect(state.players[0].debtCount, 'it spent almost the whole clock')
-      .toBeGreaterThan(20);
-    expect(state.players[0].debtCount, 'and never crossed it').toBeLessThan(DEBT_LIMIT);
+    expect(state.players[0].debtCount, 'never crossed the limit').toBeLessThan(DEBT_LIMIT);
+    expect(state.winner, 'and never lost to its own debt').not.toBe(1);
   });
 
   it('never reads a Graft pairing off the evaluator alone', () => {
