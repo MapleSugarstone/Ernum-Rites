@@ -8,7 +8,7 @@ import '../src/cards';
 import { chooseAction, clearPlan } from '../src/ai/bot';
 import { applyAction, createGame } from '../src/engine/engine';
 import { actionFromWire, actionToWire, type Replay } from '../src/engine/replay';
-import type { PlayerIdx } from '../src/engine/state';
+import type { PlayerIdx } from '../src/engine/types';
 
 const file = process.argv[2] ?? '012-sweetshop-store.json';
 const limit = Number(process.argv[3] ?? 100000);
