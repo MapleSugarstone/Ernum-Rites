@@ -1471,6 +1471,14 @@ public static class Bot
     [ThreadStatic] private static Dictionary<string, Dictionary<int, double>>? _reach;
     [ThreadStatic] private static int _reachSeed;
     [ThreadStatic] private static bool _reachSeeded;
+    /// <summary>
+    /// Whether a probe is running on this thread. Probes never nest: a probe
+    /// evaluates its board, the evaluator prices every card by reach, and an
+    /// uncached card would start another probe. A body carrying a grafted
+    /// Recompiler Power mints a fresh Recomp at every level, so the chain has
+    /// no floor. Inside a probe a card is measured against the base evaluator.
+    /// </summary>
+    [ThreadStatic] private static bool _probing;
 
     /// <summary>
     /// What a card does on its own: the share of the opponent's nearer clock it
@@ -1483,7 +1491,7 @@ public static class Bot
     /// </summary>
     private static double ReachOf(GameState state, int side, CardDef def, BotWeights w)
     {
-        if (w.Reach == 0) return 0;
+        if (w.Reach == 0 || _probing) return 0;
         return ProbedReach(state, side, def, w);
     }
 
@@ -1645,6 +1653,8 @@ public static class Bot
         // rollout prices there must not stand for the real table.
         var prices = _shopPrices is null ? null : new Dictionary<string, SaleWorth>(_shopPrices, StringComparer.Ordinal);
         var deals = _shopDeals is null ? null : new Dictionary<string, int?>(_shopDeals, StringComparer.Ordinal);
+        bool outer = _probing;
+        _probing = true;
         double best = 0;
         try
         {
@@ -1657,6 +1667,7 @@ public static class Bot
         }
         finally
         {
+            _probing = outer;
             _shopPrices = prices;
             _shopDeals = deals;
         }

@@ -1568,6 +1568,8 @@ interface Cue {
   gain?: number;
 }
 let soundCues: Cue[] = [];
+/** A Store voice spoke for the body it removed, so that body exits silently. */
+let storeVoiced = false;
 
 /** The spell voice for a colour, and the one every colourless card borrows. */
 const SPELL_BY_COLOR: Record<string, Sfx> = {
@@ -1627,7 +1629,9 @@ function cue(name: Sfx, at = 0, gain?: number): void {
  */
 function cueStore(sourceId: string | undefined, at: number): void {
   const voice = sourceId ? STORE_VOICE[sourceId] : undefined;
-  if (voice) cue(voice, at);
+  if (!voice) return;
+  cue(voice, at);
+  storeVoiced = true;
 }
 
 /** What a card sounds like when it goes off. Never silent, whatever the card. */
@@ -1654,6 +1658,7 @@ function actedCard(prev: GameState, action: Action, actor: PlayerIdx): CardDef |
  */
 function computeSoundFx(prev: GameState, next: GameState, action: Action, actor: PlayerIdx): void {
   soundCues = [];
+  storeVoiced = false;
   // Board consequences wait for the lunge, the way the damage numbers do.
   const landed = (trapFx ? 1500 : smackFx ? 310 : 0) + woundLeadMs();
 
@@ -1780,7 +1785,9 @@ function computeSoundFx(prev: GameState, next: GameState, action: Action, actor:
   }
 
   // --- bodies leaving ------------------------------------------------------
-  if (corpseFx.length > 0) {
+  // A Store with a voice of its own is the sound of the body going, so the
+  // generic exit clips stand down rather than playing under it.
+  if (corpseFx.length > 0 && !storeVoiced) {
     cue('die', landed + 120);
     const gone = new Set(allSummons(next).map((x) => x.summon.uid));
     for (const [uid, old] of before) {

@@ -1620,6 +1620,14 @@ const REACH_BUCKET = 4;
 /** Per card id, per side and debt bucket, for the current game only. */
 const reachCache = new Map<string, Map<number, number>>();
 let reachSeed = Number.NaN;
+/**
+ * Whether a probe is running. Probes never nest: a probe evaluates its board,
+ * the evaluator prices every card by reach, and an uncached card would start
+ * another probe. A body carrying a grafted Recompiler Power mints a fresh
+ * Recomp at every level, so the chain has no floor. Inside a probe a card is
+ * measured against the base evaluator instead.
+ */
+let probing = false;
 
 /**
  * What a card does on its own: the share of the opponent's nearer clock it
@@ -1630,7 +1638,7 @@ let reachSeed = Number.NaN;
  * body is priced by what it inherited rather than by its printed line.
  */
 function reachOf(state: GameState, side: PlayerIdx, def: CardDef, w: BotWeights): number {
-  if (w.reach === 0) return 0;
+  if (w.reach === 0 || probing) return 0;
   return probedReach(state, side, def, w);
 }
 
@@ -1765,6 +1773,8 @@ function kitReach(state: GameState, me: PlayerIdx, kit: string[], w: BotWeights,
   // there must not stand for the real table.
   const prices = new Map(shopPrices);
   const deals = new Map(shopDeals);
+  const outer = probing;
+  probing = true;
   let best = 0;
   try {
     for (const setup of [0, limits.maxSetupSteps]) {
@@ -1773,6 +1783,7 @@ function kitReach(state: GameState, me: PlayerIdx, kit: string[], w: BotWeights,
       best = Math.max(best, progressAgainst(probe, r.state, me));
     }
   } finally {
+    probing = outer;
     shopPrices.clear();
     for (const [k, v] of prices) shopPrices.set(k, v);
     shopDeals.clear();

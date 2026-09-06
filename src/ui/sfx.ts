@@ -108,6 +108,7 @@ const TRIM: Partial<Record<Sfx, number>> = {
   solarBig: 2.74,
   pepperBolt: 0.81,
   kapigras: 0.84,
+  gunshot: 1.5,
   graft: 2.68,
   recompile: 0.72,
   fishcatch: 1.4,
