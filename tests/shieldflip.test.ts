@@ -65,7 +65,7 @@ describe('a Power Shield', () => {
     const s = game();
     const leader = s.players[0].leader!;
     const ref = { kind: 'leader', player: 0 } as const;
-    const ctx = makeEffectCtx(s, 0, leader, card(leader.cardId), [], null);
+    const ctx = makeEffectCtx(s, 0, leader, card(leader.cardId), []);
     leader.shields = 0;
 
     for (let i = 0; i < SHIELD_CAP + 2; i++) ctx.shield(ref, 1);
