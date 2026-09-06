@@ -19,6 +19,8 @@ const STEMS: Record<Mood, string> = {
 const FADE = 1.6;
 /** Where the two levels are kept between visits. */
 const STORE = 'ernumrites.audio';
+/** Where the mute switch is kept, beside the levels it overrides. */
+const MUTE_STORE = 'ernumrites.muted';
 
 export interface Levels {
   music: number;
@@ -26,6 +28,7 @@ export interface Levels {
 }
 
 let level: Levels = load();
+let muted = loadMuted();
 
 let ctx: AudioContext | null = null;
 let musicBus: GainNode | null = null;
@@ -38,6 +41,16 @@ const stems = new Map<Mood, GainNode>();
  */
 const stemEls: HTMLAudioElement[] = [];
 let mood: Mood = 'normal';
+/** Kept so unmuting can wake audio that was never built while muted. */
+let assetBase = '';
+
+function loadMuted(): boolean {
+  try {
+    return localStorage.getItem(MUTE_STORE) === '1';
+  } catch {
+    return false;
+  }
+}
 
 function load(): Levels {
   try {
@@ -71,6 +84,49 @@ export function levels(): Levels {
   return { ...level };
 }
 
+export function isMuted(): boolean {
+  return muted;
+}
+
+/**
+ * Mute or unmute everything.
+ *
+ * Muting is not a gain of zero. A running media element holds the device's
+ * audio session whether or not it can be heard, which is what stopped the
+ * player's own music and video on a phone, so the stems are paused outright and
+ * the context is suspended behind them.
+ */
+export function setMuted(on: boolean): void {
+  muted = on;
+  try {
+    localStorage.setItem(MUTE_STORE, on ? '1' : '0');
+  } catch {
+    /* the switch still works for this visit */
+  }
+  if (!on) startAudio(assetBase);
+  applySession();
+}
+
+/**
+ * Hold the audio session only while something is meant to be heard.
+ *
+ * The stems are the only media elements the game has, so pausing them is what
+ * hands the session back. The context follows them: suspended it produces
+ * nothing and holds nothing.
+ */
+function applySession(): void {
+  if (!ctx) return;
+  if (muted || level.music === 0) {
+    for (const el of stemEls) el.pause();
+  }
+  if (muted) {
+    void ctx.suspend();
+    return;
+  }
+  void ctx.resume();
+  playStems();
+}
+
 /**
  * The bus every sound effect should hang off, once there are any. Null until
  * the page has been clicked, which is the same thing as saying there is no
@@ -85,6 +141,9 @@ export function setLevel(bus: keyof Levels, value: number): void {
   save();
   const node = bus === 'music' ? musicBus : sfxBus;
   if (node && ctx) node.gain.setTargetAtTime(level[bus], ctx.currentTime, 0.02);
+  // Music dragged to nothing is the same ask as muting it, and a stem left
+  // running at zero would go on holding the phone's audio session.
+  if (bus === 'music') applySession();
 }
 
 /**
@@ -92,6 +151,8 @@ export function setLevel(bus: keyof Levels, value: number): void {
  * resumes a context the browser may have suspended again.
  */
 export function startAudio(base: string): void {
+  assetBase = base;
+  if (muted) return;
   if (ctx) {
     void ctx.resume();
     // Resuming the context is enough for the effects, which are pure Web Audio,
@@ -102,6 +163,7 @@ export function startAudio(base: string): void {
   }
   const Ctor = window.AudioContext ?? (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!Ctor) return;
+  takeAmbientSession();
   ctx = new Ctor();
   musicBus = ctx.createGain();
   musicBus.gain.value = level.music;
@@ -126,8 +188,28 @@ export function startAudio(base: string): void {
   playStems();
 }
 
+/**
+ * Ask the device to mix rather than interrupt.
+ *
+ * A phone hands a page the "playback" session by default, which stops whatever
+ * the player already had going the moment the game makes its first sound. The
+ * ambient session mixes with other apps instead and is silenced by the ringer
+ * switch, which is what a game's effects should do. Not every browser has the
+ * API, and there is nothing to fall back to on the ones that do not.
+ */
+function takeAmbientSession(): void {
+  try {
+    const nav = navigator as Navigator & { audioSession?: { type: string } };
+    if (nav.audioSession) nav.audioSession.type = 'ambient';
+  } catch {
+    /* an older engine simply keeps the session it gives out by default */
+  }
+}
+
 /** Start any stem that is not running. Safe to call on every tap. */
 function playStems(): void {
+  // Nothing to be heard means nothing worth holding the session for.
+  if (muted || level.music === 0) return;
   for (const el of stemEls) {
     if (!el.paused) continue;
     void el.play().catch(() => {

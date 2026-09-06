@@ -584,6 +584,42 @@ button.on {
   box-shadow: var(--sheen);
 }
 
+/* The switch that hands the device's audio session back, so it reads as a
+   state rather than as a third slider. */
+.muteall {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--fill-2);
+  border: var(--stroke) solid var(--ink);
+  border-radius: 999px;
+  padding: 3px 9px;
+  cursor: pointer;
+  /* Held at the width of the longer of its two labels, so switching it does
+     not shove the theme buttons along the row. */
+  min-width: 74px;
+  text-align: center;
+}
+.muteall:hover {
+  color: var(--text);
+}
+.muteall.on {
+  background: var(--glass-dark);
+  color: var(--chrome-text);
+  border-color: var(--select);
+  box-shadow: var(--sheen);
+}
+/* A slider that cannot move while the switch is on, so the switch is plainly
+   the thing in charge rather than something the sliders fight with. */
+.vol:has(input:disabled) {
+  opacity: 0.45;
+}
+.vol input[type='range']:disabled {
+  cursor: not-allowed;
+}
+
 .vol input[type='range'] {
   width: 74px;
   height: 4px;

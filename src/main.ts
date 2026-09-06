@@ -155,7 +155,7 @@ import {
 } from './engine/types';
 import { flipBarFor, frameFor, frameKeyOf, gemFor, prepareFrames } from './ui/frames';
 import { mountGuy, showGuy } from './ui/guy';
-import { levels, setLevel, setMood, startAudio, type Mood } from './ui/audio';
+import { isMuted, levels, setLevel, setMood, setMuted, startAudio, type Mood } from './ui/audio';
 import {
   playSfx,
   setSfxBase,
@@ -4579,10 +4579,18 @@ const DANGER_DEBT = 20;
 /** The two levels as sliders, for wherever there is room to put them. */
 function mixerHtml(): string {
   const at = levels();
+  const off = isMuted();
   const row = (bus: 'music' | 'sfx', label: string) =>
     `<label class="vol"><span>${label}</span><input type="range" min="0" max="100" step="1"
-      value="${Math.round(at[bus] * 100)}" data-act="vol" data-bus="${bus}" aria-label="${label} volume"></label>`;
-  return `<span class="mixer">${row('music', 'Music')}${row('sfx', 'Sound')}${themeHtml()}</span>`;
+      value="${Math.round(at[bus] * 100)}" data-act="vol" data-bus="${bus}" aria-label="${label} volume"
+      ${off ? 'disabled' : ''}></label>`;
+  // Muting hands the phone's audio session back rather than turning two gains
+  // down, so it is a switch of its own rather than a pair of sliders at zero.
+  const mute = `<button data-act="muteall" class="muteall${off ? ' on' : ''}" aria-pressed="${off}"
+      title="${off ? 'Sound is off. Other apps play untouched.' : 'Turn all game sound off.'}">${
+    off ? 'Unmute' : 'Mute all'
+  }</button>`;
+  return `<span class="mixer">${row('music', 'Music')}${row('sfx', 'Sound')}${mute}${themeHtml()}</span>`;
 }
 
 /** Light or dark ground, named outright rather than left to a glyph to imply. */
@@ -8735,6 +8743,10 @@ root.addEventListener('click', (ev) => {
   // The sliders handle themselves through input events; a click on either must
   // not fall through to the render at the bottom and rebuild it mid-drag.
   if (act === 'oppslider' || act === 'storeprice') return;
+  if (act === 'muteall') {
+    setMuted(!isMuted());
+    return render();
+  }
   if (act === 'theme') {
     setTheme(el.dataset.cmd === 'light' ? 'light' : 'dark');
     return render();
