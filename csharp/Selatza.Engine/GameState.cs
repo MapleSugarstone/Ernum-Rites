@@ -164,7 +164,8 @@ public sealed class PlayerState
     /// dead summon leaves stays open, and the leader behind it stays exposed,
     /// until the price is met. Counts down one at the start of their turn.
     /// </summary>
-    public int ReplaceLocked { get; set; }
+    /// <summary>Seat whose turn the replace lock holds for, or -1 when nothing holds it.</summary>
+    public int ReplaceLockedBy { get; set; } = -1;
 
     /// <summary>
     /// Cards this player has hacked. While they hold one, it costs its total in
@@ -192,7 +193,7 @@ public sealed class PlayerState
             DeckOuts = DeckOuts,
             Love = Love,
             PlaysThisTurn = PlaysThisTurn,
-            ReplaceLocked = ReplaceLocked,
+            ReplaceLockedBy = ReplaceLockedBy,
             SpellTax = SpellTax,
             Deck = new List<string>(Deck),
             Hand = new List<string>(Hand),

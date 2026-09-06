@@ -315,7 +315,7 @@ public static class Purple
             }),
             flipText: "The enemy cannot replace summons that die until the end of your turn.",
             flipCost: new FlipCost { Mana = new Cost(O: 1) },
-            flip: c => c.LockReplace(c.Opp, 1)),
+            flip: c => c.LockReplace(c.Opp)),
 
         K.Summon(2, "thecount", "The Count", F(Faction.Spirit, Faction.Mortal), str: 2, hp: 3,
             text: "Strike: Put 2 Wounds on the defender. Heals 2 whenever it kills an enemy summon.",
@@ -408,7 +408,7 @@ public static class Purple
                 OnDeath = c =>
                 {
                     foreach (var r in c.SummonsOf(c.Opp)) c.Wound(r, 3);
-                    c.LockReplace(c.Opp, 1);
+                    c.LockReplace(c.Opp);
                 },
             }),
 

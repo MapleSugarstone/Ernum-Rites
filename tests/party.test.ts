@@ -18,6 +18,7 @@ import {
   isOver,
   livingOpponents,
   nextLiving,
+  replaceLockedFor,
   OPENING_HAND,
   PARTY_DEBT_LIMIT,
   PARTY_HAND_BONUS,
@@ -360,6 +361,50 @@ describe('party elimination', () => {
     s = must(s, 2, { type: 'PASS_RESPONSE' });
     expect(s.pending).toBeNull();
     expect(s.players[0].supporters).toHaveLength(2);
+  });
+});
+
+describe('the replace lock', () => {
+  /**
+   * A seal is its locker's, so it bites on their turn and lifts when that turn
+   * ends. The seat sitting between the two in party turn order is not caught by
+   * it, and nobody is ever asked to fill a slot the seal would refuse.
+   */
+  function sealed(seats: number): GameState {
+    const s = game(seats);
+    for (let p = 0 as PlayerIdx; p < seats; p++) {
+      dummy(s, p, 0);
+      give(s, p, D1);
+    }
+    // Seat 0 seals seat 2, then hands the turn on.
+    s.players[2].replaceLockedBy = 0;
+    return s;
+  }
+
+  it('offers no replacement while the seal is biting', () => {
+    const s = sealed(3);
+    expect(replaceLockedFor(s, 2), 'seat 0 is on the play').toBe(true);
+    destroySummon(s, s.players[2].slots[0]!);
+    expect(s.replaceQueue, 'nothing to answer').toHaveLength(0);
+    expect(currentActor(s), 'the turn stays with the locker').toBe(0);
+  });
+
+  it('offers one once the seal lifts', () => {
+    const s = sealed(3);
+    s.players[2].replaceLockedBy = -1;
+    destroySummon(s, s.players[2].slots[0]!);
+    expect(s.replaceQueue.map((r) => r.player)).toEqual([2]);
+  });
+
+  it('lifts when the locker’s turn ends, not when the locked seat comes round', () => {
+    let s = sealed(3);
+    expect(replaceLockedFor(s, 2)).toBe(true);
+    s = must(s, 0, { type: 'END_TURN' });
+    // Seat 1 is between the two in turn order and used to be sealed through.
+    expect(s.active).toBe(1);
+    expect(s.players[2].replaceLockedBy, 'the seal came down with the turn').toBe(-1);
+    destroySummon(s, s.players[2].slots[0]!);
+    expect(s.replaceQueue.map((r) => r.player), 'seat 2 refills as normal').toEqual([2]);
   });
 });
 

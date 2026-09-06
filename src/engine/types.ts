@@ -989,7 +989,7 @@ export interface EffectCtx {
   /** Reveal the top `count` of another player's deck for this one to take from. */
   raidDeck(victim: PlayerIdx, chooser: PlayerIdx, count: number, effect: string): void;
   /** Oil: the hole a dead summon left stays open for a turn. */
-  lockReplace(player: PlayerIdx, turns?: number): void;
+  lockReplace(player: PlayerIdx): void;
   /** Robot: take something out of a debt zone and put it in your hand. */
   takeFromDebt(from: PlayerIdx, match: (c: CardDef) => boolean): CardDef | null;
   supporterFromDeck(player: PlayerIdx, sapped?: boolean): string | null;
@@ -1136,7 +1136,7 @@ export interface FlipCtx {
   shield(target: TargetRef, count: number): void;
   catch(target: TargetRef, count: number): number;
   curse(player: PlayerIdx, cardId: string, count: number): number;
-  lockReplace(player: PlayerIdx, turns?: number): void;
+  lockReplace(player: PlayerIdx): void;
   /** Solar's ramp: the top card of the deck becomes a supporter, sapped. */
   /** Sends the summon this card was protecting to the debt zone. */
   destroyHolder(): void;

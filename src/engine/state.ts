@@ -132,7 +132,8 @@ export interface PlayerState {
    * Turns this player may not fill an empty slot. Oil's curse: the hole a
    * dead summon leaves stays open, and the leader behind it stays exposed.
    */
-  replaceLocked: number;
+  /** Seat whose turn the replace lock holds for, or -1 when nothing holds it. */
+  replaceLockedBy: number;
   /**
    * Extra colourless this player pays on every spell and trap they cast. Oil and
    * Robot put it there and it stays until something takes it off.
@@ -461,6 +462,16 @@ export function currentActor(state: GameState): PlayerIdx {
   if (state.choiceQueue.length > 0) return state.choiceQueue[0].player;
   if (state.replaceQueue.length > 0) return state.replaceQueue[0].player;
   return state.active;
+}
+
+/**
+ * Whether a seat's replace lock is biting right now. A seal holds only while
+ * the player who set it is the active one, so a party seat sitting between the
+ * two in turn order refills its holes as normal.
+ */
+export function replaceLockedFor(state: GameState, player: PlayerIdx): boolean {
+  const by = state.players[player].replaceLockedBy;
+  return by >= 0 && by === state.active;
 }
 
 /** The attacker in the battle currently resolving, if any. */

@@ -136,10 +136,10 @@ public sealed class EffectCtx
         Effects.RaidDeck(State, victim, chooser, count, effect, Card.Id);
 
     /// <summary>Oil: the hole a dead summon left stays open, and the leader behind it exposed.</summary>
-    public void LockReplace(int player, int turns = 1)
+    public void LockReplace(int player)
     {
         var p = State.Players[player];
-        p.ReplaceLocked = Math.Max(p.ReplaceLocked, turns);
+        p.ReplaceLockedBy = Me;
         State.ReplaceQueue.RemoveAll(r => r.Player == player);
         Effects.Log(State, Me, $"{p.Name} cannot fill that slot yet.");
     }
@@ -516,10 +516,10 @@ public sealed class FlipCtx
     public int Catch(TargetRef t, int count) => Blocked(t) ? 0 : Effects.CatchHp(State, t, count);
     public int Curse(int player, string cardId, int count) =>
         Effects.CurseDeck(State, player, cardId, count);
-    public void LockReplace(int player, int turns = 1)
+    public void LockReplace(int player)
     {
         var p = State.Players[player];
-        p.ReplaceLocked = Math.Max(p.ReplaceLocked, turns);
+        p.ReplaceLockedBy = Me;
         State.ReplaceQueue.RemoveAll(r => r.Player == player);
         Effects.Log(State, Me, $"{p.Name} cannot fill that slot yet.");
     }
@@ -1168,6 +1168,16 @@ public static class Effects
         return landed;
     }
 
+    /// <summary>
+    /// Whether a seat's replace lock is biting right now. A seal holds only
+    /// while the player who set it is the active one.
+    /// </summary>
+    public static bool ReplaceLockedFor(GameState state, int player)
+    {
+        int by = state.Players[player].ReplaceLockedBy;
+        return by >= 0 && by == state.Active;
+    }
+
     public static void AddWounds(GameState state, TargetRef r, int amount, int depth = 0)
     {
         var summon = state.Find(r);
@@ -1338,6 +1348,8 @@ public static class Effects
         // On the owner's own turn the main phase already lets them refill, so
         // the immediate-replacement prompt is only for the side not on the play.
         if (summon.Owner == state.Active) return;
+        // Never offer a replacement the seal will refuse.
+        if (ReplaceLockedFor(state, summon.Owner)) return;
         // And only while the hole is still there. A Deathrattle that refills the
         // slot it just left closed it before this ran: Slime stands a smaller
         // Slime up in the first empty slot, which is its own, and the offer went

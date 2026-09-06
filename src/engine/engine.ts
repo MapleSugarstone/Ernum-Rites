@@ -51,6 +51,7 @@ import {
   powersOf,
   refIsGone,
   remainingHp,
+  replaceLockedFor,
   SUMMON_SLOTS,
   type GameState,
   type PendingSpell,
@@ -94,7 +95,7 @@ function newPlayer(list: DeckList): PlayerState {
     mana: emptyMana(),
     supportersLeft: 1,
     spellBonus: 0,
-    replaceLocked: 0,
+    replaceLockedBy: -1,
     spellTax: 0,
     leaderPlayed: false,
     turnsTaken: 0,
@@ -285,7 +286,6 @@ function startTurn(state: GameState, player: PlayerIdx): void {
   state.phase = 'awake';
   const p = state.players[player];
   p.turnsTaken += 1;
-  if (p.replaceLocked > 0) p.replaceLocked -= 1;
   p.supportersLeft = 1;
   p.mana = emptyMana();
   p.playsThisTurn = 0;
@@ -357,6 +357,11 @@ function finishTurn(state: GameState): void {
   }
   if (state.winner !== null) return;
   state.players[state.active].mana = emptyMana();
+  // A seal holds for its locker's turn and no longer, so seats between them in
+  // party turn order are not caught by it.
+  for (const pl of state.players) {
+    if (pl.replaceLockedBy === state.active) pl.replaceLockedBy = -1;
+  }
   if (state.winner !== null) return;
   startTurn(state, nextLiving(state, state.active));
 }
@@ -914,7 +919,7 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
     }
 
     case 'REPLACE_SUMMON': {
-      if (me.replaceLocked > 0) return 'That slot is cursed shut.';
+      if (replaceLockedFor(state, actor)) return 'That slot is cursed shut.';
       const entry = state.replaceQueue[0];
       if (!entry || entry.player !== actor) return 'Nothing to replace.';
       // Claim the slot first: placing can end the game, and ending the game

@@ -307,7 +307,6 @@ public static class Engine
         var p = state.Players[player];
         p.TurnsTaken++;
         p.SupportersLeft = 1;
-        if (p.ReplaceLocked > 0) p.ReplaceLocked--;
         Array.Clear(p.Mana);
         p.PlaysThisTurn = 0;
         // Every shop restocks at the start of every turn, whoever's turn it is:
@@ -395,6 +394,11 @@ public static class Engine
         if (state.Winner >= 0) return;
 
         Array.Clear(state.Players[state.Active].Mana);
+        // A seal holds for its locker's turn and no longer.
+        foreach (var pl in state.Players)
+        {
+            if (pl.ReplaceLockedBy == state.Active) pl.ReplaceLockedBy = -1;
+        }
         if (state.Winner >= 0) return;
         StartTurn(state, GameState.Other(state.Active));
     }
@@ -996,7 +1000,7 @@ public static class Engine
 
             case ActionType.ReplaceSummon:
             {
-                if (me.ReplaceLocked > 0) return "That slot is cursed shut.";
+                if (Effects.ReplaceLockedFor(state, actor)) return "That slot is cursed shut.";
                 if (state.ReplaceQueue.Count == 0 || state.ReplaceQueue[0].Player != actor)
                 {
                     return "Nothing to replace.";

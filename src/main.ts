@@ -135,6 +135,7 @@ import {
   powersOf,
   refIsGone,
   remainingHp,
+  replaceLockedFor,
   type GameState,
   type SummonInstance,
 } from './engine/state';
@@ -1384,8 +1385,8 @@ function computeWoundFx(prev: GameState, next: GameState): void {
 function computeLockFx(prev: GameState, next: GameState): void {
   lockIn = new Set();
   for (let player = 0 as PlayerIdx; player < next.players.length; player++) {
-    const was = prev.players[player].replaceLocked > 0;
-    const now = next.players[player].replaceLocked > 0;
+    const was = replaceLockedFor(prev, player);
+    const now = replaceLockedFor(next, player);
     if (now && !was) {
       lockIn.add(player);
       lockOut.delete(player);
@@ -2590,7 +2591,7 @@ function lockHtml(state: GameState, ref: TargetRef): string {
   if (ref.kind !== 'summon') return '';
   const player = ref.player;
   const held = lockOut.has(player);
-  if (state.players[player].replaceLocked <= 0 && !held) return '';
+  if (!replaceLockedFor(state, player) && !held) return '';
   const phase = held ? ' lockout' : lockIn.has(player) ? ' lockin' : '';
   return `<img class="lockfx${phase}" src="${BASE}Cardgame/Extras/Locked.png" alt="" title="Sealed: a summon that dies here cannot be replaced until the end of the turn." draggable="false">`;
 }

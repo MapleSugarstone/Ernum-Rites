@@ -92,7 +92,7 @@ function playerString(state: GameState, idx: PlayerIdx): string {
     `:O${p.deckOuts}` +
     `:V${p.love}` +
     `:Y${p.playsThisTurn}` +
-    `:L${p.replaceLocked}` +
+    `:L${p.replaceLockedBy}` +
     `:T${p.spellTax}` +
     `:G${p.stage ?? '-'}` +
     slots +

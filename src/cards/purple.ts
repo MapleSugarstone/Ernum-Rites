@@ -349,7 +349,7 @@ export const purpleCards: CardDef[] = [
     ],
     flipText: 'The enemy cannot replace summons that die until the end of your turn.',
     flipCost: { mana: { O: 1 } },
-    flip: (c) => c.lockReplace(c.opp, 1),
+    flip: (c) => c.lockReplace(c.opp),
   }),
   k.summon(2, 'thecount', 'The Count', ['Spirit', 'Mortal'], {
     str: 2,
@@ -450,7 +450,7 @@ export const purpleCards: CardDef[] = [
     triggers: {
       onDeath: (c) => {
         for (const ref of c.summonsOf(c.opp)) c.wound(ref, 3);
-        c.lockReplace(c.opp, 1);
+        c.lockReplace(c.opp);
       },
     },
   }),

@@ -12,6 +12,7 @@ import {
   livingPlayers,
   otherPlayer,
   remainingHp,
+  replaceLockedFor,
   strengthOf,
   type FlipOffer,
   type GameState,
@@ -722,6 +723,7 @@ export function destroySummon(state: GameState, summon: SummonInstance): void {
   // chain of them asked once a link.
   if (
     summon.owner !== state.active &&
+    !replaceLockedFor(state, summon.owner) &&
     !p.slots[slot] &&
     p.hand.some((id) => card(id).type === 'summon')
   ) {
@@ -1245,9 +1247,9 @@ function baseHelpers(state: GameState, me: PlayerIdx, sourceId: string, casts: b
     },
     raidDeck: (victim: PlayerIdx, chooser: PlayerIdx, count: number, effect: string) =>
       raidDeck(state, victim, chooser, count, effect, sourceId),
-    lockReplace: (player: PlayerIdx, turns = 1) => {
+    lockReplace: (player: PlayerIdx) => {
       const p = state.players[player];
-      p.replaceLocked = Math.max(p.replaceLocked, turns);
+      p.replaceLockedBy = me;
       state.replaceQueue = state.replaceQueue.filter((r) => r.player !== player);
       log(state, me, `${p.name} cannot fill that slot yet.`);
     },

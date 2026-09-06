@@ -171,7 +171,7 @@ public static class Digest
         sb.Append(":O").Append(p.DeckOuts);
         sb.Append(":V").Append(p.Love);
         sb.Append(":Y").Append(p.PlaysThisTurn);
-        sb.Append(":L").Append(p.ReplaceLocked);
+        sb.Append(":L").Append(p.ReplaceLockedBy);
         sb.Append(":T").Append(p.SpellTax);
         sb.Append(":G").Append(p.Stage ?? "-");
         for (int i = 0; i < p.Slots.Length; i++)
