@@ -532,6 +532,21 @@ every deck draws from its leader's whole legal pool, mixed cards included.
 Fewer seeds than six is the trade for the slower bot; two is enough for
 colours and card lift, and a single-leader claim still needs six.
 
-Maple's standing preference once the cloud quota allows it: 300 to 400
+The maintainer's standing preference once the cloud quota allows it: 300 to 400
 rounds rather than 200, so the decks evolve longer. Continue a seed already
 run at 200 by rerunning the script with the same tag and `--rounds 400`.
+
+## How the cloud run works now (2026-09-06, later)
+
+`scripts/gcp-meta.sh` no longer talks to the machine over ssh for anything
+that matters. It publishes the trainer, stages the build and any saved
+`runs/<tag>*` in the project's `-meta` bucket, and creates a spot VM whose
+startup script fetches both, runs the seeds, builds the databases, uploads
+`runs/<tag>*` and an `ALL_DONE` marker. The local script watches the bucket,
+restarts a pre-empted machine (which resumes on boot from its disk), and
+pulls the results. Machine type and zone accept comma-separated lists and
+are tried in order, because spot capacity comes and goes. The project with
+the quotas is `project-8874ede1-5508-4a5e-b39`, not `ernumritestest`. A
+128-core N2 does a settled round in about a minute; 300 rounds is about four
+and a quarter hours. Read the bot-work skill for the traps around the SDK on
+Windows.
