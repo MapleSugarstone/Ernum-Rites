@@ -47,7 +47,7 @@ public static class Program
             "duel" => Duel(games),
             "versus" => Versus(games, ArgInt(args, "--threads", Environment.ProcessorCount),
                 ArgStr(args, "--decks", "random"), ArgStr(args, "--set", ""), ArgInt(args, "--seed", 1), Flag2(args, "--self"),
-                Flag2(args, "--perfect"), ArgStr(args, "--read", ""), ArgStr(args, "--hand", "")),
+                Flag2(args, "--perfect"), ArgStr(args, "--read", ""), ArgStr(args, "--hand", ""), ArgStr(args, "--reply", "")),
             "tune" => Tune(games, ArgInt(args, "--rounds", 3),
                 ArgInt(args, "--threads", Environment.ProcessorCount),
                 ArgStr(args, "--only", ""), ArgStr(args, "--decks", "random")),
@@ -362,8 +362,17 @@ public static class Program
     /// answer to "is the new bot better", measured rather than argued.
     /// </summary>
     private static int Versus(int games, int threads, string pool, string set, int seed, bool self, bool perfect = false,
-        string read = "", string hand = "")
+        string read = "", string hand = "", string reply = "")
     {
+        // --reply <width>,<depth>,<budget> sets the opponent model's beam for
+        // the current bot, so its profile can be tuned against the snapshot.
+        if (reply.Length > 0)
+        {
+            var parts = reply.Split(',');
+            Bot.ReplyBeamWidth = int.Parse(parts[0]);
+            Bot.ReplyDepth = int.Parse(parts[1]);
+            Bot.ReplyBudget = int.Parse(parts[2]);
+        }
         // --perfect hands the current bot the opponent's real hand, as the
         // snapshot always has, so the read can be measured on its own.
         // --read known fills the believed hand with named cards only, --read
@@ -395,6 +404,9 @@ public static class Program
         for (int g = 0; g < games; g++) decks[g] = DeckFor(pool, g);
         var result = new MatchupResult();
         var gate = new object();
+        // How often each bot runs its own Store or opens a haggle at the other's,
+        // asked because a bot that never buys is not playing the Candy game.
+        int useA = 0, openA = 0, useB = 0, openB = 0;
         var opts = new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, threads) };
         var sw = System.Diagnostics.Stopwatch.StartNew();
 
@@ -420,6 +432,8 @@ public static class Program
                     : PreviousBot.ChooseAction(s, actor);
                 var res = Engine.Apply(s, actor, action);
                 if (!res.Ok) break;
+                if (action.Type == ActionType.UseStore) { if (actor == seatNow && !self) Interlocked.Increment(ref useA); else Interlocked.Increment(ref useB); }
+                if (action.Type == ActionType.OpenStore) { if (actor == seatNow && !self) Interlocked.Increment(ref openA); else Interlocked.Increment(ref openB); }
                 s = res.State!;
                 actions++;
             }
@@ -436,6 +450,8 @@ public static class Program
         Console.WriteLine($"  current {result.WinsA} - previous {result.WinsB} - drawn {result.Draws}");
         Console.WriteLine($"  current wins {result.RateA:P1}, 95% interval {result.Confidence95}"
             + (result.Decisive ? " (decisive)" : " (inside the noise)"));
+        Console.WriteLine($"  stores: current ran its own {useA} times and opened the other side's {openA}; "
+            + $"previous {useB} and {openB}, over {games} games");
         return 0;
     }
 

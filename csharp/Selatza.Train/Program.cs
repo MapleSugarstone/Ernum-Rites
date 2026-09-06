@@ -107,6 +107,9 @@ public static class Program
         Console.WriteLine("         --light-bot (a tenth of the search per decision, for long balance");
         Console.WriteLine("           runs where the number of games matters more than the play)");
         Console.WriteLine("         --snapshot-every 1 --fresh (ignore any snapshot and start over)");
+        Console.WriteLine("         --label search (record every outlooked leaf with its outlook as the label,");
+        Console.WriteLine("                        and use the network as a screen over the leaves; the");
+        Console.WriteLine("                        gauntlet and the sweep then measure the screen)");
         Console.WriteLine("         --net-weight-start 0 --net-weight-end 0.2 (how large a correction");
         Console.WriteLine("           the network may make to the evaluator's ranking, first round to last)");
         Console.WriteLine("         --temperature 0.05 --epsilon 0.02 (exploration, both anneal to zero)");
@@ -167,6 +170,10 @@ public static class Program
         // five to ten times faster and the card numbers are correspondingly
         // less noisy for the same wall clock.
         bool noNet = Flag(args, "--no-net");
+        bool labelSearch = Str(args, "--label", "result") == "search";
+        // Four positions labelled a decision instead of one, at the light
+        // profile the games are played at.
+        if (labelSearch) Bot.LightThreatLeaves = Int(args, "--label-leaves", 4);
 
         return new TournamentConfig
         {
@@ -192,9 +199,11 @@ public static class Program
                 .ToList(),
             SnapshotEvery = Int(args, "--snapshot-every", 1),
             FreshDecks = Flag(args, "--fresh-decks"),
-            NetWeightStart = noNet ? 0 : Dbl(args, "--net-weight-start", 0.0),
+            // Under the search label the games are the shipped bot's own, so the
+            // labels are its judgement and not a screened one's.
+            NetWeightStart = noNet || labelSearch ? 0 : Dbl(args, "--net-weight-start", 0.0),
             EvolveGap = Dbl(args, "--evolve-gap", 60),
-            NetWeightEnd = noNet ? 0 : Dbl(args, "--net-weight-end", 0.2),
+            NetWeightEnd = noNet || labelSearch ? 0 : Dbl(args, "--net-weight-end", 0.2),
             Epsilon = Dbl(args, "--epsilon", 0.02),
             TemperatureStart = Dbl(args, "--temperature", 0.05),
             LeaderPool = Str(args, "--leader-pool", "all").ToLowerInvariant() switch
@@ -221,6 +230,11 @@ public static class Program
             Agent = new AgentConfig
             {
                 RecordEvery = noNet ? 0 : Int(args, "--record-every", 1),
+                // --label search: every leaf that got an outlook is recorded
+                // with that outlook as its label, and the network is a screen
+                // over the leaves rather than a correction to the pick.
+                LabelSearch = labelSearch,
+                Screen = labelSearch,
             },
             Train = new TrainConfig
             {
@@ -230,7 +244,8 @@ public static class Program
                 ReplayCap = Int(args, "--replay-cap", 60000),
                 SampleReuse = Dbl(args, "--reuse", 4),
                 ResidualScale = (float)Dbl(args, "--residual", 1.0),
-                Bootstrap = (float)Dbl(args, "--bootstrap", 0.3),
+                // The search label is filed whole as the bootstrapped half.
+                Bootstrap = labelSearch ? 1f : (float)Dbl(args, "--bootstrap", 0.3),
                 HandWeight = (float)Dbl(args, "--hand-weight", 0.3),
                 TrapWeight = (float)Dbl(args, "--trap-weight", 0.2),
             },

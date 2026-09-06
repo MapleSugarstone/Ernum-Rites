@@ -34,6 +34,7 @@ import {
   remainingHp,
   strengthOf,
   type GameState,
+  type PlayerState,
   type PendingStore,
   type SummonInstance,
 } from '../engine/state';
@@ -177,7 +178,10 @@ export const defaultWeights: BotWeights = {
   leaderHp: 8,
   debt: 12,
   debtCliff: 40,
-  debtCurve: 0,
+  // Half convex: early debt is cheap and debt near the limit is dear. Measured
+  // even against the deployed bot on three pools and raises the haggles it
+  // opens at the other side's Stores by two thirds.
+  debtCurve: 0.5,
   leaderCliff: 6,
   strength: 3,
   hp: 2.5,
@@ -237,11 +241,24 @@ const NET_SCALE = 200;
  * The trainer's sweeps put the useful setting at 0.15, with anything past 0.35
  * below the search alone.
  */
-export function setNetwork(bundle: NetBundle | null, weight = 0.15): void {
+export function setNetwork(bundle: NetBundle | null, weight = 0.15, mode: NetworkMode = 'correct'): void {
   network = bundle;
   networkWeight = bundle ? weight : 0;
+  networkMode = mode;
   clearPlan();
 }
+
+/**
+ * How an installed network is used. `correct` adds its guess at how wrong the
+ * search's score was to the final ranking, which is what the residual runs
+ * trained. `screen` ranks a wider set of end-of-turn leaves by the beam's score
+ * plus its prediction of the outlook, and only the top few get one, which is
+ * what a network trained on the search's own outlooks is for.
+ */
+export type NetworkMode = 'correct' | 'screen';
+let networkMode: NetworkMode = 'correct';
+/** Leaves gathered for a screen to choose the outlooks from: four times what gets one. */
+const SCREEN_LEAVES = 24;
 
 const DECK_VALUE_CAP = 20;
 /** Leader HP below which the cliff term starts charging. */
@@ -300,11 +317,16 @@ export function evaluate(state: GameState, me: PlayerIdx, w = defaultWeights): n
     const hp = p.leader ? remainingHp(p.leader) : 0;
     score += sign * w.leaderHp * hp;
     // Graded rather than a step, so the search is not sitting on a knife edge
-    // one point of damage wide.
-    score -= sign * w.leaderCliff * Math.max(0, LEADER_CLIFF_AT - hp);
+    // one point of damage wide. The edge sits higher for a leader facing burn,
+    // and a heal still in hand stands in for some of the HP below it.
+    const edge = LEADER_CLIFF_AT + BURST_TRUST * dangerOf(state, side, w);
+    const shield = HEAL_TRUST * healOf(state, side, w);
+    score -= sign * w.leaderCliff * Math.max(0, edge - hp - shield);
 
+    // Debt is charged less the relief the list can still produce for it.
+    const eased = RELIEF_TRUST * reliefOf(state, side, w);
     const cliff = p.debtCount >= debtLimitOf(state) - 2 ? w.debtCliff : 0;
-    score -= sign * (debtCharge(state, p.debtCount, w) + cliff);
+    score -= sign * (debtCharge(state, p.debtCount - eased, w) + cliff);
     score += sign * w.love * p.love;
 
     for (const s of p.slots) {
@@ -333,9 +355,18 @@ export function evaluate(state: GameState, me: PlayerIdx, w = defaultWeights): n
     score += sign * w.supporter * p.supporters.length;
     score += sign * w.deck * Math.min(p.deck.length, DECK_VALUE_CAP);
 
+    // The list is read only when it is the bot's own. Anyone else's outs are
+    // the share of what they have shown that was level 3, over their deck.
     let outs = 0;
-    for (const id of p.deck) {
-      if ((card(id).level ?? 1) >= 3 && ++outs >= OUTS_CAP) break;
+    if (rootSeat === null || side === rootSeat) {
+      for (const id of p.deck) {
+        if ((card(id).level ?? 1) >= 3 && ++outs >= OUTS_CAP) break;
+      }
+    } else {
+      const shown = shownIds(p);
+      let high = 0;
+      for (const id of shown) if ((card(id).level ?? 1) >= 3) high++;
+      if (shown.length > 0) outs = Math.min(OUTS_CAP, Math.round((high / shown.length) * p.deck.length));
     }
     score += sign * w.deckLevel * outs;
 
@@ -1215,6 +1246,8 @@ export const defaultIntel: IntelConfig = {
 };
 
 let intel: IntelConfig = defaultIntel;
+/** The seat the current decision belongs to: the one list the bot may read in full. */
+let rootSeat: PlayerIdx | null = null;
 
 export function setIntel(next: IntelConfig | null): void {
   intel = next ?? defaultIntel;
@@ -1608,6 +1641,16 @@ function kitKey(state: GameState, me: PlayerIdx): string {
   return `${state.seed}/${me}/${state.players[me].leaderCardId}`;
 }
 
+/** The board a card is measured on, for tooling: see `cardDoes`. */
+export function cardProbe(state: GameState, side: PlayerIdx, id: string, inHand: boolean): GameState {
+  return probeBoard(state, side, [id], PROBE_DEBT, true, inHand, true);
+}
+
+/** What one use of a card does, for tests and tooling: see `cardDoes`. */
+export function cardEffects(state: GameState, side: PlayerIdx, id: string, w: BotWeights = defaultWeights): CardDoes {
+  return cardDoes(state, side, card(id), w);
+}
+
 /** What one card does on its own, for tests and tooling: see `reachOf`. */
 export function cardReach(state: GameState, side: PlayerIdx, id: string, w: BotWeights = defaultWeights): number {
   return reachOf(state, side, card(id), w);
@@ -1628,6 +1671,174 @@ let reachSeed = Number.NaN;
  * measured against the base evaluator instead.
  */
 let probing = false;
+
+// --- what one use of a card does -----------------------------------------------
+
+/**
+ * What one use of a card does, measured on a probe board rather than read off
+ * its text: the debt it clears for its side, the HP it puts back on its
+ * leader, and the damage it deals to the enemy leader past a wall. The
+ * evaluator prices debt against the relief a list can still produce, a
+ * leader's HP against the heals it holds and the burn the other side has
+ * shown, so a deck built around relief carries its debt more lightly and a
+ * leader facing burn keeps more in hand. Measured once a game per card, on a
+ * hurt leader with twenty debt and the side's own mana.
+ */
+interface CardDoes {
+  relief: number;
+  heal: number;
+  burst: number;
+}
+
+const NOTHING_DONE: CardDoes = { relief: 0, heal: 0, burst: 0 };
+const doesCache: Map<string, CardDoes>[] = [new Map(), new Map(), new Map(), new Map()];
+let doesSeed = Number.NaN;
+const PROBE_DEBT = 20;
+const PROBE_LOVE = 3;
+/** Share of a relief or heal in hand the evaluator trusts to land in time. */
+const RELIEF_TRUST = 0.5;
+const HEAL_TRUST = 0.5;
+/** Share of what is still in the deck that counts against what is in hand. */
+const DECK_SHARE = 0.25;
+/** Share of the enemy's measured reach the leader's cliff moves up by. */
+const BURST_TRUST = 0.5;
+const DANGER_CAP = 8;
+
+function cardDoes(state: GameState, side: PlayerIdx, def: CardDef, w: BotWeights): CardDoes {
+  if (!limits.scan || probing || def.type === 'trap') return NOTHING_DONE;
+  if (doesSeed !== state.seed) {
+    for (const m of doesCache) m.clear();
+    doesSeed = state.seed;
+  }
+  const cache = doesCache[side];
+  const hit = cache.get(def.id);
+  if (hit) return hit;
+  cache.set(def.id, NOTHING_DONE);
+  const prices = new Map(shopPrices);
+  const deals = new Map(shopDeals);
+  const outer = probing;
+  probing = true;
+  let done = NOTHING_DONE;
+  try {
+    // The board can do things on its own: a leader's Store, a flip. Only what
+    // the card adds counts, so an empty probe is the baseline.
+    const empty = cache.get(EMPTY_PROBE) ?? measureProbe(probeBoard(state, side, [], PROBE_DEBT, true, false, true), side, w);
+    cache.set(EMPTY_PROBE, empty);
+    // A summon is measured from the hand, for its battlecry, and from a slot,
+    // for its Powers and its Store.
+    const with_: CardDoes = { relief: 0, heal: 0, burst: 0 };
+    for (const inHand of def.type === 'summon' ? [true, false] : [true]) {
+      const m = measureProbe(probeBoard(state, side, [def.id], PROBE_DEBT, true, inHand, true), side, w);
+      with_.relief = Math.max(with_.relief, m.relief);
+      with_.heal = Math.max(with_.heal, m.heal);
+      with_.burst = Math.max(with_.burst, m.burst);
+    }
+    done = {
+      relief: Math.max(0, with_.relief - empty.relief),
+      heal: Math.max(0, with_.heal - empty.heal),
+      burst: Math.max(0, with_.burst - empty.burst),
+    };
+  } finally {
+    probing = outer;
+    shopPrices.clear();
+    for (const [k, v] of prices) shopPrices.set(k, v);
+    shopDeals.clear();
+    for (const [k, v] of deals) shopDeals.set(k, v);
+  }
+  cache.set(def.id, done);
+  return done;
+}
+
+const EMPTY_PROBE = '';
+
+/** The most one action on a probe board does for each measure, its picks answered. */
+function measureProbe(probe: GameState, side: PlayerIdx, w: BotWeights): CardDoes {
+  const foes = livingOpponents(probe, side);
+  const debt = probe.players[side].debtCount;
+  const hp = leaderHpOf(probe, side);
+  let theirs = 0;
+  for (const f of foes) theirs += leaderHpOf(probe, f);
+  const done: CardDoes = { relief: 0, heal: 0, burst: 0 };
+  for (const action of candidateActions(probe, side, w)) {
+    const res = applyAction(probe, side, action);
+    if (!res.ok) continue;
+    const after = answerPicks(settle(res.state, w), w);
+    done.relief = Math.max(done.relief, debt - after.players[side].debtCount);
+    done.heal = Math.max(done.heal, leaderHpOf(after, side) - hp);
+    let left = 0;
+    for (const f of foes) left += leaderHpOf(after, f);
+    done.burst = Math.max(done.burst, theirs - left);
+  }
+  return done;
+}
+
+/** Cards a seat has shown: everything of theirs in a public zone. */
+function shownIds(p: PlayerState): string[] {
+  const ids: string[] = [...p.discard, ...p.debt];
+  for (const sup of p.supporters) ids.push(sup.cardId);
+  if (p.stage) ids.push(p.stage);
+  for (const s of p.slots) if (s) ids.push(s.cardId);
+  if (p.leader) ids.push(p.leader.cardId);
+  return ids;
+}
+
+/**
+ * What a side's hand and list can still do about a thing, as the evaluator
+ * may count it: the hand in full, and the deck at a share, read as the list
+ * when it is the bot's own and as the density of what they have shown when it
+ * is not. A bot reads its own list and nobody else's.
+ */
+function stillCan(state: GameState, side: PlayerIdx, w: BotWeights, pick: (d: CardDoes) => number): number {
+  const p = state.players[side];
+  let total = 0;
+  for (const id of p.hand) total += pick(cardDoes(state, side, card(id), w));
+  const own = rootSeat === null || side === rootSeat;
+  if (own) {
+    let deck = 0;
+    for (const id of p.deck) deck += pick(cardDoes(state, side, card(id), w));
+    total += DECK_SHARE * deck;
+  } else {
+    const shown = shownIds(p);
+    let sum = 0;
+    for (const id of shown) sum += pick(cardDoes(state, side, card(id), w));
+    if (shown.length > 0) total += DECK_SHARE * (sum / shown.length) * p.deck.length;
+  }
+  return total;
+}
+
+/** Debt the side can still clear, no more than it carries. */
+function reliefOf(state: GameState, side: PlayerIdx, w: BotWeights): number {
+  return Math.min(state.players[side].debtCount, stillCan(state, side, w, (d) => d.relief));
+}
+
+/** HP the side can still put back on its leader. */
+function healOf(state: GameState, side: PlayerIdx, w: BotWeights): number {
+  return stillCan(state, side, w, (d) => d.heal);
+}
+
+/**
+ * The enemy's reach past the board at a side's leader: the burn they have
+ * shown, per card, over the cards they hold, or the rate they have dealt to
+ * that leader so far, whichever is larger. A leader that has lost most of a
+ * large base is facing something, whether or not it has been seen yet.
+ */
+function dangerOf(state: GameState, side: PlayerIdx, w: BotWeights): number {
+  let expected = 0;
+  for (const foe of livingOpponents(state, side)) {
+    const q = state.players[foe];
+    const shown = shownIds(q);
+    let sum = 0;
+    for (const id of shown) sum += cardDoes(state, foe, card(id), w).burst;
+    if (shown.length > 0) expected = Math.max(expected, (sum / shown.length) * q.hand.length);
+  }
+  const p = state.players[side];
+  let rate = 0;
+  if (p.leader) {
+    const base = (card(p.leader.cardId).hp ?? 0) * 2 + 2;
+    rate = Math.max(0, base - remainingHp(p.leader)) / Math.max(1, p.turnsTaken);
+  }
+  return Math.min(DANGER_CAP, Math.max(expected, rate));
+}
 
 /**
  * What a card does on its own: the share of the opponent's nearer clock it
@@ -1676,7 +1887,15 @@ function probedReach(state: GameState, side: PlayerIdx, def: CardDef, w: BotWeig
  * leader at the HP the engine gives it and every opponent behind a wall, so
  * the same card measures the same whenever it is probed and in both engines.
  */
-function probeBoard(state: GameState, me: PlayerIdx, kit: string[], debt = 0): GameState {
+function probeBoard(
+  state: GameState,
+  me: PlayerIdx,
+  kit: string[],
+  debt = 0,
+  hurt = false,
+  inHand = false,
+  plain = false,
+): GameState {
   const s = structuredClone(state);
   const p = s.players[me];
   s.active = me;
@@ -1692,10 +1911,13 @@ function probeBoard(state: GameState, me: PlayerIdx, kit: string[], debt = 0): G
   p.supportersLeft = 1;
   p.slots = [null, null, null];
   p.hand = [];
+  // A card to stand in for HP cards and the debt pile: whatever is at the
+  // bottom of the list, or the kit, or a card no turn can play. The deck can
+  // be empty deep in a search and the kit is empty for the baseline probe.
+  const filler = p.deck[p.deck.length - 1] ?? kit[0] ?? blankCard()?.id ?? p.leaderCardId;
   p.debtCount = debt;
-  p.debt = Array.from({ length: debt }, () => p.deck[p.deck.length - 1] ?? kit[0]);
+  p.debt = Array.from({ length: debt }, () => filler);
   p.deckOuts = 0;
-  const filler = p.deck[p.deck.length - 1] ?? kit[0];
   // The rest of the list stays out of the measure. A single that dug a second
   // piece out of the deck read as that piece's reach, and the set's baseline
   // then counted the piece twice and refused the kit. The deck keeps its
@@ -1716,6 +1938,7 @@ function probeBoard(state: GameState, me: PlayerIdx, kit: string[], debt = 0): G
     effectDamageMod: 0,
     powerUses: {},
     enteredTurn: 0,
+    storeStock: 1,
   });
   // Every leader stands in fresh at the HP the engine gives it. Every opponent
   // gets a wall in front of the leader and nothing else: without one, any
@@ -1723,22 +1946,35 @@ function probeBoard(state: GameState, me: PlayerIdx, kit: string[], debt = 0): G
   // piles rather than the lines that carry damage past a blocker.
   for (const side of [me, ...livingOpponents(s, me)]) {
     const q = s.players[side];
-    q.leader = bodyOf(q.leaderCardId, side, (card(q.leaderCardId).hp ?? 0) * 2 + 2, true);
+    const full = (card(q.leaderCardId).hp ?? 0) * 2 + 2;
+    // A hurt leader, so a heal has something to put back, and a plain one when
+    // asked, so a leader's own Powers do not stand in the measure of a card.
+    const face = plain && side === me ? (wallCard()?.id ?? q.leaderCardId) : q.leaderCardId;
+    q.leader = bodyOf(face, side, full, true);
+    // Damage is a flipped HP card, so a hurt leader keeps every card and has
+    // half of them face up: that is what a heal turns back over.
+    if (hurt && side === me) for (let i = 0; i < Math.floor(full / 2); i++) q.leader.hp[i].flipped = true;
     q.leaderPlayed = true;
     q.supporters = [];
     q.stage = null;
-    q.love = 0;
+    // A little Love for the side being probed: what Candy does with it is part
+    // of what its cards do, and a card measured with none reads as nothing.
+    q.love = side === me ? PROBE_LOVE : 0;
     if (side === me) continue;
     q.slots = [null, null, null];
     q.debtCount = 0;
     q.debt = [];
+    // Their hand and list are hidden, and a probe that read either would
+    // measure a card differently for what they happen to hold.
+    q.hand = q.hand.map(() => blank);
+    q.deck = q.deck.map(() => blank);
     const wall = wallCard();
     if (wall) q.slots[0] = bodyOf(wall.id, side, wall.hp ?? 1, false);
   }
   let slot = 0;
   for (const id of kit) {
     const def = card(id);
-    if (def.type === 'summon' && slot < p.slots.length) {
+    if (!inHand && def.type === 'summon' && slot < p.slots.length) {
       p.slots[slot++] = {
         uid: `k${s.nextUid++}`,
         cardId: id,
@@ -1752,6 +1988,7 @@ function probeBoard(state: GameState, me: PlayerIdx, kit: string[], debt = 0): G
         effectDamageMod: 0,
         powerUses: {},
         enteredTurn: 0,
+        storeStock: 1,
       };
     } else {
       p.hand.push(id);
@@ -2233,6 +2470,8 @@ function nextTurn(state: GameState, me: PlayerIdx, w: BotWeights): GameState | n
       // held trap or spell it has never been shown.
       s = replyOf(s, seat, w);
       if (isOver(s)) return s;
+      s = answerMine(s, me, w);
+      if (isOver(s)) return s;
       if (s.active === seat && s.phase === 'main' && !s.pending) {
         const ended = applyAction(s, seat, { type: 'END_TURN' });
         if (!ended.ok) return null;
@@ -2267,17 +2506,45 @@ function replyOf(state: GameState, foe: PlayerIdx, w: BotWeights): GameState {
   const built = burn(state, foe, limits.maxBurnSteps, w, limits.maxSetupSteps, true);
   if (built.state.winner === foe) return built.state;
 
+  // The rest of their turn is the bot's own beam on a small profile, one ply
+  // deep: no reply of its own and no threat measure, so it cannot recurse. A
+  // greedy loop used to play their turn one action at a time and never saw
+  // what its own action set up: a supporter that paid for the spell after it,
+  // a body traded off to clear the way. The beam is about as many applies as
+  // that loop was.
+  const standing = evaluate(state, foe, w);
+  const outer = limits;
+  limits = { ...outer, ...replySearch };
+  let leaves: Leaf[];
+  try {
+    leaves = searchTurn(state, foe, w, readTable(state, foe));
+  } finally {
+    limits = outer;
+  }
+  const best = leaves[0];
+  return best && best.score > standing + 1e-6 ? best.state : state;
+}
+
+/** The beam the opponent's reply gets: the same search, kept to the size of the loop it replaced. */
+const replySearch = { beamWidth: 8, maxTurnDepth: 6, searchBudget: 600 } as const;
+
+/**
+ * Answer what their line left waiting on me before their turn can end: a body
+ * of mine they killed waits on its replacement, and a choice they handed me
+ * waits on its pick. Greedy, one ply, so a trade is priced rather than thrown
+ * away with the whole reply.
+ */
+function answerMine(state: GameState, me: PlayerIdx, w: BotWeights): GameState {
   let s = state;
-  for (let step = 0; step < limits.maxReplySteps; step++) {
-    if (!turnGoesOn(s, foe)) break;
-    const standingStill = evaluate(s, foe, w);
+  for (let i = 0; i < 6; i++) {
+    if (isOver(s) || s.active === me || currentActor(s) !== me) break;
     let pick: GameState | null = null;
-    let best = standingStill;
-    for (const action of candidateActions(s, foe, w)) {
-      const res = applyAction(s, foe, action);
+    let best = Number.NEGATIVE_INFINITY;
+    for (const action of [passAction(s), ...candidateActions(s, me, w)]) {
+      const res = applyAction(s, me, action);
       if (!res.ok) continue;
       const after = settle(res.state, w);
-      const score = evaluate(after, foe, w);
+      const score = evaluate(after, me, w);
       if (score > best + 1e-6) {
         best = score;
         pick = after;
@@ -2452,6 +2719,9 @@ export function clearPlan(): void {
   kitCache.clear();
   intelCache.clear();
   reachCache.clear();
+  for (const m of doesCache) m.clear();
+  rootSeat = null;
+  reachCache.clear();
   reachSeed = Number.NaN;
 }
 
@@ -2511,6 +2781,7 @@ export function chooseAction(
   // evaluator prices hands by level and decks by their outs, and before this the
   // reply model alone was redacted, so the root's own scores leaked the truth.
   peek(state, me);
+  rootSeat = me;
   state = redactTable(state, me);
 
   // Once a game: what the bot's own list can assemble, so the evaluator can
@@ -2579,20 +2850,34 @@ export function chooseAction(
   // the others have to clear, so holding a combo and spending it are compared
   // the same way.
   const stand: Leaf = { state, line: [], risk: 0, score: evaluate(state, me, w) };
-  const ranked: Leaf[] = [stand];
+  let ranked: Leaf[] = [stand];
   const seen = new Set<string>([key]);
+  const screening = network !== null && networkMode === 'screen' && networkWeight > 0 && state.players.length === 2;
+  const gather = screening ? SCREEN_LEAVES : limits.threatLeaves;
   for (const leaf of searchTurn(state, me, w, reads)) {
     if (leaf.score >= WIN) {
       const opener = begin(state, me, key, leaf.line);
       if (opener) return opener;
     }
-    if (ranked.length > limits.threatLeaves) break;
+    if (ranked.length > gather) break;
     const leafKey = digestOf(leaf.state);
     if (seen.has(leafKey)) continue;
     seen.add(leafKey);
     ranked.push(leaf);
   }
   ranked.sort((a, b) => b.score - a.score);
+
+  // A screen picks which of the gathered leaves are worth an outlook: the
+  // beam's score on the tanh scale the trainer used, plus the network's
+  // prediction of the outlook, and only the top few get the real one.
+  if (screening && network && ranked.length > limits.threatLeaves + 1) {
+    const net = network;
+    const guess = ranked.map(
+      (leaf) => Math.tanh(leaf.score / NET_SCALE) + networkWeight * valueOf(net, encode(leaf.state, me, net)),
+    );
+    const order = ranked.map((_, i) => i).sort((a, b) => guess[b] - guess[a] || a - b);
+    ranked = order.slice(0, limits.threatLeaves + 1).map((i) => ranked[i]);
+  }
 
   // Playing the reply out costs a turn of simulation apiece, which is why only
   // the handful of leaves gathered above get one.
@@ -2607,7 +2892,7 @@ export function chooseAction(
   // trainer used, plus the network's guess at how wrong that score is.
   // Duels only: the network was trained at a two-seat table and the encoder
   // reads one opponent.
-  if (network && networkWeight > 0 && state.players.length === 2) {
+  if (network && networkWeight > 0 && networkMode === 'correct' && state.players.length === 2) {
     const net = network;
     const scores = ranked.map(
       (leaf, i) =>

@@ -32,6 +32,21 @@ public sealed class AgentConfig
     /// <summary>Keep one planned turn in this many for training.</summary>
     public int RecordEvery { get; set; } = 1;
 
+    /// <summary>
+    /// Use the network as a screen over the gathered leaves rather than as a
+    /// correction to the final ranking: the beam's score plus NetWeight times
+    /// the network's prediction of the outlook decides which leaves get one.
+    /// </summary>
+    public bool Screen { get; set; }
+
+    /// <summary>
+    /// Record every leaf that got an outlook, labelled with that outlook on the
+    /// tanh scale, rather than the pick labelled with the result. A network
+    /// trained on this predicts what the search would say of a position, which
+    /// is what a screen needs and what a residual corrector never was.
+    /// </summary>
+    public bool LabelSearch { get; set; }
+
     public AgentConfig Clone() => (AgentConfig)MemberwiseClone();
 }
 
@@ -136,12 +151,60 @@ public sealed class NeuralPlayer : Bot.ILeafChooser
         }
     }
 
+    int[] Bot.ILeafChooser.Screen(IReadOnlyList<GameState> leaves, IReadOnlyList<double> scores, int me, int keep)
+    {
+        int n = leaves.Count;
+        keep = Math.Min(keep, n);
+        var order = new int[n];
+        for (int i = 0; i < n; i++) order[i] = i;
+        if (!_cfg.Screen || _cfg.NetWeight <= 0 || n <= keep) return order[..keep];
+        var enc = _enc ?? throw new InvalidOperationException("no game started");
+        int size = n * _net.SampleSize;
+        if (_batch.Length < size) _batch = new float[size];
+        if (_values.Length < n) _values = new float[n];
+        for (int i = 0; i < n; i++) enc.Encode(leaves[i], _batch, i * _net.SampleSize);
+        _net.ValueInto(_batch, n, _values);
+        var guess = new double[n];
+        for (int i = 0; i < n; i++) guess[i] = Math.Tanh(scores[i] / _cfg.HeuristicScale) + _cfg.NetWeight * _values[i];
+        // Stable: a tie keeps the beam's order.
+        Array.Sort(order, (a, c) => guess[c].CompareTo(guess[a]) != 0 ? guess[c].CompareTo(guess[a]) : a.CompareTo(c));
+        return order[..keep];
+    }
+
     int Bot.ILeafChooser.Pick(IReadOnlyList<GameState> leaves, IReadOnlyList<double> scores, int me)
     {
         var enc = _enc ?? throw new InvalidOperationException("no game started");
         int n = leaves.Count;
         if (n == 0) return 0;
         _decisions++;
+        if (_cfg.LabelSearch)
+        {
+            // Every leaf that got an outlook is a labelled position: the label
+            // is the outlook itself, filed as the bootstrapped half so a trainer
+            // at bootstrap 1 reads it whole, against a prior of zero.
+            int best = 0;
+            for (int i = 1; i < n; i++) if (scores[i] > scores[best] + 1e-6) best = i;
+            if (_store is not null && _cfg.RecordEvery > 0 && _decisions % _cfg.RecordEvery == 0)
+            {
+                int size = n * _net.SampleSize;
+                if (_batch.Length < size) _batch = new float[size];
+                int enemy = GameState.Other(_me);
+                for (int i = 0; i < n; i++)
+                {
+                    enc.Encode(leaves[i], _batch, i * _net.SampleSize);
+                    Aux.HandTarget(leaves[i], enemy, _handTarget);
+                    float trap = Aux.TrapTarget(leaves[i], enemy);
+                    int row = _store.Count;
+                    if (_firstRow < 0) _firstRow = row;
+                    _store.Add(_batch.AsSpan(i * _net.SampleSize, _net.SampleSize), 0f, 0f, _handTarget, trap);
+                    _store.SetBoot(row, (float)Math.Tanh(scores[i] / _cfg.HeuristicScale));
+                    _rows++;
+                }
+                _lastRow = -1;
+                _lastBooted = true;
+            }
+            return best;
+        }
 
         Span<double> prior = stackalloc double[n];
         Span<double> score = stackalloc double[n];

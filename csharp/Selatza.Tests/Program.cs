@@ -1360,13 +1360,15 @@ public static class Program
 
             Ctx(s, 0).LockReplace(1);
             Harness.Eq(0, s.ReplaceQueue.Count, "the offer is withdrawn");
-            Harness.Eq(1, s.Players[1].ReplaceLocked, "and the slot is locked");
+            Harness.Eq(0, s.Players[1].ReplaceLockedBy, "and the slot is locked by seat 0");
 
             int idx = s.Players[1].Hand.IndexOf(D2);
             Harness.False(Engine.Apply(s, 1, GameAction.ReplaceSummon(idx)).Ok, "refused while locked");
 
+            // A seal holds for its locker's turn and no longer, so a party seat
+            // between the two in turn order refills as normal.
             s = PassTo(s, 1);
-            Harness.Eq(0, s.Players[1].ReplaceLocked, "clears at the start of their turn");
+            Harness.Eq(-1, s.Players[1].ReplaceLockedBy, "clears when the locker's turn ends");
         });
 
         Harness.Test("feeding the row takes the top card and saps it", () =>
