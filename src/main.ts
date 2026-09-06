@@ -142,6 +142,7 @@ import {
   COLOR_NAME,
   COPY_LIMIT,
   RARITY_NAME,
+  SHIELD_CAP,
   type CardDef,
   type ManaKind,
   type PlayerIdx,
@@ -5053,6 +5054,7 @@ function renderRules(): string {
     ${sec('11-2-3.', 'A flip cost may ask for mana, for cards milled off your deck, or for cards discarded from your hand.')}
     ${sec('11-3.', 'A Power Shield stops one instance of damage whatever its size. It is spent doing so.')}
     ${sec('11-3-1.', 'Shields are checked once as the damage starts. A shield granted part-way through by a flip does not stop the rest of that damage. It stops the next instance instead.')}
+    ${sec('11-3-2.', `A character holds at most ${SHIELD_CAP} Power Shields. Anything granting one past that grants nothing.`)}
     ${sec('11-4.', 'HP cards go to their controller&rsquo;s discard pile when the character leaves play.')}
 
     <h2>12. Wounds</h2>

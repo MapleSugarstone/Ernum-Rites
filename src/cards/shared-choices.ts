@@ -1,5 +1,5 @@
 import { registerChoiceResolver } from '../engine/choices';
-import { chooseBoard, discardSpellRefs, drawCards } from '../engine/effects';
+import { chooseBoard, discardSpellRefs, drawCards, raiseShields } from '../engine/effects';
 import {
   addWounds,
   assignHp,
@@ -88,8 +88,9 @@ registerChoiceResolver('shield-1', (state, choice, pick) => {
   if (!pick.ref) return;
   const s = findSummon(state, pick.ref);
   if (!s) return;
-  s.shields += 1;
-  log(state, choice.player, `${card(s.cardId).name} raises 1 Power Shield.`);
+  if (raiseShields(s, 1) > 0) {
+    log(state, choice.player, `${card(s.cardId).name} raises 1 Power Shield.`);
+  }
 });
 
 registerChoiceResolver('sap-supporter', (state, choice, pick) => {

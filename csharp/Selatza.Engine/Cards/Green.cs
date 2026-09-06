@@ -60,6 +60,7 @@ public static class Green
         K.Summon(1, "automoton", "Automoton", F(Faction.Machine), str: 1, hp: 4,
             text: "",
             flipText: "The attached character gains a Power Shield.",
+            flipCost: new FlipCost { Mana = new Cost(R: 1) },
             flip: c => c.Shield(c.HolderRef, 1)),
 
         K.Summon(1, "chipcrunch", "Chipcrunch", F(Faction.Machine, Faction.Beast),
@@ -104,6 +105,7 @@ public static class Green
                 OnDefend = c => { if (c.Self is { } me) c.Reinforce(me, 1); },
             },
             flipText: "The attached character gains a Power Shield.",
+            flipCost: new FlipCost { Mana = new Cost(R: 1) },
             flip: c => c.Shield(c.HolderRef, 1)),
 
         K.Summon(1, "lapgrob", "Lapgrob", F(Faction.Machine), str: 1, hp: 2,
@@ -113,6 +115,7 @@ public static class Green
                 OnEnter = c => { if (c.Self is { } me) c.Shield(me, 1); },
             },
             flipText: "The attached character gains a Power Shield.",
+            flipCost: new FlipCost { Mana = new Cost(R: 1) },
             flip: c => c.Shield(c.HolderRef, 1)),
 
         K.Summon(1, "lightbolbe", "Lightbolbe", F(Faction.Machine), str: 1, hp: 2,
@@ -130,6 +133,7 @@ public static class Green
                 },
             }),
             flipText: "The attached character gains a Power Shield.",
+            flipCost: new FlipCost { Mana = new Cost(R: 1) },
             flip: c => c.Shield(c.HolderRef, 1)),
 
         K.Summon(1, "mouse", "Mouse", F(Faction.Machine, Faction.Beast),
@@ -144,6 +148,7 @@ public static class Green
                 Effect = c => c.Damage(c.Target(0), 1),
             }),
             flipText: "The attached character gains a Power Shield.",
+            flipCost: new FlipCost { Mana = new Cost(R: 1) },
             flip: c => c.Shield(c.HolderRef, 1)),
 
         K.Summon(1, "pointer", "Pointer", F(Faction.Machine, Faction.Hedron), str: 1, hp: 2,
@@ -328,6 +333,7 @@ public static class Green
                 OnDefend = c => { if (c.State.BattleAttacker is { } a) c.Damage(a, 2); },
             },
             flipText: "The attached character gains a Power Shield.",
+            flipCost: new FlipCost { Mana = new Cost(R: 1) },
             flip: c => c.Shield(c.HolderRef, 1)),
 
         K.Summon(3, "chemicalmen", "Chemical Men", F(Faction.Machine, Faction.Mortal),
@@ -545,9 +551,10 @@ public static class Green
                     && a.Def.HasFaction(Faction.Machine) ? 1 : 0,
             },
             flipText: "The attached character gains a Power Shield.",
+            flipCost: new FlipCost { Mana = new Cost(R: 1) },
             flip: c => c.Shield(c.HolderRef, 1)),
 
-        K.Stage("thedodecahedron", "Field: The Dodecahedron", new Cost(R: 1, C: 1),
+        K.Stage("thedodecahedron", "Field: The Dodecahedron", new Cost(R: 2),
             "Your Machines gain a Power Shield when played. When you play a Hedron, "
                 + "shuffle a card from your discard pile into your deck.",
             new StageHooks

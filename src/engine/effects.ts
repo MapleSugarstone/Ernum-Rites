@@ -18,7 +18,7 @@ import {
   type PlayerState,
   type SummonInstance,
 } from './state';
-import { MANA_KINDS } from './types';
+import { MANA_KINDS, SHIELD_CAP } from './types';
 import type {
   CardDef,
   EffectCtx,
@@ -578,6 +578,14 @@ export function takeWounds(): WoundTick[] {
   const out = woundLog ?? [];
   woundLog = null;
   return out;
+}
+
+/** Raises Power Shields on a body, stopping at the cap. Returns how many landed. */
+export function raiseShields(summon: SummonInstance, count: number): number {
+  const room = Math.max(0, SHIELD_CAP - summon.shields);
+  const landed = Math.min(count, room);
+  summon.shields += landed;
+  return landed;
 }
 
 export function addWounds(
@@ -1184,10 +1192,9 @@ function baseHelpers(state: GameState, me: PlayerIdx, sourceId: string, casts: b
     shield: (target: TargetRef, count: number) => {
       if (blocked(target)) return;
       const s = findSummon(state, target);
-      if (s && count > 0) {
-        s.shields += count;
-        log(state, me, `${card(s.cardId).name} raises ${count} Power Shield(s).`);
-      }
+      if (!s || count <= 0) return;
+      const landed = raiseShields(s, count);
+      if (landed > 0) log(state, me, `${card(s.cardId).name} raises ${landed} Power Shield(s).`);
     },
     returnToHand: (asId?: string) => markReturnToHand(asId),
     freeDeath: () => markFreeDeath(),

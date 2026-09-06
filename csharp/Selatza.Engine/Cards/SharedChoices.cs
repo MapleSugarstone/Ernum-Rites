@@ -81,9 +81,11 @@ public static class SharedChoices
         Choices.Register("shield-1", (state, choice, pick) =>
         {
             if (pick.Ref is not { } r || state.Find(r) is not { } s) return;
-            s.Shields += 1;
-            Effects.Log(state, choice.Player,
-                $"{Registry.Card(s.CardId).Name} raises 1 Power Shield.");
+            if (Effects.RaiseShields(s, 1) > 0)
+            {
+                Effects.Log(state, choice.Player,
+                    $"{Registry.Card(s.CardId).Name} raises 1 Power Shield.");
+            }
         });
 
         Choices.Register("sap-supporter", (state, choice, pick) =>

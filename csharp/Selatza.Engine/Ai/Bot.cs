@@ -1340,6 +1340,7 @@ public static class Bot
             var identity = Identity.DeckIdentity(id);
             var built = new LeaderPool();
             int cheapestPips = int.MaxValue;
+            int cheapestColored = int.MaxValue;
 
             foreach (var def in Registry.All)
             {
@@ -1350,10 +1351,20 @@ public static class Bot
                 built.Total += weight;
                 if (def.Type != CardType.Trap) continue;
                 built.Traps += weight;
+                // Cheapest by total pips, then by coloured pips, then by id: a
+                // colourless pip is payable off any supporter where a coloured
+                // one is not, and the last key keeps the two engines picking the
+                // same card from a tie.
                 int pips = def.Cost.Total;
-                if (pips < cheapestPips)
+                int colored = pips - def.Cost.C;
+                bool better = built.CheapestTrap is null
+                    || pips < cheapestPips
+                    || (pips == cheapestPips && (colored < cheapestColored
+                        || (colored == cheapestColored && string.CompareOrdinal(def.Id, built.CheapestTrap.Id) < 0)));
+                if (better)
                 {
                     cheapestPips = pips;
+                    cheapestColored = colored;
                     built.CheapestTrap = def;
                 }
             }

@@ -1452,6 +1452,7 @@ function poolBehind(leaderCardId: string): LeaderPool {
   let traps = 0;
   let cheapestTrap: CardDef | null = null;
   let cheapestPips = Number.POSITIVE_INFINITY;
+  let cheapestColored = Number.POSITIVE_INFINITY;
 
   for (const def of allCards()) {
     if (def.uncollectible) continue;
@@ -1461,9 +1462,18 @@ function poolBehind(leaderCardId: string): LeaderPool {
     total += weight;
     if (def.type !== 'trap') continue;
     traps += weight;
+    // Cheapest by total pips, then by coloured pips, then by id: a colourless
+    // pip is payable off any supporter where a coloured one is not, and the
+    // last key keeps the two engines picking the same card from a tie.
     const pips = costColored(def.cost) + (def.cost?.C ?? 0);
-    if (pips < cheapestPips) {
+    const colored = pips - (def.cost?.C ?? 0);
+    const better =
+      !cheapestTrap ||
+      pips < cheapestPips ||
+      (pips === cheapestPips && (colored < cheapestColored || (colored === cheapestColored && def.id < cheapestTrap.id)));
+    if (better) {
       cheapestPips = pips;
+      cheapestColored = colored;
       cheapestTrap = def;
     }
   }

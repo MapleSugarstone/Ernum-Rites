@@ -516,6 +516,9 @@ export const RARITY_FIXED: Record<string, Rarity> = {
  */
 export const COPY_LIMIT = 2;
 
+/** Power Shields one character may hold at once. Grants past it are dropped. */
+export const SHIELD_CAP = 2;
+
 /**
  * What a printed cost can ask for: the six colours, then colourless. Colourless
  * is deliberately not a colour, so it never widens a card's identity.

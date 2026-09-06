@@ -338,6 +338,9 @@ public static class Rules
 
     /// <summary>A hand holds no more than this. Cards past it go to the discard pile.</summary>
     public const int HandLimit = 10;
+
+    /// <summary>Power Shields one character may hold at once. Grants past it are dropped.</summary>
+    public const int ShieldCap = 2;
 }
 
 public sealed class GameState

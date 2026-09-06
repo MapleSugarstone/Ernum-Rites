@@ -58,6 +58,7 @@ export const greenCards: CardDef[] = [
     str: 1,
     hp: 4,
     flipText: 'The attached character gains a Power Shield.',
+    flipCost: { mana: { R: 1 } },
     flip: (c) => c.shield(holderRef(c), 1),
   }),
   k.summon(1, 'chipcrunch', 'Chipcrunch', ['Machine', 'Beast'], {
@@ -110,6 +111,7 @@ export const greenCards: CardDef[] = [
       },
     },
     flipText: 'The attached character gains a Power Shield.',
+    flipCost: { mana: { R: 1 } },
     flip: (c) => c.shield(holderRef(c), 1),
   }),
   k.summon(1, 'lapgrob', 'Lapgrob', ['Machine'], {
@@ -123,6 +125,7 @@ export const greenCards: CardDef[] = [
       },
     },
     flipText: 'The attached character gains a Power Shield.',
+    flipCost: { mana: { R: 1 } },
     flip: (c) => c.shield(holderRef(c), 1),
   }),
   k.summon(1, 'lightbolbe', 'Lightbolbe', ['Machine'], {
@@ -143,6 +146,7 @@ export const greenCards: CardDef[] = [
       },
     ],
     flipText: 'The attached character gains a Power Shield.',
+    flipCost: { mana: { R: 1 } },
     flip: (c) => c.shield(holderRef(c), 1),
   }),
   k.summon(1, 'mouse', 'Mouse', ['Machine', 'Beast'], {
@@ -158,6 +162,7 @@ export const greenCards: CardDef[] = [
       },
     ],
     flipText: 'The attached character gains a Power Shield.',
+    flipCost: { mana: { R: 1 } },
     flip: (c) => c.shield(holderRef(c), 1),
   }),
   k.summon(1, 'pointer', 'Pointer', ['Machine', 'Hedron'], {
@@ -361,6 +366,7 @@ export const greenCards: CardDef[] = [
       },
     },
     flipText: 'The attached character gains a Power Shield.',
+    flipCost: { mana: { R: 1 } },
     flip: (c) => c.shield(holderRef(c), 1),
   }),
 
@@ -597,9 +603,10 @@ export const greenCards: CardDef[] = [
         summon.owner === controller && def.factions?.includes('Machine') ? 1 : 0,
     },
     flipText: 'The attached character gains a Power Shield.',
+    flipCost: { mana: { R: 1 } },
     flip: (c) => c.shield(holderRef(c), 1),
   }),
-  k.stage('thedodecahedron', 'Field: The Dodecahedron', { R: 1, C: 1 }, {
+  k.stage('thedodecahedron', 'Field: The Dodecahedron', { R: 2 }, {
     text:
       'Your Machines gain a Power Shield when played. When you play a Hedron, ' +
       'shuffle a card from your discard pile into your deck.',

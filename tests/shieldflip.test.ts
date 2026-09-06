@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import '../src/cards';
 import { applyAction, createGame } from '../src/engine/engine';
-import { dealDamage } from '../src/engine/effects';
+import { dealDamage, makeEffectCtx } from '../src/engine/effects';
 import { remainingHp, type GameState } from '../src/engine/state';
 import { card } from '../src/engine/registry';
+import { SHIELD_CAP } from '../src/engine/types';
 
 /**
- * A shield handed out by a flip in the middle of a blow: does it stop the rest
- * of that same blow, or only the next one?
+ * Every flip that grants a Power Shield now carries a mana cost, so none of
+ * them resolves inside the blow that revealed it. What the blow does instead is
+ * stop dead and park what is left of itself on the offer.
  */
 function game(): GameState {
   const deck = Array.from({ length: 60 }, () => 'r1-automoton');
@@ -21,41 +23,57 @@ function game(): GameState {
   );
 }
 
-describe('a Power Shield granted mid-flip', () => {
-  it('does not stop the rest of the instance that revealed it', () => {
+describe('a costed shield flip', () => {
+  it('parks the rest of the blow until the offer is answered', () => {
     const s = game();
     const leader = s.players[0].leader!;
     // Five face-down cards, every one of them a shield flip.
     leader.hp.length = 0;
     for (let i = 0; i < 5; i++) leader.hp.push({ cardId: 'r1-automoton', flipped: false });
     leader.shields = 0;
-    expect(card('r1-automoton').flipText, 'the HP card grants a shield').toContain('Power Shield');
+    const shieldCard = card('r1-automoton');
+    expect(shieldCard.flipText, 'the HP card grants a shield').toContain('Power Shield');
+    expect(shieldCard.flipCost, 'and asks to be paid for').toBeTruthy();
 
     dealDamage(s, { kind: 'leader', player: 0 }, 5);
 
-    // Every card turned over, so the shield the first one handed out did not
-    // stop the four that followed.
-    expect(remainingHp(leader), 'all five flipped').toBe(0);
-    expect(leader.shields, 'shields banked for the next blow').toBeGreaterThan(0);
-    // Flipping the last card is itself the death: it does not wait for a
-    // further point of damage to land on an empty body.
-    expect(s.winner, 'the leader died on the fifth flip').toBe(1);
+    // One card turned over and the blow stopped on the question it raised.
+    expect(remainingHp(leader), 'four cards still face down').toBe(4);
+    expect(leader.shields, 'nothing is granted until the offer is paid').toBe(0);
+    expect(s.flipQueue).toHaveLength(1);
+    expect(s.flipQueue[0].pending, 'the rest of the blow waits on the answer').toBe(4);
+    expect(s.winner, 'the leader is still standing').toBeNull();
   });
+});
 
-  it('does stop the next instance', () => {
+describe('a Power Shield', () => {
+  it('stops the next instance whatever its size, and is spent doing it', () => {
     const s = game();
     const leader = s.players[0].leader!;
     leader.hp.length = 0;
     for (let i = 0; i < 5; i++) leader.hp.push({ cardId: 'r1-automoton', flipped: false });
-    leader.shields = 0;
-
-    dealDamage(s, { kind: 'leader', player: 0 }, 1);
-    const afterFirst = remainingHp(leader);
-    expect(leader.shields, 'one flip banked one shield').toBe(1);
+    leader.shields = 1;
+    const before = remainingHp(leader);
 
     dealDamage(s, { kind: 'leader', player: 0 }, 3);
-    expect(remainingHp(leader), 'the shield ate the whole second blow').toBe(afterFirst);
+
+    expect(remainingHp(leader), 'the shield ate the whole blow').toBe(before);
     expect(leader.shields, 'and was spent doing it').toBe(0);
+  });
+
+  it('stacks no higher than the cap', () => {
+    const s = game();
+    const leader = s.players[0].leader!;
+    const ref = { kind: 'leader', player: 0 } as const;
+    const ctx = makeEffectCtx(s, 0, leader, card(leader.cardId), [], null);
+    leader.shields = 0;
+
+    for (let i = 0; i < SHIELD_CAP + 2; i++) ctx.shield(ref, 1);
+    expect(leader.shields, 'one at a time').toBe(SHIELD_CAP);
+
+    leader.shields = 0;
+    ctx.shield(ref, SHIELD_CAP + 3);
+    expect(leader.shields, 'all at once').toBe(SHIELD_CAP);
   });
 });
 

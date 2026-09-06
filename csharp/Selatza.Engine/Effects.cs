@@ -74,8 +74,11 @@ public sealed class EffectCtx
         if (Blocked(t)) return;
         var s = State.Find(t);
         if (s is null || count <= 0) return;
-        s.Shields += count;
-        Effects.Log(State, Me, $"{Registry.Card(s.CardId).Name} raises {count} Power Shield(s).");
+        int landed = Effects.RaiseShields(s, count);
+        if (landed > 0)
+        {
+            Effects.Log(State, Me, $"{Registry.Card(s.CardId).Name} raises {landed} Power Shield(s).");
+        }
     }
 
     /// <summary>
@@ -457,7 +460,7 @@ public sealed class FlipCtx
     {
         if (Blocked(t)) return;
         var s = State.Find(t);
-        if (s is not null && count > 0) s.Shields += count;
+        if (s is not null && count > 0) Effects.RaiseShields(s, count);
     }
     /// <summary>
     /// Sends the summon this card was protecting to the debt zone. Free when the
@@ -1154,6 +1157,15 @@ public static class Effects
         if (foe.Leader is not null && Registry.Card(foe.Leader.CardId).WoundAmplify) return 1;
         if (foe.Stage is not null && Registry.Card(foe.Stage).WoundAmplify) return 1;
         return 2;
+    }
+
+    /// <summary>Raises Power Shields on a body, stopping at the cap. Returns how many landed.</summary>
+    public static int RaiseShields(SummonInstance summon, int count)
+    {
+        int room = Math.Max(0, Rules.ShieldCap - summon.Shields);
+        int landed = Math.Min(count, room);
+        summon.Shields += landed;
+        return landed;
     }
 
     public static void AddWounds(GameState state, TargetRef r, int amount, int depth = 0)
