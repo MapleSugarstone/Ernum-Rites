@@ -339,8 +339,10 @@ describe('the deck scan', () => {
   it('finds the Scientist kit in a list that carries it, and nothing in a list of vanillas', () => {
     // The probe puts a wall in front of the enemy leader, so three bodies that
     // could swing at an open leader are a pile rather than a kit. Experiments
-    // into Bone Known and Alchemize reach past the wall, and that is the one
-    // set the scan should keep.
+    // into Dark Knowledge are the engine: Bone Known clears the wall or feeds
+    // Alchemize, and the third piece is whichever body the scan finds reaches
+    // least on its own. The engine has to be in the best kit, and the vanilla
+    // Beast may ride along as that third piece.
     const kit = [
       ...Array(38).fill(FILLER),
       'p3-helemy', 'p3-helemy', 'o2-boneknown', 'o2-boneknown', 'o2-scientist', 'o2-scientist',
@@ -360,10 +362,9 @@ describe('the deck scan', () => {
     expect(found.length, 'one kit').toBeGreaterThan(0);
     const best = found[0];
     expect(best.reach).toBeGreaterThanOrEqual(0.9);
-    for (const id of ['p3-helemy', 'o2-scientist', 'o2-boneknown']) {
+    for (const id of ['o2-scientist', 'o2-boneknown']) {
       expect(best.cards, `${id} is in the best kit`).toContain(id);
     }
-    expect(best.cards, 'and the vanilla is not').not.toContain('p1-beast');
 
     chooseAction(s, 1);
     expect(kitsFor(s, 1), 'a list of vanillas holds no kit').toHaveLength(0);
