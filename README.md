@@ -26,8 +26,9 @@ bot never making an illegal move, and the two engines agreeing. Tests of what
 the bot chooses on a given board live apart and run when the bot changes, since
 a card change can move them without anything being wrong: `npm run
 test:behaviour` for the TypeScript ones and `dotnet run --project
-csharp\Selatza.Tests -- --behaviour` for the C# ones. A card change is tested
-while it is made, and that test is not kept.
+csharp\Selatza.Tests -- --behaviour` for the C# ones. A card change gets no
+test. A new mechanic gets one, written as the mechanic is added, and it tests
+the mechanic rather than any card's numbers.
 
 ## How a turn goes
 

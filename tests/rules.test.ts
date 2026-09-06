@@ -644,6 +644,7 @@ describe('a spell that annihilates itself', () => {
     s.players[0].supporters.push(
       { cardId: 'k1-SugarBug', sapped: false },
       { cardId: 'k1-SugarBug', sapped: false },
+      { cardId: 'k1-SugarBug', sapped: false },
     );
     const idx = give(s, 0, 'kx-cuffed');
     s = must(s, 0, {
