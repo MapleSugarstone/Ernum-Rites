@@ -483,3 +483,41 @@ export function battleAttacker(state: GameState): TargetRef | null {
 export function battleDefender(state: GameState): TargetRef | null {
   return state.battle ? state.battle.defender : null;
 }
+
+/**
+ * A copy of a state the engine may write to without touching the original.
+ * structuredClone did this and was two thirds of a bot decision: it walks
+ * every card id of every deck and every log line. Card ids and log entries are
+ * never changed in place, so their arrays are copied shallow, and only what an
+ * action can write to is copied deep. The small rest of the state, the pending
+ * window and the queues, still goes through structuredClone.
+ */
+export function cloneState(state: GameState): GameState {
+  const { players, log, fx, ...rest } = state;
+  const small = structuredClone(rest);
+  return { ...small, players: players.map(clonePlayer), log: log.slice(), fx: fx.slice() };
+}
+
+function clonePlayer(p: PlayerState): PlayerState {
+  return {
+    ...p,
+    deck: p.deck.slice(),
+    hand: p.hand.slice(),
+    debt: p.debt.slice(),
+    discard: p.discard.slice(),
+    supporters: p.supporters.map((s) => ({ ...s })),
+    slots: p.slots.map((s) => (s ? cloneSummon(s) : null)),
+    leader: p.leader ? cloneSummon(p.leader) : null,
+    mana: { ...p.mana },
+  };
+}
+
+function cloneSummon(s: SummonInstance): SummonInstance {
+  return {
+    ...s,
+    hp: s.hp.map((h) => ({ ...h })),
+    strengthMods: s.strengthMods.map((m) => ({ ...m })),
+    powerUses: { ...s.powerUses },
+    ...(s.override ? { override: { ...s.override } } : {}),
+  };
+}

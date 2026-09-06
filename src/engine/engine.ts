@@ -58,6 +58,7 @@ import {
   type PendingStore,
   type PlayerState,
   type SummonInstance,
+  cloneState,
 } from './state';
 import {
   COLORS,
@@ -1061,7 +1062,7 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
         // scratch run of the resolution says whether the card will want one.
         if (mode?.kind === 'track') {
           clearOppWanted();
-          const scratch = structuredClone(state);
+          const scratch = cloneState(state);
           scratch.pending = null;
           resolveSpell(scratch, actor, id, action.targets, mode);
           if (oppWasWanted()) {
@@ -1597,7 +1598,7 @@ export function applyAction(
   action: Action,
 ): ApplyResult {
   if (isOver(state)) return { ok: false, error: 'The game is already over.' };
-  const next = structuredClone(state);
+  const next = cloneState(state);
   // What the last action announced belongs to the last action.
   next.fx = [];
   setActingPlayer(actor);

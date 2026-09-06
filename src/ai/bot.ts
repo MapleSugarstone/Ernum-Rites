@@ -37,6 +37,7 @@ import {
   type PlayerState,
   type PendingStore,
   type SummonInstance,
+  cloneState,
 } from '../engine/state';
 import {
   COPY_LIMIT,
@@ -473,7 +474,7 @@ function saleWorth(state: GameState, win: PendingStore, w: BotWeights): SaleWort
   const paid = pricePaid(state, win, min);
   if (!Number.isFinite(debtCost(state, win.buyer, paid, w))) return dead;
 
-  const sim = structuredClone(state);
+  const sim = cloneState(state);
   sim.pending = { ...win, player: win.buyer, price: min, pass: 1, final: true };
   const res = applyAction(sim, win.buyer, { type: 'STORE_ACCEPT' });
   if (!res.ok) return dead;
@@ -1424,7 +1425,7 @@ function believedHand(state: GameState, me: PlayerIdx, foe: PlayerIdx): string[]
 /** The position with every other seat's hidden hand replaced by the one the bot believes in. */
 function redactTable(state: GameState, me: PlayerIdx): GameState {
   if (intel.perfect) return state;
-  const s = structuredClone(state);
+  const s = cloneState(state);
   for (let seat = 0; seat < state.players.length; seat++) {
     if (seat !== me) s.players[seat].hand = believedHand(state, me, seat as PlayerIdx);
   }
@@ -1896,7 +1897,7 @@ function probeBoard(
   inHand = false,
   plain = false,
 ): GameState {
-  const s = structuredClone(state);
+  const s = cloneState(state);
   const p = s.players[me];
   s.active = me;
   s.phase = 'main';

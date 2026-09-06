@@ -19,6 +19,12 @@ public enum LeaderPool
     /// </summary>
     NonFlip,
     /// <summary>
+    /// The meta check's seat: Contested2 with the battlecry cut reaching level
+    /// 2, so no neutral, no Redirection but the one built for the seat, and no
+    /// low body whose whole text is its entrance.
+    /// </summary>
+    Meta,
+    /// <summary>
     /// Everything except the archetypes built to sit at the bottom.
     ///
     /// A Redirection leader pulls every attack onto itself and a Neutral one
@@ -94,6 +100,7 @@ public static class DeckGen
                 // card may use either.
                 LeaderPool.Contested => !d.Neutral && d.Color != Color.N && !d.Redirect,
                 LeaderPool.Contested2 => Contested2(d),
+                LeaderPool.Meta => Contested2(d) && !(d.Level == 2 && (d.Text ?? "").StartsWith("Battlecry:") && !HasOngoingText(d.Text ?? "")),
                 LeaderPool.ContestedSturdy =>
                     !d.Neutral && d.Color != Color.N && !d.Redirect && d.Level >= 2,
                 _ => true,

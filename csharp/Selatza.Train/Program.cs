@@ -214,6 +214,7 @@ public static class Program
                 "nonflip" => LeaderPool.NonFlip,
                 "contested" => LeaderPool.Contested,
                 "contested2" => LeaderPool.Contested2,
+                "meta" => LeaderPool.Meta,
                 "contested-sturdy" => LeaderPool.ContestedSturdy,
                 _ => LeaderPool.All,
             },

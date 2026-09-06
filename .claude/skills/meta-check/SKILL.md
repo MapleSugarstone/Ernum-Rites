@@ -503,3 +503,31 @@ because a board wipe that never fires at six is dominant at four.
 - `npm run mirror -- --games 3000 --every-deck` — the same deck both seats, which
   isolates turn order; also counts leader swings and first-turn attacks
 - `npm run fuzz -- --games 400 --random` — invariant checks over random decks
+
+## The search bot changed the cost (2026-09-06)
+
+The timings above are from the greedy bot. The shipped bot now runs a beam
+with an opponent reply that is itself a beam, a deck scan, and a probe per
+card per game, and a tournament game between two of them takes about ten
+seconds of one core. Measured: 186 agents in the `meta` leader pool play 558
+games a round at `--games 6`, and one round did not finish in ten minutes on
+fifteen threads. A 200-round seed is more than a day on a 16-core machine.
+`--light-bot` is about a tenth of that and is not the shipped bot: it skips
+the probes, the scan and the wide reply, so it does not measure the new terms.
+
+Run it in the cloud. `scripts/gcp-meta.sh <tag> [seeds] [rounds] [machine]
+[zone]` publishes the trainer self-contained for Linux, creates a spot VM,
+uploads it, runs every seed at once with the cores split between them, builds
+the databases, pulls `runs/<tag>*` back and deletes the VM. On a
+c3-standard-176 two seeds at 200 rounds are about four hours and under
+twenty dollars at spot prices. It needs the Cloud SDK signed in once:
+`gcloud auth login` and `gcloud config set project <id>`. A spot VM can be
+pre-empted; rerunning with the same tag resumes from the snapshot.
+
+The `meta` leader pool is Contested2 with the battlecry cut reaching level 2:
+no neutral leaders, no Redirection leader but Humanity's Defender, and no
+level 1 or 2 body whose whole text is its entrance. 186 leaders against 271
+for `--every-leader` on the full pool. The mixed leaders are all in it, and
+every deck draws from its leader's whole legal pool, mixed cards included.
+Fewer seeds than six is the trade for the slower bot; two is enough for
+colours and card lift, and a single-leader claim still needs six.

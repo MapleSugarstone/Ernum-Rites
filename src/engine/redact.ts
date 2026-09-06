@@ -1,4 +1,4 @@
-import type { GameState } from './state';
+import { cloneState, type GameState } from './state';
 import type { CardDef, PlayerIdx } from './types';
 
 /**
@@ -26,7 +26,7 @@ export const hiddenCard: CardDef = {
  * deck without either side looking at it.
  */
 export function redactFor(state: GameState, viewer: PlayerIdx): GameState {
-  const out: GameState = structuredClone(state);
+  const out: GameState = cloneState(state);
   // The engine is deterministic from the seed, and every deck is a public list.
   // Handing a client the seed would let it replay both shuffles and read every
   // face-down card and future draw, which is exactly what the rest of this
@@ -69,7 +69,7 @@ export function redactFor(state: GameState, viewer: PlayerIdx): GameState {
  * different set of secrets.
  */
 export function publicView(state: GameState): GameState {
-  const out: GameState = structuredClone(state);
+  const out: GameState = cloneState(state);
   // Blanked here too so the digest both sides compare does not depend on the
   // seed. redactFor already keeps it off the wire; zeroing it in the projection
   // as well is what makes the authority and a client agree once it is gone.
