@@ -9,7 +9,7 @@ public static class Yellow
 
     public static CardDef[] Build() => new[]
     {
-        K.Starter("thejudge", "The Judge", F(Faction.Star, Faction.Mortal), str: 5, hp: 3,
+        K.Starter("thejudge", "The Judge", F(Faction.Star, Faction.Mortal), str: 6, hp: 4,
             text: "",
             powers: Powers(
                 new Power
@@ -84,8 +84,9 @@ public static class Yellow
             flip: c => c.BuffStrength(c.HolderRef, 1, ModDuration.Permanent)),
 
         K.Summon(1, "livingsong", "Living Song", F(Faction.Living), str: 1,
-            hp: 2,
-            text: "Battlecry: You may play another supporter this turn.",
+            hp: 1,
+            entersSapped: true,
+            text: "Arrives sapped. Battlecry: You may play another supporter this turn.",
             triggers: new Triggers
             {
                 OnEnter = c =>
@@ -144,7 +145,7 @@ public static class Yellow
                 Effect = c => c.BuffStrength(c.Target(0), 2, ModDuration.Turn),
             })),
 
-        K.Summon(2, "admirer", "The Admirer", F(Faction.Mortal), str: 2,
+        K.Summon(2, "admirer", "The Admirer", F(Faction.Mortal), str: 3,
             hp: 3,
             text: "Battlecry: An ally gains +2 attack.",
             targets: Specs(Ally()),
@@ -165,7 +166,7 @@ public static class Yellow
                 Effect = c => c.Unflip(c.Target(0), 2),
             })),
 
-        K.Summon(2, "bubblemancer", "Bubblemancer", F(Faction.Mortal, Faction.Scholar), str: 3,
+        K.Summon(2, "bubblemancer", "Bubblemancer", F(Faction.Mortal, Faction.Scholar), str: 4,
             hp: 3,
             powers: Powers(new Power
             {
@@ -186,7 +187,7 @@ public static class Yellow
                 },
             })),
 
-        K.Summon(2, "bugleist", "Bugleist", F(Faction.Mortal), str: 1, hp: 4,
+        K.Summon(2, "bugleist", "Bugleist", F(Faction.Mortal), str: 2, hp: 4,
             text: "At the start of your turn, each of your characters gains +1 attack until end of turn and heals 1.",
             triggers: new Triggers
             {
@@ -200,7 +201,7 @@ public static class Yellow
                 },
             }),
 
-        K.Summon(2, "druid", "Druid", F(Faction.Mortal, Faction.Scholar), str: 3,
+        K.Summon(2, "druid", "Druid", F(Faction.Mortal, Faction.Scholar), str: 4,
             hp: 3,
             powers: Powers(new Power
             {
@@ -229,7 +230,7 @@ public static class Yellow
                 Effect = c => c.Destroy(c.Target(0)),
             })),
 
-        K.Summon(2, "happybard", "Happy Bard", F(Faction.Mortal), str: 3,
+        K.Summon(2, "happybard", "Happy Bard", F(Faction.Mortal), str: 4,
             hp: 3,
             powers: Powers(new Power
             {
@@ -273,7 +274,7 @@ public static class Yellow
             flipCost: new FlipCost { Mana = new Cost(S: 1) },
             flip: c => c.Reinforce(c.HolderRef, 2)),
 
-        K.Summon(2, "livingruin", "Living Ruin", F(Faction.Living), str: 2, hp: 5,
+        K.Summon(2, "livingruin", "Living Ruin", F(Faction.Living), str: 3, hp: 5,
             text: "Battlecry: Deal 1 to every summon. "
                 + "When an ally summon dies, gain 1 Solar mana this turn.",
             triggers: new Triggers
@@ -328,7 +329,7 @@ public static class Yellow
             flipCost: new FlipCost { Mana = new Cost(S: 1) },
             flip: c => c.Unflip(c.HolderRef, 2)),
 
-        K.Summon(2, "ragick", "Ragick", F(Faction.Spirit, Faction.Living), str: 3, hp: 4,
+        K.Summon(2, "ragick", "Ragick", F(Faction.Spirit, Faction.Living), str: 4, hp: 4,
             text: "Strike: Scry 5 for a spell.",
             triggers: new Triggers
             {
@@ -341,7 +342,7 @@ public static class Yellow
                 foreach (var t in c.SummonsOf(c.Me, true)) c.BuffStrength(t, 2, ModDuration.Permanent);
             }),
 
-        K.Summon(2, "sunwalker", "Sunwalker", F(Faction.Star, Faction.Mortal), str: 2, hp: 3,
+        K.Summon(2, "sunwalker", "Sunwalker", F(Faction.Star, Faction.Mortal), str: 3, hp: 3,
             text: "Your Stars have +1 attack.",
             triggers: new Triggers
             {
@@ -349,7 +350,7 @@ public static class Yellow
                     && a.Def.HasFaction(Faction.Star) ? 1 : 0,
             }),
 
-        K.Summon(3, "aetusvox", "Aetus Vox", F(Faction.Star, Faction.Scholar), str: 3, hp: 4,
+        K.Summon(3, "aetusvox", "Aetus Vox", F(Faction.Star, Faction.Scholar), str: 4, hp: 5,
             text: "At the start of your turn, draw a card.",
             triggers: new Triggers
             {
@@ -364,7 +365,7 @@ public static class Yellow
                 Effect = c => c.State.Players[c.Me].SupportersLeft += 1,
             })),
 
-        K.Summon(3, "brokensun", "Broken Sun", F(Faction.Star), str: 3, hp: 3,
+        K.Summon(3, "brokensun", "Broken Sun", F(Faction.Star), str: 4, hp: 4,
             text: "Battlecry: Ally summons gain +1 attack.",
             triggers: new Triggers
             {
@@ -388,7 +389,7 @@ public static class Yellow
                 Effect = c => c.Damage(c.Target(0), 2),
             })),
 
-        K.Summon(3, "divergentlight", "Divergent Light", F(Faction.Star), str: 2, hp: 5,
+        K.Summon(3, "divergentlight", "Divergent Light", F(Faction.Star), str: 3, hp: 5,
             text: "When you cast a spell, gains +1 attack.",
             triggers: new Triggers
             {
@@ -430,7 +431,7 @@ public static class Yellow
                 },
             })),
 
-        K.Summon(3, "maestro", "The Maestro", F(Faction.Mortal, Faction.Scholar), str: 3, hp: 5,
+        K.Summon(3, "maestro", "The Maestro", F(Faction.Mortal, Faction.Scholar), str: 4, hp: 5,
             text: "At the start of your turn, an ally gains 1 HP.",
             triggers: new Triggers
             {
@@ -475,7 +476,7 @@ public static class Yellow
                 },
             }),
 
-        K.Summon(3, "smallgod", "The Small God", F(Faction.Star, Faction.Spirit), str: 3, hp: 5,
+        K.Summon(3, "smallgod", "The Small God", F(Faction.Star, Faction.Spirit), str: 4, hp: 5,
             text: "At the start of your turn, an ally gains 2 HP.",
             triggers: new Triggers
             {
@@ -495,7 +496,7 @@ public static class Yellow
                 },
             })),
 
-        K.Summon(3, "solusdetteri", "Solus Detteri", F(Faction.Star, Faction.Scholar), str: 3, hp: 5,
+        K.Summon(3, "solusdetteri", "Solus Detteri", F(Faction.Star, Faction.Scholar), str: 4, hp: 5,
             powers: Powers(new Power
             {
                 Name = "Ascend",
@@ -526,7 +527,7 @@ public static class Yellow
                 foreach (var r in c.SummonsOf(c.Me, true)) c.Unflip(r, 4);
             }, spellTrap: true, letSpellResolve: true),
 
-        K.Spell("celebrate", "Celebrate", new Cost(),
+        K.Spell("celebrate", "Celebrate", new Cost(S: 1),
             "The top card of your deck becomes a sapped supporter, then draw a card. Heal your leader for 2.",
             null, c =>
             {

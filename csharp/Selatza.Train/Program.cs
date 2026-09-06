@@ -173,6 +173,7 @@ public static class Program
             Agents = Int(args, "--agents", 16),
             Brains = noNet ? 0 : Int(args, "--brains", 4),
             Anchors = Int(args, "--anchors", 2),
+            AnchorsPrevious = Flag(args, "--anchors-previous"),
             Rounds = Int(args, "--rounds", 60),
             GamesPerPairing = Int(args, "--games", 2),
             EvolveEvery = Int(args, "--evolve-every", 10),

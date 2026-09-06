@@ -38,7 +38,7 @@ public static class Pink
     public static CardDef[] Build() => new[]
     {
         // --- leader ----------------------------------------------------------
-        K.Starter("PinkDeus", "Pink Deus", F(Faction.Saccharine, Faction.Ernum), str: 3, hp: 4,
+        K.Starter("PinkDeus", "Pink Deus", F(Faction.Saccharine, Faction.Ernum), str: 4, hp: 5,
             powers: Powers(new Power
             {
                 Name = "Charm",
@@ -122,7 +122,7 @@ public static class Pink
             { OnEnter = c => { if (c.Self is { } me) c.Sap(me); } }),
 
         // --- level 2 ---------------------------------------------------------
-        K.Summon(2, "Briber", "Briber", F(Faction.Mortal), str: 3, hp: 4,
+        K.Summon(2, "Briber", "Briber", F(Faction.Mortal), str: 4, hp: 4,
             text: "Battlecry: Each enemy heals 1 debt. Gain 1 Love for each.",
             triggers: new Triggers
             {
@@ -134,7 +134,7 @@ public static class Pink
             }),
 
         K.Summon(2, "CandyGuardSeller", "CandyGuard Seller",
-            F(Faction.Saccharine, Faction.Mortal, Faction.Scholar), str: 3, hp: 3,
+            F(Faction.Saccharine, Faction.Mortal, Faction.Scholar), str: 4, hp: 3,
             text: "Store: Put a CandyGuard into an empty slot.",
             store: new StoreDef
             {
@@ -151,7 +151,7 @@ public static class Pink
             }),
 
         K.Summon(2, "CandyWizard", "Candy Wizard",
-            F(Faction.Mortal, Faction.Scholar), str: 3, hp: 3,
+            F(Faction.Mortal, Faction.Scholar), str: 4, hp: 3,
             powers: Powers(new Power
             {
                 Name = "Sprinkle",
@@ -173,7 +173,7 @@ public static class Pink
             })),
 
         K.Summon(2, "GunForHire", "Gun for Hire",
-            F(Faction.Saccharine, Faction.Mortal, Faction.Beast), str: 4, hp: 3,
+            F(Faction.Saccharine, Faction.Mortal, Faction.Beast), str: 5, hp: 3,
             text: "Store: Annihilate a non-Candy summon. Store costs +2.",
             // Candy here is the colour, not the tribe: the gun refuses pink cards.
             store: new StoreDef
@@ -206,7 +206,7 @@ public static class Pink
             }),
 
         K.Summon(2, "HotcakeSeller", "Hotcake Seller", F(Faction.Saccharine, Faction.Mortal),
-            str: 3, hp: 3,
+            str: 4, hp: 3,
             text: "Store: One of your summons gains +2 attack.",
             store: new StoreDef
             {
@@ -222,7 +222,7 @@ public static class Pink
                 },
             }),
 
-        K.Summon(2, "Nurse", "Nurse", F(Faction.Mortal), str: 3, hp: 4,
+        K.Summon(2, "Nurse", "Nurse", F(Faction.Mortal), str: 4, hp: 4,
             text: "Store: Heal a character for 3.",
             store: new StoreDef
             {
@@ -232,7 +232,7 @@ public static class Pink
             }),
 
         K.Summon(2, "PrivateDetective", "Private Detective",
-            F(Faction.Mortal, Faction.Scholar), str: 3, hp: 3,
+            F(Faction.Mortal, Faction.Scholar), str: 4, hp: 3,
             entersSapped: true,
             text: "Arrives sapped. Battlecry: Scry 4 for any card. Store: Scry 4 for any card.",
             triggers: new Triggers { OnEnter = c => c.Dig(c.Me, 4, _ => true) },
@@ -242,7 +242,7 @@ public static class Pink
                 Effect = c => c.Dig(c.Me, 4, _ => true),
             }),
 
-        K.Summon(2, "Recycler", "Recycler", F(Faction.Living), str: 3, hp: 4,
+        K.Summon(2, "Recycler", "Recycler", F(Faction.Living), str: 4, hp: 4,
             text: "Store: Shuffle 5 random cards from your discard pile into your deck.",
             store: new StoreDef
             {
@@ -251,7 +251,7 @@ public static class Pink
             }),
 
         K.Summon(2, "SnoozingGiant", "Snoozing Giant", F(Faction.Saccharine, Faction.Beast),
-            str: 4, hp: 5,
+            str: 5, hp: 5,
             text: "Arrives sapped.",
             triggers: new Triggers
             { OnEnter = c => { if (c.Self is { } me) c.Sap(me); } },
@@ -259,7 +259,7 @@ public static class Pink
             flip: c => c.GainLove(c.Me, 1)),
 
         K.Summon(2, "spellsell", "Spell Seller",
-            F(Faction.Mortal, Faction.Scholar), str: 3, hp: 3,
+            F(Faction.Mortal, Faction.Scholar), str: 4, hp: 3,
             text: "Store: Scry 6 for a spell.",
             store: new StoreDef
             {
@@ -269,14 +269,14 @@ public static class Pink
 
         // --- level 3 ---------------------------------------------------------
         K.Summon(3, "AncientSugar", "Ancient Sugar", F(Faction.Saccharine, Faction.Spirit),
-            str: 4, hp: 5,
+            str: 5, hp: 5,
             text: "At the start of your turn, gain 1 Love.",
             triggers: new Triggers { OnAwake = c => c.GainLove(c.Me, 1) },
             powers: Powers(new Power
             {
                 // No sap: the pump exists to swing with, and a sapped body cannot.
                 Name = "Sugar Rush",
-                Cost = new Cost(K: 1),
+                Cost = new Cost(K: 2),
                 Text = "Love: Gains +1 attack until end of turn.",
                 NeedsLove = true,
                 Effect = c =>
@@ -287,7 +287,7 @@ public static class Pink
             })),
 
         K.Summon(3, "DebtReliever", "Debt Reliever", F(Faction.Saccharine, Faction.Grinkle),
-            str: 4, hp: 5,
+            str: 5, hp: 5,
             text: "Store: Heal 3 debt.",
             store: new StoreDef
             {
@@ -296,7 +296,7 @@ public static class Pink
             }),
 
         K.Summon(3, "DerangedCandyfolk", "Deranged Candyfolk",
-            F(Faction.Saccharine, Faction.Mortal), str: 5, hp: 6,
+            F(Faction.Saccharine, Faction.Mortal), str: 6, hp: 6,
             text: "Battlecry: You take 2 debt.",
             triggers: new Triggers { OnEnter = c => c.AddDebt(c.Me, 2) },
             powers: Powers(new Power
@@ -313,7 +313,7 @@ public static class Pink
                 },
             })),
 
-        K.Summon(3, "Eidola", "Eidola", F(Faction.Saccharine, Faction.Spirit), str: 3, hp: 5,
+        K.Summon(3, "Eidola", "Eidola", F(Faction.Saccharine, Faction.Spirit), str: 4, hp: 5,
             powers: Powers(new Power
             {
                 Name = "Dream",
@@ -329,7 +329,7 @@ public static class Pink
             })),
 
         K.Summon(3, "Final Unicorn", "Final Unicorn",
-            F(Faction.Saccharine, Faction.Beast, Faction.Star), str: 4, hp: 6,
+            F(Faction.Saccharine, Faction.Beast, Faction.Star), str: 5, hp: 6,
             powers: Powers(new Power
             {
                 Name = "Final Blessing",
@@ -348,7 +348,7 @@ public static class Pink
             flip: c => c.ReturnThis()),
 
         K.Summon(3, "HyperCapitalist", "Hyper Capitalist",
-            F(Faction.Saccharine, Faction.Mortal), str: 4, hp: 5,
+            F(Faction.Saccharine, Faction.Mortal), str: 5, hp: 5,
             text: "When another player buys from one of your Stores, draw a card.",
             triggers: new Triggers { OnStoreSold = c => c.Draw(c.Me, 1) },
             powers: Powers(new Power
@@ -414,7 +414,7 @@ public static class Pink
             })),
 
         K.Summon(3, "SweetHarmony", "Sweet Harmony", F(Faction.Saccharine, Faction.Star),
-            str: 4, hp: 5,
+            str: 5, hp: 5,
             powers: Powers(new Power
             {
                 Name = "Harmonize",
@@ -430,7 +430,7 @@ public static class Pink
             })),
 
         // --- spells, field and traps ------------------------------------------
-        K.Spell("Candycane", "Candy Cane", new Cost(K: 1),
+        K.Spell("Candycane", "Candy Cane", new Cost(K: 2),
             "An ally character gains +2 attack until end of turn. Love: +1 attack.",
             targets: Specs(AllyOrLeader()),
             effect: c =>
@@ -452,7 +452,7 @@ public static class Pink
             flipCost: new FlipCost { Mana = new Cost(K: 1) },
             flip: c => c.ReturnThis()),
 
-        K.Stage("FieldClearanceSale", "Field: Clearance Sale", new Cost(K: 2, C: 1),
+        K.Stage("FieldClearanceSale", "Field: Clearance Sale", new Cost(K: 3),
             "Your Stores may be used twice per turn and cost 1 less. At the start of your turn, draw a card. When another player buys from one of your Stores, heal 1 debt.",
             hooks: new StageHooks
             {

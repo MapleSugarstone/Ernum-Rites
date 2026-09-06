@@ -969,7 +969,7 @@ public static class Mixed
             }),
 
         // --- Candy and Fish: the shop floor and the water ----------------------
-        Mb.Summon(2, "CandyCraver", "Candy Craver", F(Faction.Mortal), str: 2, hp: 3,
+        Mb.Summon(2, "CandyCraver", "Candy Craver", F(Faction.Mortal), str: 1, hp: 2,
             text: "Whenever you buy from a Store, draw a card.",
             triggers: new Triggers { OnStoreBought = c => c.Draw(c.Me, 1) },
             powers: Powers(new Power
@@ -986,7 +986,7 @@ public static class Mixed
             })),
 
         Mb.Summon(2, "CandyFish", "Candy Fish", F(Faction.Saccharine, Faction.Fish),
-            str: 2, hp: 4,
+            str: 1, hp: 3,
             powers: Powers(new Power
             {
                 Name = "Bubblegum Stream",
@@ -999,7 +999,7 @@ public static class Mixed
             flipText: "Gain 1 Love.",
             flip: c => c.GainLove(c.Me, 1)),
 
-        Bm.Summon(3, "loanshark", "Loanshark", F(Faction.Fish, Faction.Beast), str: 3, hp: 5,
+        Bm.Summon(3, "loanshark", "Loanshark", F(Faction.Fish, Faction.Beast), str: 2, hp: 4,
             debtAmplify: true,
             text: "Whenever a player takes debt, they take 1 more.",
             powers: Powers(new Power
@@ -1029,7 +1029,7 @@ public static class Mixed
 
         // --- Candy and Robot: the graduate scheme ------------------------------
         Mg.Summon(2, "CuriousPilgrim", "Curious Pilgrim", F(Faction.Mortal, Faction.Hedron),
-            str: 2, hp: 4,
+            str: 1, hp: 3,
             text: "Store: Scry 2 for any card.",
             store: new StoreDef
             {
@@ -1049,7 +1049,7 @@ public static class Mixed
                 },
             })),
 
-        Mg.Summon(2, "NewGrad", "New Grad", F(Faction.Mortal, Faction.Scholar), str: 2, hp: 3,
+        Mg.Summon(2, "NewGrad", "New Grad", F(Faction.Mortal, Faction.Scholar), str: 1, hp: 2,
             text: "Store: Draw the top card of another player's deck, rebuilt in Robot with its cost turned colorless.",
             store: new StoreDef
             {
@@ -1121,7 +1121,7 @@ public static class Mixed
 
         // --- Candy and Oil: the toll and the bones -----------------------------
         Mp.Summon(3, "LenAphelion", "Len-Aphelion", F(Faction.Spirit, Faction.Scholar),
-            str: 2, hp: 5,
+            str: 1, hp: 4,
             text: "Your Beasts have +1 attack. At the start of your turn, Scry 2 for any card.",
             triggers: new Triggers
             {
@@ -1149,7 +1149,7 @@ public static class Mixed
             })),
 
         Mp.Summon(2, "PairOfCritters", "Pair of Critters", F(Faction.Saccharine, Faction.Beast),
-            str: 2, hp: 3,
+            str: 1, hp: 2,
             text: "Battlecry: Gain 1 Love. Deathrattle: Gain 1 Love.",
             triggers: new Triggers
             {
@@ -1205,7 +1205,7 @@ public static class Mixed
 
         // --- Candy and Pepper: the stall that sells heat ------------------------
         Mr.Summon(2, "CandyAxeman", "Candy Axeman", F(Faction.Saccharine, Faction.Mortal),
-            str: 3, hp: 3,
+            str: 2, hp: 2,
             text: "Strike: Gain 1 Love.",
             triggers: new Triggers { OnAttack = c => c.GainLove(c.Me, 1) },
             powers: Powers(new Power
@@ -1218,7 +1218,7 @@ public static class Mixed
                 Effect = c => c.Damage(c.Target(0), 2),
             })),
 
-        Rm.Summon(3, "RedSweets", "Red Sweets", F(Faction.Mortal, Faction.Scholar), str: 3, hp: 4,
+        Rm.Summon(3, "RedSweets", "Red Sweets", F(Faction.Mortal, Faction.Scholar), str: 2, hp: 3,
             text: "Store: Take any card from your deck into your hand. Store costs +8. Leader: Store costs 5 less.",
             store: new StoreDef
             {
@@ -1267,7 +1267,7 @@ public static class Mixed
 
         // --- Candy and Solar: the lemonade stand --------------------------------
         My.Summon(2, "LittleGummyBear", "Little Gummy Bear",
-            F(Faction.Saccharine, Faction.Beast), str: 2, hp: 4,
+            F(Faction.Saccharine, Faction.Beast), str: 1, hp: 3,
             text: "Battlecry: Gain 1 Love.",
             triggers: new Triggers { OnEnter = c => c.GainLove(c.Me, 1) },
             powers: Powers(new Power
@@ -1282,7 +1282,7 @@ public static class Mixed
             flipText: "Gain 1 Love.",
             flip: c => c.GainLove(c.Me, 1)),
 
-        My.Summon(3, "PinkLemonader", "Pink Lemonader", F(Faction.Beast), str: 3, hp: 4,
+        My.Summon(3, "PinkLemonader", "Pink Lemonader", F(Faction.Beast), str: 2, hp: 3,
             text: "Store: Each of your summons heals 4.",
             store: new StoreDef
             {

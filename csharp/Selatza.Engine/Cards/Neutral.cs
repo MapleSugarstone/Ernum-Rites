@@ -43,15 +43,15 @@ public static class Neutral
             text: "Arrives sapped. Battlecry: Scry 2 for any card.",
             triggers: new Triggers { OnEnter = c => c.Dig(c.Me, 2, _ => true) }),
         N.Summon(2, "Deedsigner", "Deedsigner", F(Faction.Mortal), str: 2, hp: 2,
-            text: "Battlecry: Heal 1 debt.",
-            triggers: new Triggers { OnEnter = c => c.ClearDebt(c.Me, 1) }),
+            text: "Battlecry: Heal 2 debt.",
+            triggers: new Triggers { OnEnter = c => c.ClearDebt(c.Me, 2) }),
         N.Summon(2, "HonorableKnight", "Honorable Knight", F(Faction.Mortal),
             flipText: "Discard this card, then heal the attached character 1.",
             flip: c =>
             {
                 if (c.DiscardThis()) c.Unflip(c.HolderRef, 1);
             }, str: 3, hp: 3),
-        N.Summon(2, "LesserGrinkle", "Lesser Grinkle", F(Faction.Beast, Faction.Grinkle), str: 2, hp: 4),
+        N.Summon(2, "LesserGrinkle", "Lesser Grinkle", F(Faction.Beast, Faction.Grinkle), str: 3, hp: 4),
         N.Summon(2, "LowWizard", "Low Wizard", F(Faction.Mortal, Faction.Scholar), str: 3, hp: 3,
             flipText: "Deal 2 to the attacking summon.",
             flip: c =>
@@ -81,7 +81,7 @@ public static class Neutral
             text: "Arrives sapped. Battlecry: Draw a card.",
             triggers: new Triggers { OnEnter = c => c.Draw(c.Me, 1) }),
         N.Summon(2, "Smithee", "Smithee", F(Faction.Mortal), str: 2, hp: 3,
-            text: "Battlecry: Heal an ally for 2.",
+            text: "Battlecry: Heal an ally for 3.",
             targets: Specs(new TargetSpec
             {
                 Kind = TargetKind.Summon,
@@ -92,7 +92,7 @@ public static class Neutral
             }),
             triggers: new Triggers { OnEnter = c =>
             {
-                if (c.TargetOrNull(0) is { } t) c.Unflip(t, 2);
+                if (c.TargetOrNull(0) is { } t) c.Unflip(t, 3);
             } }),
         N.Summon(2, "Sorter", "Sorter", F(Faction.Mortal), str: 2, hp: 3,
             entersSapped: true,
@@ -111,7 +111,7 @@ public static class Neutral
         N.Summon(2, "UngratefulBeast", "Ungrateful Beast", F(Faction.Beast), str: 4, hp: 3,
             text: "Deathrattle: You take 1 debt.",
             triggers: new Triggers { OnDeath = c => c.AddDebt(c.Me, 1) }),
-        N.Summon(3, "AcolyteofGrinkle", "Acolyte of Grinkle", F(Faction.Grinkle, Faction.Scholar), str: 3, hp: 6),
+        N.Summon(3, "AcolyteofGrinkle", "Acolyte of Grinkle", F(Faction.Grinkle, Faction.Scholar), str: 4, hp: 6),
         N.Summon(3, "FlyingCastle", "Flying Castle", null, str: 2, hp: 5,
             redirect: true,
             text: "Redirection."),
@@ -148,7 +148,7 @@ public static class Neutral
                     if (c.Self is { } me) c.BuffStrength(me, 1, ModDuration.Permanent);
                 },
             }, str: 3, hp: 5),
-        N.Summon(3, "IneptRuler", "Inept Ruler", F(Faction.Mortal), str: 4, hp: 6,
+        N.Summon(3, "IneptRuler", "Inept Ruler", F(Faction.Mortal), str: 5, hp: 7,
             text: "At the start of your turn, you take 1 debt.",
             triggers: new Triggers { OnAwake = c => c.AddDebt(c.Me, 1) },
             powers: Powers(new Power
@@ -158,7 +158,7 @@ public static class Neutral
                 Text = "Shuffle 2 random cards from your discard pile into your deck.",
                 Effect = c => c.RecycleDiscard(c.Me, 2),
             })),
-        N.Summon(3, "Ivy", "Ivy", F(Faction.Living), str: 4, hp: 3,
+        N.Summon(3, "Ivy", "Ivy", F(Faction.Living), str: 5, hp: 4,
             text: "Choral: Your level 1 summons have +1 attack and gain 1 HP at the start of your turn.",
             triggers: new Triggers
             {
@@ -194,7 +194,7 @@ public static class Neutral
                     if (c.Targets.Length > 0) c.Reclaim(c.Target(0));
                 },
             })),
-        N.Summon(3, "PowerBird", "Power Bird", F(Faction.Beast, Faction.Star), str: 3, hp: 4,
+        N.Summon(3, "PowerBird", "Power Bird", F(Faction.Beast, Faction.Star), str: 4, hp: 5,
             flipText: "The attached character gains +1 attack.",
             flip: c => c.BuffStrength(c.HolderRef, 1, ModDuration.Permanent)),
         N.Summon(3, "Relica", "Relica", null, str: 2, hp: 4,

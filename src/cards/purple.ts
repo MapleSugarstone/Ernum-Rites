@@ -1,4 +1,5 @@
 import { card } from '../engine/registry';
+import { effectiveStrength } from '../engine/effects';
 import { graftedCopy, oilRaise, witheredCopy } from '../engine/generated';
 import {
   battleAttacker,
@@ -17,8 +18,8 @@ const k = colorKit('O', 'o', 'Purple', 'Purple/Spell');
 
 export const purpleCards: CardDef[] = [
   k.starter('spectralking', 'The Spectral King', ['Spirit', 'Mortal'], {
-    str: 2,
-    hp: 3,
+    str: 3,
+    hp: 4,
     powers: [
       {
         name: 'Siphon',
@@ -175,16 +176,23 @@ export const purpleCards: CardDef[] = [
   k.summon(2, 'boneknown', 'Bone Known', ['Spirit'], {
     str: 2,
     hp: 3,
-    text: 'Has +1 attack for every 2 debt you carry.',
-    triggers: {
-      strengthBonus: ({ state, controller, summon, source }) =>
-        source && summon.uid === source.uid
-          ? Math.floor(state.players[controller].debtCount / 2)
-          : 0,
-    },
+    powers: [
+      {
+        name: 'Dark Knowledge',
+        cost: { O: 1 },
+        text: 'Set attack to half your debt plus two.',
+        effect: (c) => {
+          const me = selfRef(c);
+          const s = me ? c.summonAt(me) : null;
+          if (!me || !s) return;
+          const goal = Math.floor(c.state.players[c.me].debtCount / 2) + 2;
+          c.buffStrength(me, goal - effectiveStrength(c.state, s), 'permanent');
+        },
+      },
+    ],
   }),
   k.summon(2, 'evilflower', 'Evil Flower', ['Living', 'Spirit'], {
-    str: 1,
+    str: 2,
     hp: 4,
     text: 'At the start of your turn, put a Wound on every enemy summon.',
     triggers: {
@@ -194,7 +202,7 @@ export const purpleCards: CardDef[] = [
     },
   }),
   k.summon(2, 'mooncat', 'Mooncat', ['Beast', 'Star'], {
-    str: 2,
+    str: 3,
     hp: 3,
     powers: [
       {
@@ -210,7 +218,7 @@ export const purpleCards: CardDef[] = [
     ],
   }),
   k.summon(2, 'necromancer', 'Necromancer', ['Mortal', 'Scholar'], {
-    str: 1,
+    str: 2,
     hp: 2,
     powers: [
       {
@@ -240,7 +248,7 @@ export const purpleCards: CardDef[] = [
     ],
   }),
   k.summon(2, 'parkranger', 'Park Ranger', ['Mortal'], {
-    str: 2,
+    str: 3,
     hp: 3,
     powers: [
       {
@@ -268,7 +276,7 @@ export const purpleCards: CardDef[] = [
   }),
   k.summon(2, 'scientist', 'Scientist', ['Mortal', 'Scholar'], {
     hp: 4,
-    str: 2,
+    str: 3,
     text: 'When an ally Scholar dies, draw a card.',
     triggers: {
       onOtherDeath: (c) => {
@@ -293,7 +301,7 @@ export const purpleCards: CardDef[] = [
     ],
   }),
   k.summon(2, 'slime', 'Slime', ['Living'], {
-    str: 3,
+    str: 4,
     hp: 4,
     text: 'Deathrattle: Put a Slime with 1 less HP into an empty slot.',
     triggers: {
@@ -311,7 +319,7 @@ export const purpleCards: CardDef[] = [
     },
   }),
   k.summon(2, 'stabber', 'Stabber', ['Mortal', 'Spirit'], {
-    str: 3,
+    str: 4,
     hp: 1,
     text:
       'Strike: The defender loses 1 attack until end of turn. ' +
@@ -344,7 +352,7 @@ export const purpleCards: CardDef[] = [
     flip: (c) => c.lockReplace(c.opp, 1),
   }),
   k.summon(2, 'thecount', 'The Count', ['Spirit', 'Mortal'], {
-    str: 1,
+    str: 2,
     hp: 3,
     text: 'Strike: Put 2 Wounds on the defender. Heals 2 whenever it kills an enemy summon.',
     triggers: {
@@ -366,7 +374,7 @@ export const purpleCards: CardDef[] = [
     flip: (c) => c.curse(c.opp, 'o-curse-dread', 3),
   }),
   k.summon(2, 'witch', 'Witch', ['Mortal', 'Scholar'], {
-    str: 2,
+    str: 3,
     hp: 3,
     powers: [
       {
@@ -389,8 +397,8 @@ export const purpleCards: CardDef[] = [
 
   // --- level 3 --------------------------------------------------------------
   k.summon(3, 'bighatsalze', 'Big Hat Salze', ['Mortal', 'Scholar'], {
-    str: 3,
-    hp: 4,
+    str: 4,
+    hp: 5,
     powers: [
       {
         name: 'Study',
@@ -406,7 +414,7 @@ export const purpleCards: CardDef[] = [
     ],
   }),
   k.summon(3, 'darksideofthemoon', 'Dark Side of the Moon', ['Star', 'Spirit'], {
-    str: 2,
+    str: 3,
     hp: 6,
     text: 'Wounded enemies have -1 attack.',
     triggers: {
@@ -415,8 +423,8 @@ export const purpleCards: CardDef[] = [
     },
   }),
   k.summon(3, 'devourer', 'The Devourer', ['Beast', 'Spirit'], {
-    str: 2,
-    hp: 4,
+    str: 3,
+    hp: 5,
     text: 'Strike: Put 3 Wounds on the defender.',
     triggers: {
       onAttack: (c) => {
@@ -426,8 +434,8 @@ export const purpleCards: CardDef[] = [
     },
   }),
   k.summon(3, 'eyesnight', 'Eyes of Night', ['Spirit'], {
-    str: 2,
-    hp: 4,
+    str: 3,
+    hp: 5,
     woundAmplify: true,
     text:
       'Wounds on enemy summons become damage one for one. ' +
@@ -435,7 +443,7 @@ export const purpleCards: CardDef[] = [
     triggers: { onAwake: (c) => c.mill(c.me, 2) },
   }),
   k.summon(3, 'fungal', 'Fungal Bloom', ['Living'], {
-    str: 2,
+    str: 3,
     hp: 5,
     text:
       'Deathrattle: Every enemy summon takes 3 Wounds. The enemy cannot replace summons that die until the end of your turn.',
@@ -447,8 +455,8 @@ export const purpleCards: CardDef[] = [
     },
   }),
   k.summon(3, 'mothhorror', 'Moth Horror', ['Spirit', 'Beast'], {
-    str: 4,
-    hp: 3,
+    str: 5,
+    hp: 4,
     text: 'Battlecry: Put 2 Wounds on every summon in play.',
     triggers: {
       onEnter: (c) => {
@@ -457,7 +465,7 @@ export const purpleCards: CardDef[] = [
     },
   }),
   k.summon(3, 'raingod', 'Rain God', ['Spirit', 'Star'], {
-    str: 2,
+    str: 3,
     hp: 5,
     text: 'At the start of your turn, deal 1 to every Wounded enemy summon.',
     triggers: {
@@ -484,8 +492,8 @@ export const purpleCards: CardDef[] = [
     flip: (c) => c.curse(c.opp, 'o-curse-rot', 1),
   }),
   k.summon(3, 'wickerman', 'Wicker Man', ['Living', 'Spirit'], {
-    str: 3,
-    hp: 4,
+    str: 4,
+    hp: 5,
     text: "Deathrattle: Shuffle 2 Rot into the enemy's deck.",
     triggers: {
       onDeath: (c) => c.curse(c.opp, 'o-curse-rot', 2),

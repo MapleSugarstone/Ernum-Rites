@@ -1,0 +1,242 @@
+[
+ {
+  "id": "p1-beast",
+  "name": "Red Beast",
+  "why": "pepper +1 attack",
+  "str": 4,
+  "hp": 2,
+  "was": "3/2"
+ },
+ {
+  "id": "p1-beetle",
+  "name": "Ember Beetle",
+  "why": "pepper +1 attack",
+  "str": 2,
+  "hp": 2,
+  "was": "1/2"
+ },
+ {
+  "id": "p1-bugbert",
+  "name": "Bugbert",
+  "why": "pepper +1 attack",
+  "str": 2,
+  "hp": 3,
+  "was": "1/3"
+ },
+ {
+  "id": "p1-bunny",
+  "name": "Cinder Bunny",
+  "why": "pepper +1 attack",
+  "str": 3,
+  "hp": 2,
+  "was": "2/2"
+ },
+ {
+  "id": "p1-devil",
+  "name": "Little Devil",
+  "why": "pepper +1 attack",
+  "str": 2,
+  "hp": 2,
+  "was": "1/2"
+ },
+ {
+  "id": "p1-firebat",
+  "name": "Firebat",
+  "why": "pepper +1 attack",
+  "str": 2,
+  "hp": 2,
+  "was": "1/2"
+ },
+ {
+  "id": "p1-firesprite",
+  "name": "Fire Sprite",
+  "why": "pepper +1 attack",
+  "str": 2,
+  "hp": 2,
+  "was": "1/2"
+ },
+ {
+  "id": "p1-minimage",
+  "name": "Minimage",
+  "why": "pepper +1 attack",
+  "str": 2,
+  "hp": 2,
+  "was": "1/2"
+ },
+ {
+  "id": "p1-moonkrag",
+  "name": "Moonkrag",
+  "why": "pepper +1 attack",
+  "str": 3,
+  "hp": 4,
+  "was": "2/4"
+ },
+ {
+  "id": "p1-thinker",
+  "name": "The Thinker",
+  "why": "pepper +1 attack",
+  "str": 2,
+  "hp": 3,
+  "was": "1/3"
+ },
+ {
+  "id": "p2-ash demon",
+  "name": "Ash Demon",
+  "why": "pepper +1 attack",
+  "str": 4,
+  "hp": 2,
+  "was": "3/2"
+ },
+ {
+  "id": "p2-burnflayer",
+  "name": "Burnflayer",
+  "why": "pepper +1 attack",
+  "str": 4,
+  "hp": 4,
+  "was": "3/4"
+ },
+ {
+  "id": "p2-deathknight",
+  "name": "Death Knight",
+  "why": "pepper +1 attack",
+  "str": 5,
+  "hp": 3,
+  "was": "4/3"
+ },
+ {
+  "id": "p2-dragon",
+  "name": "Dragon",
+  "why": "pepper +1 attack",
+  "str": 5,
+  "hp": 2,
+  "was": "4/2"
+ },
+ {
+  "id": "p2-evil squire",
+  "name": "Evil Squire",
+  "why": "pepper +1 attack",
+  "str": 4,
+  "hp": 3,
+  "was": "3/3"
+ },
+ {
+  "id": "p2-lazylord",
+  "name": "Lazy Lord",
+  "why": "pepper +1 attack",
+  "str": 6,
+  "hp": 3,
+  "was": "5/3"
+ },
+ {
+  "id": "p2-livingfort",
+  "name": "Living Fort",
+  "why": "pepper +1 attack",
+  "str": 2,
+  "hp": 6,
+  "was": "1/6"
+ },
+ {
+  "id": "p2-pinelyte",
+  "name": "Pinelyte",
+  "why": "pepper +1 attack",
+  "str": 4,
+  "hp": 5,
+  "was": "3/5"
+ },
+ {
+  "id": "p2-warmateer",
+  "name": "Warmateer",
+  "why": "pepper +1 attack",
+  "str": 4,
+  "hp": 3,
+  "was": "3/3"
+ },
+ {
+  "id": "p2-wizard",
+  "name": "Red Wizard",
+  "why": "pepper +1 attack",
+  "str": 4,
+  "hp": 3,
+  "was": "3/3"
+ },
+ {
+  "id": "p3-Looker",
+  "name": "The Looker",
+  "why": "pepper +1 attack",
+  "str": 4,
+  "hp": 5,
+  "was": "3/5"
+ },
+ {
+  "id": "p3-Pod",
+  "name": "The Pod",
+  "why": "pepper +1 attack",
+  "str": 3,
+  "hp": 7,
+  "was": "2/7"
+ },
+ {
+  "id": "p3-Slicer",
+  "name": "Slicer",
+  "why": "pepper +1 attack",
+  "str": 3,
+  "hp": 4,
+  "was": "2/4"
+ },
+ {
+  "id": "p3-Tryybus",
+  "name": "Tryybus",
+  "why": "pepper +1 attack",
+  "str": 3,
+  "hp": 3,
+  "was": "2/3"
+ },
+ {
+  "id": "p3-classe",
+  "name": "Classe",
+  "why": "pepper +1 attack",
+  "str": 4,
+  "hp": 5,
+  "was": "3/5"
+ },
+ {
+  "id": "p3-heavenknows",
+  "name": "Heaven Knows",
+  "why": "pepper +1 attack",
+  "str": 5,
+  "hp": 5,
+  "was": "4/5"
+ },
+ {
+  "id": "p3-helaks",
+  "name": "Helaks",
+  "why": "pepper +1 attack",
+  "str": 5,
+  "hp": 6,
+  "was": "4/6"
+ },
+ {
+  "id": "p3-helemy",
+  "name": "Helemy",
+  "why": "pepper +1 attack",
+  "str": 4,
+  "hp": 5,
+  "was": "3/5"
+ },
+ {
+  "id": "p3-stareater",
+  "name": "Star Eater",
+  "why": "pepper +1 attack",
+  "str": 6,
+  "hp": 5,
+  "was": "5/5"
+ },
+ {
+  "id": "ph-archlife",
+  "name": "Archlife",
+  "why": "pepper +1 attack",
+  "str": 3,
+  "hp": 3,
+  "was": "2/3"
+ }
+]

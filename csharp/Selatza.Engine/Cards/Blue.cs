@@ -9,7 +9,7 @@ public static class Blue
 
     public static CardDef[] Build() => new[]
     {
-        K.Starter("thefish", "The Fish", F(Faction.Fish, Faction.Star), str: 1, hp: 4,
+        K.Starter("thefish", "The Fish", F(Faction.Fish, Faction.Star), str: 2, hp: 5,
             text: "",
             powers: Powers(new Power
             {
@@ -137,7 +137,7 @@ public static class Blue
             triggers: new Triggers { OnEnter = c => c.RecycleDiscard(c.Me, 3) }),
 
         // --- level 2 ---------------------------------------------------------
-        K.Summon(2, "coralhead", "Coralhead", F(Faction.Fish), str: 1, hp: 5,
+        K.Summon(2, "coralhead", "Coralhead", F(Faction.Fish), str: 2, hp: 5,
             text: "Ally Fish have +1 attack. At the start of your turn, Mill 2.",
             triggers: new Triggers
             {
@@ -147,7 +147,7 @@ public static class Blue
                 OnAwake = c => c.Mill(c.Me, 2),
             }),
 
-        K.Summon(2, "fishamalgam", "Fish Amalgam", F(Faction.Fish), str: 3, hp: 2,
+        K.Summon(2, "fishamalgam", "Fish Amalgam", F(Faction.Fish), str: 4, hp: 2,
             text: "Battlecry: Pull HP cards off your other summons onto it.",
             triggers: new Triggers
             {
@@ -172,7 +172,7 @@ public static class Blue
             })),
 
         K.Summon(2, "fishfolk", "Fishfolk", F(Faction.Fish, Faction.Mortal),
-            str: 2,
+            str: 3,
             hp: 3,
             powers: Powers(new Power
             {
@@ -187,7 +187,7 @@ public static class Blue
                 },
             })),
 
-        K.Summon(2, "fishwizard", "Fish Wizard", F(Faction.Fish, Faction.Scholar), str: 1,
+        K.Summon(2, "fishwizard", "Fish Wizard", F(Faction.Fish, Faction.Scholar), str: 2,
             hp: 3,
             powers: Powers(new Power
             {
@@ -224,7 +224,7 @@ public static class Blue
                 Effect = c => c.RecycleDiscard(c.Me, 3),
             })),
 
-        K.Summon(2, "jellyking", "Jelly King", F(Faction.Fish), str: 2, hp: 5,
+        K.Summon(2, "jellyking", "Jelly King", F(Faction.Fish), str: 3, hp: 5,
             text: "At the start of your turn, Catch 1 spent HP card off an ally.",
             triggers: new Triggers
             {
@@ -240,7 +240,7 @@ public static class Blue
                 },
             }),
 
-        K.Summon(2, "lighthousekeeper", "Lighthouse Keeper", F(Faction.Mortal), str: 1, hp: 5,
+        K.Summon(2, "lighthousekeeper", "Lighthouse Keeper", F(Faction.Mortal), str: 2, hp: 5,
             stationary: true,
             text: "Stationary. When attacked, the enemy Mills 2.",
             triggers: new Triggers
@@ -260,7 +260,7 @@ public static class Blue
             })),
 
         K.Summon(2, "riverfolk", "Riverfolk", F(Faction.Fish, Faction.Mortal),
-            str: 2,
+            str: 3,
             hp: 3,
             entersSapped: true,
             text: "Arrives sapped. Deathrattle: Draw 2 cards.",
@@ -279,7 +279,7 @@ public static class Blue
             flip: c => c.Catch(c.HolderRef, 2)),
 
         K.Summon(2, "scubadoba", "Scubadoba", F(Faction.Mortal),
-            str: 2,
+            str: 3,
             hp: 3,
             powers: Powers(new Power
             {
@@ -295,7 +295,7 @@ public static class Blue
             })),
 
         K.Summon(2, "submariner", "Submariner", F(Faction.Mortal, Faction.Machine),
-            str: 2,
+            str: 3,
             hp: 3,
             text: "Battlecry: The enemy Mills 2.",
             triggers: new Triggers
@@ -324,7 +324,7 @@ public static class Blue
             }),
 
         K.Summon(2, "undersearesearcher", "Undersea Researcher",
-            F(Faction.Mortal, Faction.Scholar), str: 1, hp: 3,
+            F(Faction.Mortal, Faction.Scholar), str: 2, hp: 3,
             powers: Powers(new Power
             {
                 Name = "Survey",
@@ -339,7 +339,7 @@ public static class Blue
 
         // --- level 3 ---------------------------------------------------------
         K.Summon(3, "abyssalwalker", "Abyssal Walker", F(Faction.Fish, Faction.Spirit),
-            str: 3, hp: 4,
+            str: 4, hp: 5,
             text: "Strike: Deal 1 to the defender first, and you take 1 debt.",
             triggers: new Triggers
             {
@@ -358,7 +358,7 @@ public static class Blue
                 OnAwake = c => c.Mill(c.Opp, 2),
             }),
 
-        K.Summon(3, "darkness", "The Darkness", F(Faction.Spirit), str: 2, hp: 6,
+        K.Summon(3, "darkness", "The Darkness", F(Faction.Spirit), str: 3, hp: 6,
             text: "Battlecry: The enemy shuffles their hand into their deck, then draws that many cards minus 1.",
             triggers: new Triggers
             {
@@ -369,7 +369,7 @@ public static class Blue
                 },
             }),
 
-        K.Summon(3, "deepseaheart", "Deep Sea Heart", F(Faction.Fish), str: 2, hp: 6,
+        K.Summon(3, "deepseaheart", "Deep Sea Heart", F(Faction.Fish), str: 3, hp: 6,
             powers: Powers(new Power
             {
                 Name = "Dredge Up",
@@ -385,7 +385,7 @@ public static class Blue
             })),
 
         K.Summon(3, "eternalalbatross", "Eternal Albatross", F(Faction.Beast, Faction.Star),
-            str: 2, hp: 4,
+            str: 3, hp: 5,
             text: "Deathrattle: Return a summon from your debt to your hand. You take 2 debt.",
             triggers: new Triggers
             {
@@ -398,7 +398,7 @@ public static class Blue
             }),
 
         K.Summon(3, "infiniteship", "The Infinite Ship", F(Faction.Machine, Faction.Star),
-            str: 2, hp: 5,
+            str: 3, hp: 5,
             text: "At the start of your turn, gains 1 HP and the enemy Mills 1.",
             triggers: new Triggers
             {
@@ -422,7 +422,7 @@ public static class Blue
             })),
 
         K.Summon(3, "riverdrinker", "River Drinker", F(Faction.Fish, Faction.Spirit),
-            str: 1, hp: 3,
+            str: 2, hp: 4,
             text: "Strike: If the enemy has Redirection, deal 5 to it first. If it dies this way, eat it.",
             triggers: new Triggers
             {
@@ -446,7 +446,7 @@ public static class Blue
                 Effect = c => c.Mill(c.Opp, 4),
             })),
 
-        K.Summon(3, "serpant", "The Serpent", F(Faction.Fish, Faction.Beast), str: 2, hp: 5,
+        K.Summon(3, "serpant", "The Serpent", F(Faction.Fish, Faction.Beast), str: 3, hp: 5,
             text: "Has +1 attack for every 6 cards in the enemy's discard pile.",
             triggers: new Triggers
             {
@@ -467,7 +467,7 @@ public static class Blue
                 },
             })),
 
-        K.Summon(3, "sharkmeat", "Sharkmeat", F(Faction.Fish), str: 2, hp: 2,
+        K.Summon(3, "sharkmeat", "Sharkmeat", F(Faction.Fish), str: 3, hp: 3,
             text: "When an ally Fish dies, gains +1 attack.",
             triggers: new Triggers
             {

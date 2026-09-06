@@ -12,7 +12,7 @@ import {
   remainingHp,
 } from '../engine/state';
 import { T, selfRef, tripleKit } from './build';
-import type { CardDef } from '../engine/types';
+import type { CardDef, EffectFn } from '../engine/types';
 
 /**
  * The ten three-colour legends, one per combination. Only a leader carrying all
@@ -63,6 +63,18 @@ export const BANANA: CardDef = {
   text: 'Supporter',
   art: 'Cardgame/Extras/Banana.png',
   artist: 'klabss',
+};
+
+/** Hellmage mends every body on the board except the one it stands in. */
+const hellmageMend: EffectFn = (c) => {
+  const me = selfRef(c);
+  const self = me ? c.summonAt(me) : null;
+  for (const p of [c.me, ...livingOpponents(c.state, c.me)]) {
+    for (const ref of c.summonsOf(p, true)) {
+      if (self && c.summonAt(ref) === self) continue;
+      c.unflip(ref, 1);
+    }
+  }
 };
 
 export const tripleCards: CardDef[] = [
@@ -401,8 +413,8 @@ export const tripleCards: CardDef[] = [
 
   // --- the Candy legends -----------------------------------------------------
   mbp.summon('Vier', 'Vier', ['Mortal', 'Scholar'], {
-    str: 4,
-    hp: 3,
+    str: 3,
+    hp: 2,
     text: 'At the end of your turn, gain 1 Love for each enemy summon with a Wound.',
     triggers: {
       onEndTurn: (c) => {
@@ -440,8 +452,8 @@ export const tripleCards: CardDef[] = [
   }),
 
   mbr.summon('Saraza', 'Saraza', ['Mortal'], {
-    str: 2,
-    hp: 2,
+    str: 1,
+    hp: 1,
     text: 'Has +1 attack for each Love you hold.',
     triggers: {
       strengthBonus: ({ state, controller, summon }) => {
@@ -465,8 +477,8 @@ export const tripleCards: CardDef[] = [
   }),
 
   mby.summon('WellWorthit', 'Well Worth It', ['Spirit'], {
-    str: 2,
-    hp: 6,
+    str: 1,
+    hp: 5,
     text: 'Whenever you take debt, gain 1 Love.',
     triggers: {
       onDebtTaken: (c) => c.gainLove(c.me, 1),
@@ -486,13 +498,14 @@ export const tripleCards: CardDef[] = [
   }),
 
   mgb.summon('CodeInfestedSweetling', 'Code-Infested Sweetling', ['Saccharine', 'Machine'], {
-    str: 1,
+    str: 0,
     hp: 1,
-    text: 'Whenever an ally dies, gain 2 Love.',
+    text: 'Whenever an ally dies, gain 2 Love and take 1 debt.',
     triggers: {
       onOtherDeath: (c) => {
         if (c.state.dyingOwner !== c.me) return;
         c.gainLove(c.me, 2);
+        c.addDebt(c.me, 1, 'The infestation spreads.');
       },
     },
     powers: [
@@ -515,8 +528,8 @@ export const tripleCards: CardDef[] = [
   }),
 
   mgp.summon('GodOfMisfortune', 'God of Misfortune', ['Spirit'], {
-    str: 2,
-    hp: 6,
+    str: 1,
+    hp: 5,
     text: 'At the start of your turn, Scry 6 for any card, then every player takes 1 debt.',
     triggers: {
       onAwake: (c) => {
@@ -547,8 +560,8 @@ export const tripleCards: CardDef[] = [
   }),
 
   mgr.summon('RansomwareArtist', 'Ransomware Artist', ['Mortal', 'Machine'], {
-    str: 1,
-    hp: 2,
+    str: 0,
+    hp: 1,
     text: 'Store: Heal 6 debt, then Mill 10.',
     store: {
       useful: (state, user) => state.players[user].debtCount > 0,
@@ -572,8 +585,8 @@ export const tripleCards: CardDef[] = [
   }),
 
   mgy.summon('TheThorn', 'The Thorn', ['Ernum'], {
-    str: 3,
-    hp: 2,
+    str: 2,
+    hp: 1,
     text:
       'Store: A character gains a Power Shield. ' +
       'Whenever you play a Hedron, deal 1 to an enemy summon.',
@@ -605,8 +618,8 @@ export const tripleCards: CardDef[] = [
   }),
 
   mpr.summon("HumanitysDefender", "Humanity's Defender", ['Mortal', 'Spirit'], {
-    str: 3,
-    hp: 10,
+    str: 2,
+    hp: 9,
     redirect: true,
     text: 'Redirection. Your other Mortals have +1 attack.',
     triggers: {
@@ -629,8 +642,8 @@ export const tripleCards: CardDef[] = [
   }),
 
   mpy.summon('Sopapli', 'Sopapli', ['Spirit'], {
-    str: 1,
-    hp: 7,
+    str: 0,
+    hp: 6,
     text: 'At the start of your turn, gain 1 Love.',
     triggers: {
       onAwake: (c) => c.gainLove(c.me, 1),
@@ -654,7 +667,7 @@ export const tripleCards: CardDef[] = [
     str: 0,
     hp: 2,
     effectDamage: 1,
-    text: 'Effect Damage +1. At the end of your turn, every enemy character heals 1. Store: Heal your leader for 10. Store costs +2.',
+    text: 'Effect Damage +1. At the start and end of your turn, every other character heals 1. Store: Heal your leader for 10. Store costs +2.',
     store: {
       surcharge: 2,
       // A bought effect reads as the buyer's, so the leader healed is theirs and
@@ -663,11 +676,8 @@ export const tripleCards: CardDef[] = [
       effect: (c) => c.unflip({ kind: 'leader', player: c.me }, 10),
     },
     triggers: {
-      onEndTurn: (c) => {
-        for (const foe of livingOpponents(c.state, c.me)) {
-          for (const ref of c.summonsOf(foe, true)) c.unflip(ref, 1);
-        }
-      },
+      onAwake: hellmageMend,
+      onEndTurn: hellmageMend,
     },
     powers: [
       {

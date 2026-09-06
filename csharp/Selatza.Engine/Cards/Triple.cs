@@ -57,6 +57,20 @@ public static class Triple
         Artist = "klabss",
     };
 
+    /// <summary>Hellmage mends every body on the board except the one it stands in.</summary>
+    private static void HellmageMend(EffectCtx c)
+    {
+        var self = c.Self is { } me ? c.SummonAt(me) : null;
+        foreach (var side in new[] { c.Me, c.Opp })
+        {
+            foreach (var r in c.SummonsOf(side, true))
+            {
+                if (self is not null && ReferenceEquals(c.SummonAt(r), self)) continue;
+                c.Unflip(r, 1);
+            }
+        }
+    }
+
     public static CardDef[] Build() => new[]
     {
         Banana(),
@@ -390,7 +404,7 @@ public static class Triple
             })),
 
         // --- the Candy legends -------------------------------------------------
-        Mbp.Summon("Vier", "Vier", F(Faction.Mortal, Faction.Scholar), str: 4, hp: 3,
+        Mbp.Summon("Vier", "Vier", F(Faction.Mortal, Faction.Scholar), str: 3, hp: 2,
             text: "At the end of your turn, gain 1 Love for each enemy summon with a Wound.",
             triggers: new Triggers
             {
@@ -428,7 +442,7 @@ public static class Triple
                     },
                 })),
 
-        Mbr.Summon("Saraza", "Saraza", F(Faction.Mortal), str: 2, hp: 2,
+        Mbr.Summon("Saraza", "Saraza", F(Faction.Mortal), str: 1, hp: 1,
             text: "Has +1 attack for each Love you hold.",
             triggers: new Triggers
             {
@@ -452,7 +466,7 @@ public static class Triple
                 },
             })),
 
-        Mby.Summon("WellWorthit", "Well Worth It", F(Faction.Spirit), str: 2, hp: 6,
+        Mby.Summon("WellWorthit", "Well Worth It", F(Faction.Spirit), str: 1, hp: 5,
             text: "Whenever you take debt, gain 1 Love.",
             triggers: new Triggers { OnDebtTaken = c => c.GainLove(c.Me, 1) },
             powers: Powers(new Power
@@ -469,14 +483,15 @@ public static class Triple
             })),
 
         Mgb.Summon("CodeInfestedSweetling", "Code-Infested Sweetling",
-            F(Faction.Saccharine, Faction.Machine), str: 1, hp: 1,
-            text: "Whenever an ally dies, gain 2 Love.",
+            F(Faction.Saccharine, Faction.Machine), str: 0, hp: 1,
+            text: "Whenever an ally dies, gain 2 Love and take 1 debt.",
             triggers: new Triggers
             {
                 OnOtherDeath = c =>
                 {
                     if (c.State.DyingOwner != c.Me) return;
                     c.GainLove(c.Me, 2);
+                    c.AddDebt(c.Me, 1, "The infestation spreads.");
                 },
             },
             powers: Powers(new Power
@@ -498,7 +513,7 @@ public static class Triple
                 },
             })),
 
-        Mgp.Summon("GodOfMisfortune", "God of Misfortune", F(Faction.Spirit), str: 2, hp: 6,
+        Mgp.Summon("GodOfMisfortune", "God of Misfortune", F(Faction.Spirit), str: 1, hp: 5,
             text: "At the start of your turn, Scry 6 for any card, then every player takes 1 debt.",
             triggers: new Triggers
             {
@@ -528,7 +543,7 @@ public static class Triple
             })),
 
         Mgr.Summon("RansomwareArtist", "Ransomware Artist",
-            F(Faction.Mortal, Faction.Machine), str: 1, hp: 2,
+            F(Faction.Mortal, Faction.Machine), str: 0, hp: 1,
             text: "Store: Heal 6 debt, then Mill 10.",
             store: new StoreDef
             {
@@ -552,7 +567,7 @@ public static class Triple
                 },
             })),
 
-        Mgy.Summon("TheThorn", "The Thorn", F(Faction.Ernum), str: 3, hp: 2,
+        Mgy.Summon("TheThorn", "The Thorn", F(Faction.Ernum), str: 2, hp: 1,
             text: "Store: A character gains a Power Shield. "
                 + "Whenever you play a Hedron, deal 1 to an enemy summon.",
             store: new StoreDef
@@ -581,7 +596,7 @@ public static class Triple
             })),
 
         Mpr.Summon("HumanitysDefender", "Humanity's Defender",
-            F(Faction.Mortal, Faction.Spirit), str: 3, hp: 10,
+            F(Faction.Mortal, Faction.Spirit), str: 2, hp: 9,
             redirect: true,
             text: "Redirection. Your other Mortals have +1 attack.",
             triggers: new Triggers
@@ -599,7 +614,7 @@ public static class Triple
                 Effect = c => c.Unflip(TargetRef.Leader(c.Me), 10),
             })),
 
-        Mpy.Summon("Sopapli", "Sopapli", F(Faction.Spirit), str: 1, hp: 7,
+        Mpy.Summon("Sopapli", "Sopapli", F(Faction.Spirit), str: 0, hp: 6,
             text: "At the start of your turn, gain 1 Love.",
             triggers: new Triggers { OnAwake = c => c.GainLove(c.Me, 1) },
             powers: Powers(new Power
@@ -617,7 +632,7 @@ public static class Triple
 
         Myr.Summon("Hellmage", "Hellmage", F(Faction.Spirit, Faction.Scholar), str: 0, hp: 2,
             effectDamage: 1,
-            text: "Effect Damage +1. At the end of your turn, every enemy character heals 1. Store: Heal your leader for 10. Store costs +2.",
+            text: "Effect Damage +1. At the start and end of your turn, every other character heals 1. Store: Heal your leader for 10. Store costs +2.",
             store: new StoreDef
             {
                 Surcharge = 2,
@@ -629,7 +644,8 @@ public static class Triple
             },
             triggers: new Triggers
             {
-                OnEndTurn = c => { foreach (var r in c.SummonsOf(c.Opp, true)) c.Unflip(r, 1); },
+                OnAwake = HellmageMend,
+                OnEndTurn = HellmageMend,
             },
             powers: Powers(new Power
             {

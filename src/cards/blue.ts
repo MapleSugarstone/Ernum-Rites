@@ -10,8 +10,8 @@ const k = colorKit('F', 'f', 'Blue', 'Blue/Spells');
 export const blueCards: CardDef[] = [
   // --- leaders ---------------------------------------------------------------
   k.starter('thefish', 'The Fish', ['Fish', 'Star'], {
-    str: 1,
-    hp: 4,
+    str: 2,
+    hp: 5,
     powers: [
       {
         name: 'Perfect System',
@@ -155,7 +155,7 @@ export const blueCards: CardDef[] = [
 
   // --- level 2 --------------------------------------------------------------
   k.summon(2, 'coralhead', 'Coralhead', ['Fish'], {
-    str: 1,
+    str: 2,
     hp: 5,
     text: 'Ally Fish have +1 attack. At the start of your turn, Mill 2.',
     triggers: {
@@ -167,7 +167,7 @@ export const blueCards: CardDef[] = [
     },
   }),
   k.summon(2, 'fishamalgam', 'Fish Amalgam', ['Fish'], {
-    str: 3,
+    str: 4,
     hp: 2,
     text: 'Battlecry: Pull HP cards off your other summons onto it.',
     triggers: {
@@ -195,7 +195,7 @@ export const blueCards: CardDef[] = [
     ],
   }),
   k.summon(2, 'fishfolk', 'Fishfolk', ['Fish', 'Mortal'], {
-    str: 2,
+    str: 3,
     hp: 3,
     powers: [
       {
@@ -212,7 +212,7 @@ export const blueCards: CardDef[] = [
   }),
   k.summon(2, 'fishwizard', 'Fish Wizard', ['Fish', 'Scholar'], {
     hp: 3,
-    str: 1,
+    str: 2,
     powers: [
       {
         name: 'Magic Fishiles',
@@ -248,7 +248,7 @@ export const blueCards: CardDef[] = [
     ],
   }),
   k.summon(2, 'jellyking', 'Jelly King', ['Fish'], {
-    str: 2,
+    str: 3,
     hp: 5,
     text: 'At the start of your turn, Catch 1 spent HP card off an ally.',
     triggers: {
@@ -262,7 +262,7 @@ export const blueCards: CardDef[] = [
     },
   }),
   k.summon(2, 'lighthousekeeper', 'Lighthouse Keeper', ['Mortal'], {
-    str: 1,
+    str: 2,
     hp: 5,
     stationary: true,
     text: 'Stationary. When attacked, the enemy Mills 2.',
@@ -283,7 +283,7 @@ export const blueCards: CardDef[] = [
   }),
   k.summon(2, 'riverfolk', 'Riverfolk', ['Fish', 'Mortal'], {
     entersSapped: true,
-    str: 2,
+    str: 3,
     hp: 3,
     text: 'Arrives sapped. Deathrattle: Draw 2 cards.',
     triggers: { onDeath: (c) => c.draw(c.me, 2) },
@@ -304,7 +304,7 @@ export const blueCards: CardDef[] = [
     flip: (c) => c.catch(holderRef(c), 2),
   }),
   k.summon(2, 'scubadoba', 'Scubadoba', ['Mortal'], {
-    str: 2,
+    str: 3,
     hp: 3,
     powers: [
       {
@@ -320,7 +320,7 @@ export const blueCards: CardDef[] = [
     ],
   }),
   k.summon(2, 'submariner', 'Submariner', ['Mortal', 'Machine'], {
-    str: 2,
+    str: 3,
     hp: 3,
     text: 'Battlecry: The enemy Mills 2.',
     triggers: {
@@ -348,7 +348,7 @@ export const blueCards: CardDef[] = [
   }),
   k.summon(2, 'undersearesearcher', 'Undersea Researcher', ['Mortal', 'Scholar'], {
     hp: 3,
-    str: 1,
+    str: 2,
     powers: [
       {
         name: 'Survey',
@@ -364,8 +364,8 @@ export const blueCards: CardDef[] = [
 
   // --- level 3 --------------------------------------------------------------
   k.summon(3, 'abyssalwalker', 'Abyssal Walker', ['Fish', 'Spirit'], {
-    str: 3,
-    hp: 4,
+    str: 4,
+    hp: 5,
     text: 'Strike: Deal 1 to the defender first, and you take 1 debt.',
     triggers: {
       onAttack: (c) => {
@@ -386,7 +386,7 @@ export const blueCards: CardDef[] = [
     },
   }),
   k.summon(3, 'darkness', 'The Darkness', ['Spirit'], {
-    str: 2,
+    str: 3,
     hp: 6,
     text: 'Battlecry: The enemy shuffles their hand into their deck, then draws that many cards minus 1.',
     triggers: {
@@ -397,7 +397,7 @@ export const blueCards: CardDef[] = [
     },
   }),
   k.summon(3, 'deepseaheart', 'Deep Sea Heart', ['Fish'], {
-    str: 2,
+    str: 3,
     hp: 6,
     powers: [
       {
@@ -414,8 +414,8 @@ export const blueCards: CardDef[] = [
     ],
   }),
   k.summon(3, 'eternalalbatross', 'Eternal Albatross', ['Beast', 'Star'], {
-    str: 2,
-    hp: 4,
+    str: 3,
+    hp: 5,
     text: 'Deathrattle: Return a summon from your debt to your hand. You take 2 debt.',
     triggers: {
       onDeath: (c) => {
@@ -425,7 +425,7 @@ export const blueCards: CardDef[] = [
     },
   }),
   k.summon(3, 'infiniteship', 'The Infinite Ship', ['Machine', 'Star'], {
-    str: 2,
+    str: 3,
     hp: 5,
     text: 'At the start of your turn, gains 1 HP and the enemy Mills 1.',
     triggers: {
@@ -449,8 +449,8 @@ export const blueCards: CardDef[] = [
     ],
   }),
   k.summon(3, 'riverdrinker', 'River Drinker', ['Fish', 'Spirit'], {
-    str: 1,
-    hp: 3,
+    str: 2,
+    hp: 4,
     text: 'Strike: If the enemy has Redirection, deal 5 to it first. If it dies this way, eat it.',
     triggers: {
       // Redirection already forces the attack onto that body, so the defender
@@ -475,7 +475,7 @@ export const blueCards: CardDef[] = [
     ],
   }),
   k.summon(3, 'serpant', 'The Serpent', ['Fish', 'Beast'], {
-    str: 2,
+    str: 3,
     hp: 5,
     text: "Has +1 attack for every 6 cards in the enemy's discard pile.",
     triggers: {
@@ -506,8 +506,8 @@ export const blueCards: CardDef[] = [
     ],
   }),
   k.summon(3, 'sharkmeat', 'Sharkmeat', ['Fish'], {
-    str: 2,
-    hp: 2,
+    str: 3,
+    hp: 3,
     text: 'When an ally Fish dies, gains +1 attack.',
     triggers: {
       onOtherDeath: (c) => {

@@ -1,9 +1,9 @@
 import { allCards, card, tryCard } from '../engine/registry';
 import { canBeLeader, colorsOf, deckIdentity } from '../engine/identity';
-import { DECK_SIZE, counts, deckProblems } from '../engine/decklist';
+import { DECK_MAX, DECK_MIN, counts, deckProblems } from '../engine/decklist';
 import { requestPersistence } from './prefs';
 
-export { DECK_SIZE, counts };
+export { DECK_MAX, DECK_MIN, counts };
 import {
   COLORS,
   COLOR_ART,
@@ -187,7 +187,7 @@ export function canAdd(b: BuilderState, id: string): boolean {
   const def = tryCard(id);
   if (!def) return false;
   if (!b.leaderId) return false;
-  if (b.cards.length >= DECK_SIZE) return false;
+  if (b.cards.length >= DECK_MAX) return false;
   if ((counts(b.cards).get(id) ?? 0) >= COPY_LIMIT) return false;
   return colorsOf(def).every((c) => deckIdentity(b.leaderId).includes(c));
 }

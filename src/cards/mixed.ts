@@ -1071,8 +1071,8 @@ export const mixedCards: CardDef[] = [
 
   // --- Candy and Fish: the shop floor and the water ---------------------------
   mb.summon(2, 'CandyCraver', 'Candy Craver', ['Mortal'], {
-    str: 2,
-    hp: 3,
+    str: 1,
+    hp: 2,
     text: 'Whenever you buy from a Store, draw a card.',
     triggers: {
       onStoreBought: (c) => c.draw(c.me, 1),
@@ -1091,8 +1091,8 @@ export const mixedCards: CardDef[] = [
     ],
   }),
   mb.summon(2, 'CandyFish', 'Candy Fish', ['Saccharine', 'Fish'], {
-    str: 2,
-    hp: 4,
+    str: 1,
+    hp: 3,
     powers: [
       {
         name: 'Bubblegum Stream',
@@ -1112,8 +1112,8 @@ export const mixedCards: CardDef[] = [
     flip: (c) => c.gainLove(c.me, 1),
   }),
   bm.summon(3, 'loanshark', 'Loanshark', ['Fish', 'Beast'], {
-    str: 3,
-    hp: 5,
+    str: 2,
+    hp: 4,
     debtAmplify: true,
     text: 'Whenever a player takes debt, they take 1 more.',
     powers: [
@@ -1144,8 +1144,8 @@ export const mixedCards: CardDef[] = [
 
   // --- Candy and Robot: the graduate scheme ----------------------------------
   mg.summon(2, 'CuriousPilgrim', 'Curious Pilgrim', ['Mortal', 'Hedron'], {
-    str: 2,
-    hp: 4,
+    str: 1,
+    hp: 3,
     text: 'Store: Scry 2 for any card.',
     store: {
       useful: (state, user) => state.players[user].deck.length > 0,
@@ -1165,8 +1165,8 @@ export const mixedCards: CardDef[] = [
     ],
   }),
   mg.summon(2, 'NewGrad', 'New Grad', ['Mortal', 'Scholar'], {
-    str: 2,
-    hp: 3,
+    str: 1,
+    hp: 2,
     text: "Store: Draw the top card of another player's deck, rebuilt in Robot with its cost turned colorless.",
     store: {
       // The deck is named by its owner's leader, the way Loan names a player.
@@ -1235,8 +1235,8 @@ export const mixedCards: CardDef[] = [
 
   // --- Candy and Oil: the toll and the bones ---------------------------------
   mp.summon(3, 'LenAphelion', 'Len-Aphelion', ['Spirit', 'Scholar'], {
-    str: 2,
-    hp: 5,
+    str: 1,
+    hp: 4,
     text: 'Your Beasts have +1 attack. At the start of your turn, Scry 2 for any card.',
     triggers: {
       strengthBonus: ({ controller, summon, def }) =>
@@ -1263,8 +1263,8 @@ export const mixedCards: CardDef[] = [
     ],
   }),
   mp.summon(2, 'PairOfCritters', 'Pair of Critters', ['Saccharine', 'Beast'], {
-    str: 2,
-    hp: 3,
+    str: 1,
+    hp: 2,
     text: 'Battlecry: Gain 1 Love. Deathrattle: Gain 1 Love.',
     triggers: {
       onEnter: (c) => c.gainLove(c.me, 1),
@@ -1319,8 +1319,8 @@ export const mixedCards: CardDef[] = [
 
   // --- Candy and Pepper: the stall that sells heat ----------------------------
   mr.summon(2, 'CandyAxeman', 'Candy Axeman', ['Saccharine', 'Mortal'], {
-    str: 3,
-    hp: 3,
+    str: 2,
+    hp: 2,
     text: 'Strike: Gain 1 Love.',
     triggers: {
       onAttack: (c) => c.gainLove(c.me, 1),
@@ -1337,8 +1337,8 @@ export const mixedCards: CardDef[] = [
     ],
   }),
   rm.summon(3, 'RedSweets', 'Red Sweets', ['Mortal', 'Scholar'], {
-    str: 3,
-    hp: 4,
+    str: 2,
+    hp: 3,
     text: 'Store: Take any card from your deck into your hand. Store costs +8. Leader: Store costs 5 less.',
     store: {
       surcharge: 8,
@@ -1387,8 +1387,8 @@ export const mixedCards: CardDef[] = [
 
   // --- Candy and Solar: the lemonade stand ------------------------------------
   my.summon(2, 'LittleGummyBear', 'Little Gummy Bear', ['Saccharine', 'Beast'], {
-    str: 2,
-    hp: 4,
+    str: 1,
+    hp: 3,
     text: 'Battlecry: Gain 1 Love.',
     triggers: {
       onEnter: (c) => c.gainLove(c.me, 1),
@@ -1409,8 +1409,8 @@ export const mixedCards: CardDef[] = [
     flip: (c) => c.gainLove(c.me, 1),
   }),
   my.summon(3, 'PinkLemonader', 'Pink Lemonader', ['Beast'], {
-    str: 3,
-    hp: 4,
+    str: 2,
+    hp: 3,
     text: 'Store: Each of your summons heals 4.',
     store: {
       useful: (state, user) =>

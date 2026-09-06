@@ -222,8 +222,58 @@ public static class Program
             .Where(id => (CardIndex.IdentityOf(id) & (1 << (int)Color.K)) != 0)
             .ToList());
 
+    /// <summary>
+    /// Deck files in a folder, `runs/heldout` by default: the evolved decks of
+    /// earlier runs, which carry the combos random decks rarely hold. The
+    /// format is the trainer's decks.txt block.
+    /// </summary>
+    private static readonly Dictionary<string, List<DeckList>> Folders = new(StringComparer.Ordinal);
+
+    /// <summary>The deck files in a folder, read once. `--decks dir:<folder>` names one; `heldout` is runs/heldout.</summary>
+    private static List<DeckList> FolderDecks(string folder)
+    {
+        if (Folders.TryGetValue(folder, out var hit)) return hit;
+        var decks = new List<DeckList>();
+        Folders[folder] = decks;
+        if (!Directory.Exists(folder)) return decks;
+        foreach (var file in Directory.GetFiles(folder, "*.txt").OrderBy(f => f, StringComparer.Ordinal))
+        {
+            string leader = "";
+            var cards = new List<string>();
+            foreach (var raw in File.ReadAllLines(file))
+            {
+                var line = raw.Trim();
+                int lb = line.IndexOf('['), rb = line.IndexOf(']');
+                if (lb < 0 || rb < lb) continue;
+                string id = line.Substring(lb + 1, rb - lb - 1);
+                if (line.StartsWith("leader:", StringComparison.Ordinal))
+                {
+                    leader = id;
+                    continue;
+                }
+                int x = line.IndexOf('x');
+                if (x <= 0 || !int.TryParse(line[..x], out int n)) continue;
+                for (int i = 0; i < n; i++) cards.Add(id);
+            }
+            if (leader.Length > 0 && cards.Count > 0)
+            {
+                decks.Add(new DeckList { Name = Path.GetFileNameWithoutExtension(file), LeaderId = leader, Cards = cards });
+            }
+        }
+        return decks;
+    }
+
     private static DeckList DeckFor(string pool, int game)
     {
+        string? folder = pool == "heldout"
+            ? Path.Combine("runs", "heldout")
+            : pool.StartsWith("dir:", StringComparison.Ordinal) ? pool[4..] : null;
+        if (folder is not null && FolderDecks(folder).Count > 0)
+        {
+            var list = FolderDecks(folder);
+            var d = list[(game / 2) % list.Count];
+            return new DeckList { Name = "A", LeaderId = d.LeaderId, Cards = d.Cards };
+        }
         if (pool == "starters")
         {
             var starters = CardSets.Starters;

@@ -14,6 +14,9 @@ public sealed class TournamentConfig
     /// <summary>Copies of the shipped one-ply bot, held at 1500 so the ladder has a zero.</summary>
     public int Anchors { get; set; } = 2;
 
+    /// <summary>Anchors play the snapshot bot, so the ladder reads the evolving decks against the old AI.</summary>
+    public bool AnchorsPrevious { get; set; }
+
     public int Rounds { get; set; } = 60;
     public int GamesPerPairing { get; set; } = 2;
 
@@ -182,6 +185,7 @@ public sealed class Tournament
                 Deck = deck.Cards.ToList(),
                 Brain = null,
                 ReferenceBot = true,
+                Previous = _cfg.AnchorsPrevious,
                 Frozen = true,
                 Intel = IntelConfig.Blind,
             });
@@ -805,6 +809,7 @@ public sealed class Tournament
                     Config = template.Config,
                     Intel = template.Intel,
                     ReferenceBot = reference,
+                    Previous = reference && _cfg.AnchorsPrevious,
                     Frozen = reference,
                     Elo = elo,
                     Games = games,

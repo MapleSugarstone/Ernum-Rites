@@ -126,7 +126,9 @@ public static class CardIndex
 
     private static void Build()
     {
-        var defs = Registry.All
+        // The printed set. Copies minted during play never sit in a deck list, and
+        // indexing them would make the axis depend on what was played before the build.
+        var defs = Registry.Printed
             .OrderBy(c => (int)c.Color)
             .ThenBy(c => c.Color2 is { } c2 ? (int)c2 + 1 : 0)
             .ThenBy(c => TypeRank(c.Type))

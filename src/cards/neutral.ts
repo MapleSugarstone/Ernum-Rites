@@ -74,8 +74,8 @@ export const neutralCards: CardDef[] = [
   n.summon(2, 'Deedsigner', 'Deedsigner', ['Mortal'], {
     str: 2,
     hp: 2,
-    text: 'Battlecry: Heal 1 debt.',
-    triggers: { onEnter: (c) => c.clearDebt(c.me, 1) },
+    text: 'Battlecry: Heal 2 debt.',
+    triggers: { onEnter: (c) => c.clearDebt(c.me, 2) },
   }),
   n.summon(2, 'HonorableKnight', 'Honorable Knight', ['Mortal'], {
     flipText: 'Discard this card, then heal the attached character 1.',
@@ -86,7 +86,7 @@ export const neutralCards: CardDef[] = [
     hp: 3,
   }),
   n.summon(2, 'LesserGrinkle', 'Lesser Grinkle', ['Beast', 'Grinkle'], {
-    str: 2,
+    str: 3,
     hp: 4,
   }),
   n.summon(2, 'LowWizard', 'Low Wizard', ['Mortal', 'Scholar'], {
@@ -125,7 +125,7 @@ export const neutralCards: CardDef[] = [
   n.summon(2, 'Smithee', 'Smithee', ['Mortal'], {
     str: 2,
     hp: 3,
-    text: 'Battlecry: Heal an ally for 2.',
+    text: 'Battlecry: Heal an ally for 3.',
     targets: [
       {
         kind: 'summon',
@@ -136,7 +136,7 @@ export const neutralCards: CardDef[] = [
       },
     ],
     triggers: { onEnter: (c) => {
-        if (c.targets[0]) c.unflip(c.targets[0], 2);
+        if (c.targets[0]) c.unflip(c.targets[0], 3);
       } },
   }),
   n.summon(2, 'Sorter', 'Sorter', ['Mortal'], {
@@ -165,7 +165,7 @@ export const neutralCards: CardDef[] = [
     triggers: { onDeath: (c) => c.addDebt(c.me, 1) },
   }),
   n.summon(3, 'AcolyteofGrinkle', 'Acolyte of Grinkle', ['Grinkle', 'Scholar'], {
-    str: 3,
+    str: 4,
     hp: 6,
   }),
   n.summon(3, 'FlyingCastle', 'Flying Castle', [], {
@@ -210,8 +210,8 @@ export const neutralCards: CardDef[] = [
     hp: 5,
   }),
   n.summon(3, 'IneptRuler', 'Inept Ruler', ['Mortal'], {
-    str: 4,
-    hp: 6,
+    str: 5,
+    hp: 7,
     text: 'At the start of your turn, you take 1 debt.',
     triggers: { onAwake: (c) => c.addDebt(c.me, 1) },
     powers: [
@@ -224,8 +224,8 @@ export const neutralCards: CardDef[] = [
     ],
   }),
   n.summon(3, 'Ivy', 'Ivy', ['Living'], {
-    str: 4,
-    hp: 3,
+    str: 5,
+    hp: 4,
     text: 'Choral: Your level 1 summons have +1 attack and gain 1 HP at the start of your turn.',
     triggers: {
       strengthBonus: ({ controller, summon, def }) =>
@@ -261,8 +261,8 @@ export const neutralCards: CardDef[] = [
     ],
   }),
   n.summon(3, 'PowerBird', 'Power Bird', ['Beast', 'Star'], {
-    str: 3,
-    hp: 4,
+    str: 4,
+    hp: 5,
     flipText: 'The attached character gains +1 attack.',
     flip: (c) => c.buffStrength(holderRef(c), 1, 'permanent'),
   }),

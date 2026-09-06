@@ -998,7 +998,8 @@ public static class Program
             s = Must(s, 0, GameAction.ActivatePower(Src(0, 0), 0));
             Harness.Eq(0, s.Players[1].Slots[0]!.Wounds, "enemy cleared");
             Harness.Eq(0, s.Players[0].Slots[1]!.Wounds, "ally cleared");
-            Harness.Eq(4, Effects.EffectiveStrength(s, s.Players[0].Slots[0]!), "2 printed plus 2 swept");
+            Harness.Eq(Registry.Card("o2-parkranger").Strength + 2,
+                Effects.EffectiveStrength(s, s.Players[0].Slots[0]!), "printed plus 2 swept");
         });
 
         Harness.Test("Necromancer raises the enemy dead in Oil, two bigger", () =>
@@ -1720,6 +1721,45 @@ public static class Program
                     s = PlayOut(s);
                     Harness.True(s.IsOver, $"{a.Key} vs {b.Key} unresolved at turn {s.Turn}");
                 }
+            }
+        });
+
+        Harness.Decision("plays the same move whatever the opponent is hiding, with peeks off", () =>
+        {
+            // The search runs on the hand the bot believes the opponent holds,
+            // built from what they have shown, so two positions that differ only
+            // in the hidden hand must draw the same move. Peeks are off here;
+            // with them on the difference is the peek.
+            var was = Bot.Intel;
+            Bot.Intel = new Bot.ReadConfig { DeckChance = 0, DeckRolls = 0, HandChance = 0, HandRolls = 0 };
+            try
+            {
+                var starters = CardSets.Starters;
+                var s = Engine.CreateGame(starters[0].ToDeckList(), starters[1].ToDeckList(), 4242, 0);
+                for (int i = 0; i < 24 && !s.IsOver; i++)
+                {
+                    int actor = s.CurrentActor;
+                    var res = Engine.Apply(s, actor, Bot.ChooseAction(s, actor));
+                    if (!res.Ok) throw new Exception(res.Error);
+                    s = res.State!;
+                }
+                int me = s.CurrentActor;
+                int foe = 1 - me;
+                var alt = s.Clone();
+                // Same size, different cards: the ones at the bottom of their deck.
+                int n = alt.Players[foe].Hand.Count;
+                var deck = alt.Players[foe].Deck;
+                alt.Players[foe].Hand = deck.Skip(deck.Count - n).ToList();
+                alt.Players[foe].Deck = deck.Take(deck.Count - n).Concat(s.Players[foe].Hand).ToList();
+                Bot.ClearPlan();
+                var mine = Replays.ActionToJson(Bot.ChooseAction(s, me));
+                Bot.ClearPlan();
+                var theirs = Replays.ActionToJson(Bot.ChooseAction(alt, me));
+                Harness.Eq(mine, theirs, "the move");
+            }
+            finally
+            {
+                Bot.Intel = was;
             }
         });
 

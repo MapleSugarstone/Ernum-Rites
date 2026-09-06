@@ -20,6 +20,7 @@ import {
 } from '../engine/engine';
 import { deckIdentity, isLegalUnder } from '../engine/identity';
 import { allCards, card } from '../engine/registry';
+import { nextRandom, randInt, type Rng } from '../engine/rng';
 import {
   DRAW_PER_TURN,
   currentActor,
@@ -150,6 +151,15 @@ export interface BotWeights {
    * value and counted as progress by the rollout's setup phase. Untuned.
    */
   effectDamage: number;
+  /**
+   * Per share of the opponent's nearer clock that the best kit in the bot's
+   * own list reaches, scaled by how much of that kit it holds squared. A kit
+   * is a set of cards the deck scan found to reach further together than
+   * apart. This is what makes a piece worth keeping for a turn it cannot use
+   * yet, and a draw or a mill worth its debt when the piece is still in the
+   * deck. Untuned.
+   */
+  combo: number;
 }
 
 export const defaultWeights: BotWeights = {
@@ -177,6 +187,7 @@ export const defaultWeights: BotWeights = {
   deathrattle: 1.5,
   trigger: 1,
   effectDamage: 2,
+  combo: 12,
 };
 
 /** Trigger hooks that keep firing while the body stands. */
@@ -297,6 +308,7 @@ export function evaluate(state: GameState, me: PlayerIdx, w = defaultWeights): n
           w.trigger * standingHooks(def));
     }
     score += sign * w.effectDamage * effectDamageOf(state, side);
+    if (side === me) score += kitBonus(state, me, w);
 
     // Cards in hand are not interchangeable, and the game says so with levels.
     let hand = 0;
@@ -787,6 +799,8 @@ export interface SearchLimits {
   lethalDepth: number;
   /** Applies that search spends before it gives up. */
   lethalBudget: number;
+  /** Whether the deck scan runs. Off in the quick profile: a scan a game is most of its cost. */
+  scan: boolean;
 }
 
 /** What a player faces. */
@@ -803,6 +817,7 @@ export const fullSearch: SearchLimits = {
   // Four because a kill that runs through a shop is buy, play, power, swing.
   lethalDepth: 4,
   lethalBudget: 4000,
+  scan: true,
 };
 
 /**
@@ -827,6 +842,7 @@ export const quickSearch: SearchLimits = {
   maxReplySteps: 0,
   lethalDepth: 2,
   lethalBudget: 300,
+  scan: false,
 };
 
 let limits: SearchLimits = fullSearch;
@@ -1102,6 +1118,8 @@ export interface EnemyRead {
   cheapestTrap: CardDef | null;
   /** The seat this read is about. */
   seat: PlayerIdx;
+  /** A trap the bot has named in their hand that they could pay for now. */
+  knownTrap?: boolean;
 }
 
 /**
@@ -1119,19 +1137,19 @@ export interface EnemyRead {
  */
 /** One read per living opponent: any of them can spring a trap on my attack. */
 export function readTable(state: GameState, me: PlayerIdx): EnemyRead[] {
-  return livingOpponents(state, me).map((foe) => readEnemy(state, foe));
+  return livingOpponents(state, me).map((foe) => ({
+    ...readEnemy(state, foe),
+    knownTrap: knownTrapIn(state, me, foe),
+  }));
 }
 
-export function readEnemy(state: GameState, seat: PlayerIdx): EnemyRead {
+/** Copies of each legal card the seat has shown in a public zone. */
+function seenCopies(state: GameState, seat: PlayerIdx, pool: LeaderPool): Map<string, number> {
   const foe = state.players[seat];
-  const pool = poolBehind(foe.leaderCardId);
-  if (pool.total <= 0) return { trapDensity: 0, cheapestTrap: null, seat };
-
   const seen = new Map<string, number>();
   const note = (id: string) => {
     if (pool.legal.has(id)) seen.set(id, (seen.get(id) ?? 0) + 1);
   };
-
   for (const id of foe.discard) note(id);
   for (const id of foe.debt) note(id);
   for (const sup of foe.supporters) note(sup.cardId);
@@ -1142,6 +1160,220 @@ export function readEnemy(state: GameState, seat: PlayerIdx): EnemyRead {
     // An HP card is face down until something flips it, and face up after.
     for (const h of b.hp) if (h.flipped) note(h.cardId);
   }
+  return seen;
+}
+
+// --- the read on the opponent's hand -------------------------------------------
+
+/**
+ * How much of the opponent's hidden cards the bot gets to read. Counting what
+ * they have shown is free and a person can do it. On top of that, once a turn,
+ * the bot rolls a few times to name a card sitting in their deck and once to
+ * name one in their hand, which stands in for the intuition a player has about
+ * what an opponent is holding. Every number is a dial, and `perfect` reads the
+ * real hand, which is what the reply model did before this existed.
+ */
+export interface IntelConfig {
+  deckChance: number;
+  deckRolls: number;
+  handChance: number;
+  handRolls: number;
+  perfect: boolean;
+}
+
+export const defaultIntel: IntelConfig = {
+  deckChance: 0.15,
+  deckRolls: 3,
+  handChance: 0.05,
+  handRolls: 1,
+  perfect: false,
+};
+
+let intel: IntelConfig = defaultIntel;
+
+export function setIntel(next: IntelConfig | null): void {
+  intel = next ?? defaultIntel;
+}
+
+interface IntelTrack {
+  knownHand: Map<string, number>;
+  knownDeck: Map<string, number>;
+  lastTurn: number;
+}
+
+const intelCache = new Map<string, IntelTrack>();
+
+function copiesIn(zone: readonly string[], id: string): number {
+  let n = 0;
+  for (const c of zone) if (c === id) n++;
+  return n;
+}
+
+/** Forget any count the zone no longer bears out: the read may know less than the truth, never more. */
+function clampKnown(known: Map<string, number>, zone: readonly string[]): void {
+  for (const [id, n] of known) {
+    const actual = copiesIn(zone, id);
+    if (actual <= 0) known.delete(id);
+    else if (n > actual) known.set(id, actual);
+  }
+}
+
+function rollsFor(state: GameState, me: PlayerIdx, foe: PlayerIdx, salt: number): Rng {
+  return {
+    state:
+      (state.seed ^
+        Math.imul(me + 1, 0x9e3779b9) ^
+        Math.imul(foe + 1, 0xc2b2ae35) ^
+        Math.imul(state.turn + 1, 0x85ebca6b) ^
+        salt) |
+      0,
+  };
+}
+
+/** How many of a known count the zone still bears out: the read may know less than the truth, never more. */
+function knownIn(zone: readonly string[], id: string, n: number): number {
+  return Math.min(n, copiesIn(zone, id));
+}
+
+function rollFloat(rng: Rng): number {
+  const { value, state } = nextRandom(rng.state);
+  rng.state = state;
+  return value;
+}
+
+/**
+ * The tracker for one opponent, rolled forward to this turn. One set of rolls
+ * a turn, seeded by the game and the turn, so the same position reads the same
+ * way in both engines and on a replay.
+ */
+function trackOf(state: GameState, me: PlayerIdx, foe: PlayerIdx): IntelTrack {
+  const key = `${state.seed}/${me}/${foe}`;
+  let t = intelCache.get(key);
+  if (!t) {
+    prune(intelCache, state.seed);
+    t = { knownHand: new Map(), knownDeck: new Map(), lastTurn: -1 };
+    intelCache.set(key, t);
+  }
+  return t;
+}
+
+/**
+ * The rolls, at the root of a decision and nowhere else: a search state is
+ * partly imagined, and a peek rolled inside one would name a card the bot
+ * itself made up. Once a turn, seeded by the game and the turn, so the same
+ * position reads the same way in both engines and on a replay. Counts the
+ * real table no longer bears out are forgotten here too.
+ */
+function peek(state: GameState, me: PlayerIdx): void {
+  if (intel.perfect) return;
+  for (let seat = 0; seat < state.players.length; seat++) {
+    if (seat === me) continue;
+    const foe = seat as PlayerIdx;
+    const t = trackOf(state, me, foe);
+    const p = state.players[foe];
+    if (state.turn > t.lastTurn) {
+      const rng = rollsFor(state, me, foe, 0x1b873593);
+      for (let r = 0; r < intel.deckRolls; r++) {
+        const roll = rollFloat(rng);
+        if (roll >= intel.deckChance || p.deck.length === 0) continue;
+        const id = p.deck[randInt(rng, p.deck.length)];
+        if ((t.knownDeck.get(id) ?? 0) < copiesIn(p.deck, id)) t.knownDeck.set(id, (t.knownDeck.get(id) ?? 0) + 1);
+      }
+      for (let r = 0; r < intel.handRolls; r++) {
+        const roll = rollFloat(rng);
+        if (roll >= intel.handChance || p.hand.length === 0) continue;
+        const id = p.hand[randInt(rng, p.hand.length)];
+        if ((t.knownHand.get(id) ?? 0) < copiesIn(p.hand, id)) t.knownHand.set(id, (t.knownHand.get(id) ?? 0) + 1);
+      }
+      t.lastTurn = state.turn;
+    }
+    clampKnown(t.knownHand, p.hand);
+    clampKnown(t.knownDeck, p.deck);
+  }
+}
+
+/** Whether a trap the bot has named in their hand is one they could pay for now. */
+function knownTrapIn(state: GameState, me: PlayerIdx, foe: PlayerIdx): boolean {
+  const p = state.players[foe];
+  if (intel.perfect) {
+    return p.hand.some((id) => card(id).type === 'trap' && canPay(p, costFor(p, card(id))));
+  }
+  const t = trackOf(state, me, foe);
+  for (const [id, n] of t.knownHand) {
+    if (knownIn(p.hand, id, n) <= 0) continue;
+    const def = card(id);
+    if (def.type === 'trap' && canPay(p, costFor(p, def))) return true;
+  }
+  return false;
+}
+
+/**
+ * The hand the bot believes the opponent holds: what it has named, then the
+ * rest drawn from the cards their leader allows that they could still be
+ * holding, a card they have shown counting in full and one they have not at
+ * the unseen weight. The same size as the real hand, which is public.
+ */
+function believedHand(state: GameState, me: PlayerIdx, foe: PlayerIdx): string[] {
+  const p = state.players[foe];
+  if (intel.perfect) return [...p.hand];
+  const t = trackOf(state, me, foe);
+  const hand: string[] = [];
+  // In id order, so both engines build the same hand from the same peeks.
+  const known = [...t.knownHand.entries()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  for (const [id, n] of known) {
+    const m = knownIn(p.hand, id, n);
+    for (let i = 0; i < m && hand.length < p.hand.length; i++) hand.push(id);
+  }
+  if (hand.length >= p.hand.length) return hand;
+
+  const pool = poolBehind(p.leaderCardId);
+  const seen = seenCopies(state, foe, pool);
+  const ids = [...pool.legal].sort();
+  const weights: number[] = [];
+  let total = 0;
+  for (const id of ids) {
+    const shown = (seen.get(id) ?? 0) + copiesIn(hand, id);
+    const left = Math.max(0, COPY_LIMIT - shown);
+    const weight = left * (seen.has(id) || t.knownDeck.has(id) ? 1 : UNSEEN_WEIGHT);
+    weights.push(weight);
+    total += weight;
+  }
+  const rng = rollsFor(state, me, foe, 0x27d4eb2f);
+  while (hand.length < p.hand.length && total > 0) {
+    let roll = rollFloat(rng) * total;
+    let pick = -1;
+    for (let i = 0; i < ids.length; i++) {
+      if (weights[i] <= 0) continue;
+      roll -= weights[i];
+      if (roll <= 0) {
+        pick = i;
+        break;
+      }
+    }
+    if (pick < 0) break;
+    hand.push(ids[pick]);
+    total -= weights[pick];
+    weights[pick] = 0;
+  }
+  return hand;
+}
+
+/** The position with every other seat's hidden hand replaced by the one the bot believes in. */
+function redactTable(state: GameState, me: PlayerIdx): GameState {
+  if (intel.perfect) return state;
+  const s = structuredClone(state);
+  for (let seat = 0; seat < state.players.length; seat++) {
+    if (seat !== me) s.players[seat].hand = believedHand(state, me, seat as PlayerIdx);
+  }
+  return s;
+}
+
+export function readEnemy(state: GameState, seat: PlayerIdx): EnemyRead {
+  const foe = state.players[seat];
+  const pool = poolBehind(foe.leaderCardId);
+  if (pool.total <= 0) return { trapDensity: 0, cheapestTrap: null, seat };
+
+  const seen = seenCopies(state, seat, pool);
 
   // The pool above counted every card as unseen. Only the handful that have
   // actually surfaced need correcting, which is what keeps this off the whole
@@ -1224,6 +1456,8 @@ function trapRisk(state: GameState, reads: EnemyRead[]): number {
   for (const read of reads) {
     const foe = state.players[read.seat];
     if (foe.eliminated) continue;
+    // A trap the bot has named in their hand is not a risk but a fact.
+    if (read.knownTrap) return 1;
     if (foe.hand.length === 0 || read.trapDensity <= 0 || !read.cheapestTrap) continue;
     if (!canPay(foe, costFor(foe, read.cheapestTrap))) continue;
     const risk = 1 - Math.pow(1 - read.trapDensity, foe.hand.length);
@@ -1260,11 +1494,304 @@ function progressAgainst(before: GameState, after: GameState, me: PlayerIdx): nu
     const hpWas = was.leader ? remainingHp(was.leader) : 0;
     const hpNow = now.leader ? remainingHp(now.leader) : 0;
     const debtLeft = debtLimitOf(before) - was.debtCount;
-    total +=
-      (hpWas - hpNow) / Math.max(1, hpWas) +
-      (now.debtCount - was.debtCount) / Math.max(1, debtLeft);
+    const debtWas = was.debtCount + pendingFatigue(before, foe);
+    const debtNow = now.debtCount + pendingFatigue(after, foe);
+    total += (hpWas - hpNow) / Math.max(1, hpWas) + (debtNow - debtWas) / Math.max(1, debtLeft);
   }
   return total;
+}
+
+// --- the deck scan -----------------------------------------------------------
+
+/**
+ * A set of cards from the bot's own list that, put together on a board, takes
+ * a share of the opponent's nearer clock. Found once per game by probing the
+ * list, and worth holding and assembling from then on. This is the bot's
+ * long horizon: the search sees a combo only once its pieces are in reach of
+ * one turn, and the scan is what tells it, turns earlier, which pieces those
+ * are.
+ */
+interface Kit {
+  cards: string[];
+  /** Share of the opponent's nearer clock the kit takes off a bare board, 1 being a kill. */
+  reach: number;
+}
+
+/** Share of the clock a kit has to take for the scan to keep it. */
+const KIT_MIN_REACH = 0.4;
+/** A set has to reach this much further than its best part to count as a kit. */
+const KIT_SYNERGY = 0.1;
+/** Cards, by single reach, carried into the pair round. */
+const KIT_PAIR_CARDS = 12;
+/** Cards, by best pair reach, carried into the triple round. */
+const KIT_TRIPLE_CARDS = 6;
+const KIT_KEEP = 6;
+/** Share of a piece's progress a copy still in the deck counts for. */
+const KIT_OUT_WEIGHT = 0.3;
+
+const kitCache = new Map<string, Kit[]>();
+
+let wall: CardDef | null | undefined;
+
+/**
+ * The blocker every probe faces: the collectable vanilla summon with the most
+ * HP in the set, whichever card that is at the time. A wall with no text makes
+ * the probe about the kit and not about the wall.
+ */
+function wallCard(): CardDef | null {
+  if (wall !== undefined) return wall;
+  let best: CardDef | null = null;
+  for (const def of allCards()) {
+    if (def.type !== 'summon' || def.uncollectible || def.text || def.powers?.length || def.triggers) continue;
+    if (def.flip || def.stationary || def.redirect) continue;
+    if (!best || (def.hp ?? 0) > (best.hp ?? 0)) best = def;
+  }
+  wall = best;
+  return wall;
+}
+
+let blank: CardDef | null | undefined;
+
+/** A collectible trap, the lowest id: a card the bot cannot play on its own turn. */
+function blankCard(): CardDef | null {
+  if (blank !== undefined) return blank;
+  let best: CardDef | null = null;
+  for (const def of allCards()) {
+    if (def.type !== 'trap' || def.uncollectible) continue;
+    if (!best || def.id < best.id) best = def;
+  }
+  blank = best;
+  return blank;
+}
+
+function kitKey(state: GameState, me: PlayerIdx): string {
+  return `${state.seed}/${me}/${state.players[me].leaderCardId}`;
+}
+
+/**
+ * The board a kit is probed on: the real position with the bot's own slots and
+ * hand replaced by the kit, three pips of every colour its leader brings and
+ * three colourless, and the bodies old enough to swing. The opponent stands as
+ * they are, so a kit is measured against the leader it will actually face.
+ */
+function probeBoard(state: GameState, me: PlayerIdx, kit: string[]): GameState {
+  const s = structuredClone(state);
+  const p = s.players[me];
+  s.active = me;
+  s.phase = 'main';
+  s.pending = null;
+  s.battle = null;
+  s.choiceQueue = [];
+  s.flipQueue = [];
+  s.replaceQueue = [];
+  s.winner = null;
+  s.drawn = false;
+  p.turnsTaken = Math.max(p.turnsTaken, 3);
+  p.supportersLeft = 1;
+  p.slots = [null, null, null];
+  p.hand = [];
+  const filler = p.deck[p.deck.length - 1] ?? kit[0];
+  // The rest of the list stays out of the measure. A single that dug a second
+  // piece out of the deck read as that piece's reach, and the set's baseline
+  // then counted the piece twice and refused the kit. The deck keeps its
+  // length, for the fatigue clock, and holds a card no turn of the bot's can
+  // play.
+  const blank = blankCard()?.id ?? filler;
+  p.deck = p.deck.map(() => blank);
+  const bodyOf = (id: string, owner: PlayerIdx, hp: number, isLeader: boolean): SummonInstance => ({
+    uid: `k${s.nextUid++}`,
+    cardId: id,
+    owner,
+    isLeader,
+    hp: Array.from({ length: Math.max(1, hp) }, () => ({ cardId: filler, flipped: false })),
+    sapped: false,
+    wounds: 0,
+    shields: 0,
+    strengthMods: [],
+    effectDamageMod: 0,
+    powerUses: {},
+    enteredTurn: 0,
+  });
+  // The scan runs at the first decision, before either leader has entered, so
+  // a leader still to come stands in at the HP the engine will give it. Every
+  // opponent also gets a wall in front of the leader: without one, any three
+  // bodies reach a leader by swinging, and the scan would find stat piles
+  // rather than the lines that carry damage past a blocker.
+  for (const side of [me, ...livingOpponents(s, me)]) {
+    const q = s.players[side];
+    if (!q.leader) {
+      q.leader = bodyOf(q.leaderCardId, side, (card(q.leaderCardId).hp ?? 0) * 2 + 2, true);
+      q.leaderPlayed = true;
+    }
+    if (side === me) continue;
+    const wall = wallCard();
+    if (wall && !q.slots.some(Boolean)) q.slots[0] = bodyOf(wall.id, side, wall.hp ?? 1, false);
+  }
+  let slot = 0;
+  for (const id of kit) {
+    const def = card(id);
+    if (def.type === 'summon' && slot < p.slots.length) {
+      p.slots[slot++] = {
+        uid: `k${s.nextUid++}`,
+        cardId: id,
+        owner: me,
+        isLeader: false,
+        hp: Array.from({ length: Math.max(1, def.hp ?? 1) }, () => ({ cardId: filler, flipped: false })),
+        sapped: false,
+        wounds: 0,
+        shields: 0,
+        strengthMods: [],
+        effectDamageMod: 0,
+        powerUses: {},
+        enteredTurn: 0,
+      };
+    } else {
+      p.hand.push(id);
+    }
+  }
+  const mana = { ...p.mana };
+  for (const kind of MANA_KINDS) mana[kind] = 0;
+  mana.C = 3;
+  for (const c of deckIdentity(p.leaderCardId)) mana[c] = 3;
+  p.mana = mana;
+  return s;
+}
+
+/** Share of the nearer clock a kit takes off the probe board, 1 meaning a kill. */
+function kitReach(state: GameState, me: PlayerIdx, kit: string[], w: BotWeights): number {
+  const probe = probeBoard(state, me, kit);
+  let best = 0;
+  for (const setup of [0, limits.maxSetupSteps]) {
+    const r = burn(probe, me, limits.maxBurnSteps, w, setup, true);
+    if (r.state.winner === me) return 1;
+    best = Math.max(best, progressAgainst(probe, r.state, me));
+  }
+  return Math.min(1, best);
+}
+
+/**
+ * Probe the bot's own list for kits: every card alone, then pairs among the
+ * cards that reached furthest alone, then triples among the cards in the best
+ * pairs. Only a set that reaches further than its best part is a kit; a big
+ * body on its own is a big body, and the evaluator prices that already.
+ */
+function scanKits(state: GameState, me: PlayerIdx, w: BotWeights): Kit[] {
+  const p = state.players[me];
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  const note = (id: string) => {
+    if (!seen.has(id) && card(id).type !== 'trap') {
+      seen.add(id);
+      ids.push(id);
+    }
+  };
+  for (const id of p.deck) note(id);
+  for (const id of p.hand) note(id);
+  for (const s of p.slots) if (s) note(s.cardId);
+
+  const single = new Map<string, number>();
+  for (const id of ids) single.set(id, kitReach(state, me, [id], w));
+  const byReach = (a: string, b: string) => (single.get(b) ?? 0) - (single.get(a) ?? 0);
+  const pairCards = [...ids].sort(byReach).slice(0, KIT_PAIR_CARDS);
+
+  const kits: Kit[] = [];
+  const pairBest = new Map<string, number>();
+  for (let i = 0; i < pairCards.length; i++) {
+    for (let j = i + 1; j < pairCards.length; j++) {
+      const set = [pairCards[i], pairCards[j]];
+      const reach = kitReach(state, me, set, w);
+      // Added, not the larger: two bodies that each reach a third reach two
+      // thirds side by side, and that is a pile rather than a kit.
+      const parts = Math.min(1, (single.get(set[0]) ?? 0) + (single.get(set[1]) ?? 0));
+      for (const id of set) pairBest.set(id, Math.max(pairBest.get(id) ?? 0, reach));
+      if (reach >= KIT_MIN_REACH && reach > parts + KIT_SYNERGY) kits.push({ cards: set, reach });
+    }
+  }
+
+  const tripleCards = [...pairBest.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, KIT_TRIPLE_CARDS)
+    .map(([id]) => id);
+  for (let i = 0; i < tripleCards.length; i++) {
+    for (let j = i + 1; j < tripleCards.length; j++) {
+      for (let k = j + 1; k < tripleCards.length; k++) {
+        const set = [tripleCards[i], tripleCards[j], tripleCards[k]];
+        let parts = Math.min(1, set.reduce((n, id) => n + (single.get(id) ?? 0), 0));
+        for (const kit of kits) {
+          if (!kit.cards.every((id) => set.includes(id))) continue;
+          const rest = set.find((id) => !kit.cards.includes(id));
+          parts = Math.max(parts, Math.min(1, kit.reach + (rest ? single.get(rest) ?? 0 : 0)));
+        }
+        const reach = kitReach(state, me, set, w);
+        if (reach >= KIT_MIN_REACH && reach > parts + KIT_SYNERGY) kits.push({ cards: set, reach });
+      }
+    }
+  }
+
+  kits.sort((a, b) => b.reach - a.reach);
+  return kits.slice(0, KIT_KEEP);
+}
+
+/** Runs the scan once per game and seat. The scan evaluates positions itself, so the key is filled first. */
+function ensureKits(state: GameState, me: PlayerIdx, w: BotWeights): void {
+  if (!limits.scan) return;
+  const key = kitKey(state, me);
+  if (kitCache.has(key)) return;
+  prune(kitCache, state.seed);
+  kitCache.set(key, []);
+  kitCache.set(key, scanKits(state, me, w));
+}
+
+/** Per-game caches in a process that plays many games: keep the current game's entries, drop the rest once there are many. */
+const CACHE_KEEP = 64;
+
+function prune<T>(cache: Map<string, T>, seed: number): void {
+  if (cache.size < CACHE_KEEP) return;
+  const mine = `${seed}/`;
+  for (const key of [...cache.keys()]) if (!key.startsWith(mine)) cache.delete(key);
+}
+
+/** The kits found for a seat this game, for tests and for reading what the bot is building toward. */
+export function kitsFor(state: GameState, me: PlayerIdx): readonly { cards: string[]; reach: number }[] {
+  return kitCache.get(kitKey(state, me)) ?? [];
+}
+
+/**
+ * What holding the pieces of the best kit is worth right now: the kit's reach,
+ * scaled by the share of it in hand or on the board squared, with a copy still
+ * in the deck counting for a little. Squared, so two pieces of three are worth
+ * far more than one, which is what makes the last piece worth digging for.
+ */
+function kitBonus(state: GameState, me: PlayerIdx, w: BotWeights): number {
+  const kits = kitCache.get(kitKey(state, me));
+  if (!kits || kits.length === 0) return 0;
+  const p = state.players[me];
+  const held = new Set<string>(p.hand);
+  for (const s of p.slots) if (s) held.add(s.cardId);
+  if (p.leader) held.add(p.leader.cardId);
+  const inDeck = new Set<string>(p.deck);
+  let best = 0;
+  for (const kit of kits) {
+    let have = 0;
+    let outs = 0;
+    for (const id of kit.cards) {
+      if (held.has(id)) have++;
+      else if (inDeck.has(id)) outs++;
+    }
+    const progress = (have + KIT_OUT_WEIGHT * outs) / kit.cards.length;
+    best = Math.max(best, kit.reach * progress * progress);
+  }
+  return w.combo * best;
+}
+
+/**
+ * The debt a player's next draw step will charge them before they see a card:
+ * the deck-out bill, once the deck is too short for the draw. Milling an
+ * opponent dry is progress on their debt clock one draw step early, and a
+ * rollout that read only the count they carry now walked past it.
+ */
+function pendingFatigue(state: GameState, side: PlayerIdx): number {
+  return state.players[side].deck.length < DRAW_PER_TURN ? reshuffleCost(state, side) : 0;
 }
 
 /** The leader closest to falling, which is the one a threat is measured against. */
@@ -1307,6 +1834,42 @@ function potential(state: GameState, me: PlayerIdx): number {
   const mana = availableMana(p);
   for (const kind of MANA_KINDS) total += mana[kind];
   return total;
+}
+
+/** Paid Powers a patient climb fires once it has built everything it can. */
+const CASH_STEPS = 4;
+
+/**
+ * Potential with the best paid Power still to fire. A Power that sets a body's
+ * attack from something the free steps build, debt say, gains nothing until it
+ * fires, and fired early it fixes the attack at what the pile was then. A climb
+ * greedy on the plain measure took it first, for the largest step on offer,
+ * and every free step after that built toward nothing. Counting the follow-up
+ * without taking it lets the climb build first and cash in last.
+ */
+function cashPotential(
+  state: GameState,
+  me: PlayerIdx,
+  w: BotWeights,
+): { value: number; cash: Action | null; cashState: GameState | null } {
+  const standing = potential(state, me);
+  let value = standing;
+  let cash: Action | null = null;
+  let cashState: GameState | null = null;
+  for (const action of candidateActions(state, me, w, true)) {
+    if (action.type !== 'ACTIVATE_POWER' || freeRepeat(state, me, action)) continue;
+    const res = applyAction(state, me, action);
+    if (!res.ok) continue;
+    const after = settle(res.state, w, true);
+    if (losesIt(after, me)) continue;
+    const p = potential(after, me);
+    if (p > value + 1e-9) {
+      value = p;
+      cash = action;
+      cashState = after;
+    }
+  }
+  return { value, cash, cashState };
 }
 
 /**
@@ -1394,13 +1957,16 @@ function burn(
   // a longer climb there inflated what a board still threatened and the bot
   // held pieces it should have cashed: measured at four points on random decks.
   let flat = 0;
+  // The last state a gain was made in, and how long the line was there.
+  let firm = cur;
+  let firmLength = 0;
   for (let step = 0; step < setup; step++) {
     if (!turnGoesOn(cur, me)) break;
     let pick: Action | null = null;
     let pickState: GameState | null = null;
     let level: Action | null = null;
     let levelState: GameState | null = null;
-    const standing = potential(cur, me);
+    const standing = patient ? cashPotential(cur, me, w).value : potential(cur, me);
     let best = standing;
 
     for (const action of candidateActions(cur, me, w, true)) {
@@ -1411,8 +1977,17 @@ function burn(
         return { state: after, line: [...line, action], damage: worstDrop(after) };
       }
       if (losesIt(after, me)) continue;
-      const p = potential(after, me);
-      if (p > best + 1e-9) {
+      const p = patient ? cashPotential(after, me, w).value : potential(after, me);
+      // On a tie the free step goes first: the paid one is still there after it,
+      // and the free one may be worth more once the paid one has fired.
+      const ahead =
+        p > best + 1e-9 ||
+        (patient &&
+          pick !== null &&
+          Math.abs(p - best) <= 1e-9 &&
+          freeRepeat(cur, me, action) &&
+          !freeRepeat(cur, me, pick));
+      if (ahead) {
         best = p;
         pick = action;
         pickState = after;
@@ -1432,6 +2007,29 @@ function burn(
     if (!pick || !pickState) break;
     line.push(pick);
     cur = pickState;
+    if (flat === 0) {
+      firm = cur;
+      firmLength = line.length;
+    }
+  }
+  // A flat step no gain followed built nothing, and it still spent what the
+  // Power spends: a point of debt, say, that the kill below may not have.
+  if (line.length > firmLength) {
+    cur = firm;
+    line.length = firmLength;
+  }
+
+  // The climb counted a paid Power it never took. Now that nothing free
+  // gains, it fires: the attack it sets is read off everything built above.
+  for (let cashed = 0; patient && cashed < CASH_STEPS; cashed++) {
+    if (!turnGoesOn(cur, me)) break;
+    const { cash, cashState } = cashPotential(cur, me, w);
+    if (!cash || !cashState) break;
+    if (cashState.winner === me) {
+      return { state: cashState, line: [...line, cash], damage: worstDrop(cashState) };
+    }
+    line.push(cash);
+    cur = cashState;
   }
 
   for (let step = 0; step < steps; step++) {
@@ -1507,6 +2105,9 @@ function nextTurn(state: GameState, me: PlayerIdx, w: BotWeights): GameState | n
     // opposite: a party game seats up to four and they all get to answer.
     if (s.active !== me && !s.pending && s.phase === 'main') {
       const seat = s.active;
+      // Their turn is played on the hand the bot believes they hold. The table
+      // was redacted at the root of this decision, so a reply cannot dodge a
+      // held trap or spell it has never been shown.
       s = replyOf(s, seat, w);
       if (isOver(s)) return s;
       if (s.active === seat && s.phase === 'main' && !s.pending) {
@@ -1725,6 +2326,8 @@ export function clearPlan(): void {
   plan = null;
   shopPrices.clear();
   shopDeals.clear();
+  kitCache.clear();
+  intelCache.clear();
 }
 
 /** The next action of the standing plan, or null if there is nothing to follow. */
@@ -1776,6 +2379,18 @@ export function chooseAction(
   // stands for the whole of it, searches included.
   shopPrices.clear();
   shopDeals.clear();
+
+  // Peeks roll on the real table, once a turn. Then the search sees only what
+  // the bot is entitled to: from here to the leaves every other hand is the one
+  // it believes in, so no line is priced on a card it could not know about. The
+  // evaluator prices hands by level and decks by their outs, and before this the
+  // reply model alone was redacted, so the root's own scores leaked the truth.
+  peek(state, me);
+  state = redactTable(state, me);
+
+  // Once a game: what the bot's own list can assemble, so the evaluator can
+  // price a piece before the turn that uses it.
+  ensureKits(state, me, w);
 
   // Haggling is a policy rather than a search: the evaluator cannot price an
   // offer that only pays off if the other side takes it, and a one-ply loop

@@ -10,7 +10,7 @@ public static class Purple
     public static CardDef[] Build() => new[]
     {
         K.Starter("spectralking", "The Spectral King", F(Faction.Spirit, Faction.Mortal),
-            str: 2, hp: 3, text: "",
+            str: 3, hp: 4, text: "",
             powers: Powers(
                 new Power
                 {
@@ -151,14 +151,22 @@ public static class Purple
             }),
 
         K.Summon(2, "boneknown", "Bone Known", F(Faction.Spirit), str: 2, hp: 3,
-            text: "Has +1 attack for every 2 debt you carry.",
-            triggers: new Triggers
+            powers: Powers(new Power
             {
-                StrengthBonus = a => a.Source is not null && a.Summon.Uid == a.Source.Uid
-                    ? a.State.Players[a.Controller].DebtCount / 2 : 0,
-            }),
+                Name = "Dark Knowledge",
+                Cost = new Cost(O: 1),
+                Text = "Set attack to half your debt plus two.",
+                Effect = c =>
+                {
+                    if (c.Self is not { } me) return;
+                    var s = c.SummonAt(me);
+                    if (s is null) return;
+                    int goal = c.State.Players[c.Me].DebtCount / 2 + 2;
+                    c.BuffStrength(me, goal - Effects.EffectiveStrength(c.State, s), ModDuration.Permanent);
+                },
+            })),
 
-        K.Summon(2, "evilflower", "Evil Flower", F(Faction.Living, Faction.Spirit), str: 1, hp: 4,
+        K.Summon(2, "evilflower", "Evil Flower", F(Faction.Living, Faction.Spirit), str: 2, hp: 4,
             text: "At the start of your turn, put a Wound on every enemy summon.",
             triggers: new Triggers
             {
@@ -166,7 +174,7 @@ public static class Purple
             }),
 
         K.Summon(2, "mooncat", "Mooncat", F(Faction.Beast, Faction.Star),
-            str: 2,
+            str: 3,
             hp: 3,
             powers: Powers(new Power
             {
@@ -181,7 +189,7 @@ public static class Purple
                 },
             })),
 
-        K.Summon(2, "necromancer", "Necromancer", F(Faction.Mortal, Faction.Scholar), str: 1, hp: 2,
+        K.Summon(2, "necromancer", "Necromancer", F(Faction.Mortal, Faction.Scholar), str: 2, hp: 2,
             powers: Powers(new Power
             {
                 Name = "Raise",
@@ -205,7 +213,7 @@ public static class Purple
                 },
             })),
 
-        K.Summon(2, "parkranger", "Park Ranger", F(Faction.Mortal), str: 2, hp: 3,
+        K.Summon(2, "parkranger", "Park Ranger", F(Faction.Mortal), str: 3, hp: 3,
             powers: Powers(new Power
             {
                 Name = "Tend",
@@ -234,7 +242,7 @@ public static class Purple
                 },
             })),
 
-        K.Summon(2, "scientist", "Scientist", F(Faction.Mortal, Faction.Scholar), str: 2,
+        K.Summon(2, "scientist", "Scientist", F(Faction.Mortal, Faction.Scholar), str: 3,
             hp: 4,
             text: "When an ally Scholar dies, draw a card.",
             triggers: new Triggers
@@ -261,7 +269,7 @@ public static class Purple
                 },
             })),
 
-        K.Summon(2, "slime", "Slime", F(Faction.Living), str: 3, hp: 4,
+        K.Summon(2, "slime", "Slime", F(Faction.Living), str: 4, hp: 4,
             text: "Deathrattle: Put a Slime with 1 less HP into an empty slot.",
             triggers: new Triggers
             {
@@ -279,7 +287,7 @@ public static class Purple
                 },
             }),
 
-        K.Summon(2, "stabber", "Stabber", F(Faction.Mortal, Faction.Spirit), str: 3, hp: 1,
+        K.Summon(2, "stabber", "Stabber", F(Faction.Mortal, Faction.Spirit), str: 4, hp: 1,
             text: "Strike: The defender loses 1 attack until end of turn. "
                 + "When an ally Spirit dies, gains 1 HP.",
             triggers: new Triggers
@@ -309,7 +317,7 @@ public static class Purple
             flipCost: new FlipCost { Mana = new Cost(O: 1) },
             flip: c => c.LockReplace(c.Opp, 1)),
 
-        K.Summon(2, "thecount", "The Count", F(Faction.Spirit, Faction.Mortal), str: 1, hp: 3,
+        K.Summon(2, "thecount", "The Count", F(Faction.Spirit, Faction.Mortal), str: 2, hp: 3,
             text: "Strike: Put 2 Wounds on the defender. Heals 2 whenever it kills an enemy summon.",
             triggers: new Triggers
             {
@@ -331,7 +339,7 @@ public static class Purple
             flip: c => c.Curse(c.Opp, "o-curse-dread", 3)),
 
         K.Summon(2, "witch", "Witch", F(Faction.Mortal, Faction.Scholar),
-            str: 2,
+            str: 3,
             hp: 3,
             powers: Powers(
             new Power
@@ -353,7 +361,7 @@ public static class Purple
             })),
 
         K.Summon(3, "bighatsalze", "Big Hat Salze", F(Faction.Mortal, Faction.Scholar),
-            str: 3, hp: 4,
+            str: 4, hp: 5,
             powers: Powers(new Power
             {
                 Name = "Study",
@@ -369,14 +377,14 @@ public static class Purple
             })),
 
         K.Summon(3, "darksideofthemoon", "Dark Side of the Moon", F(Faction.Star, Faction.Spirit),
-            str: 2, hp: 6, text: "Wounded enemies have -1 attack.",
+            str: 3, hp: 6, text: "Wounded enemies have -1 attack.",
             triggers: new Triggers
             {
                 StrengthBonus = a => a.Summon.Owner != a.Controller
                     && a.Summon.Wounds > 0 ? -1 : 0,
             }),
 
-        K.Summon(3, "devourer", "The Devourer", F(Faction.Beast, Faction.Spirit), str: 2, hp: 4,
+        K.Summon(3, "devourer", "The Devourer", F(Faction.Beast, Faction.Spirit), str: 3, hp: 5,
             text: "Strike: Put 3 Wounds on the defender.",
             triggers: new Triggers
             {
@@ -386,13 +394,13 @@ public static class Purple
                 },
             }),
 
-        K.Summon(3, "eyesnight", "Eyes of Night", F(Faction.Spirit), str: 2, hp: 4,
+        K.Summon(3, "eyesnight", "Eyes of Night", F(Faction.Spirit), str: 3, hp: 5,
             woundAmplify: true,
             text: "Wounds on enemy summons become damage one for one. "
                 + "At the start of your turn, Mill 2.",
             triggers: new Triggers { OnAwake = c => c.Mill(c.Me, 2) }),
 
-        K.Summon(3, "fungal", "Fungal Bloom", F(Faction.Living), str: 2, hp: 5,
+        K.Summon(3, "fungal", "Fungal Bloom", F(Faction.Living), str: 3, hp: 5,
             text: "Deathrattle: Every enemy summon takes 3 Wounds. "
             + "The enemy cannot replace summons that die until the end of your turn.",
             triggers: new Triggers
@@ -404,7 +412,7 @@ public static class Purple
                 },
             }),
 
-        K.Summon(3, "mothhorror", "Moth Horror", F(Faction.Spirit, Faction.Beast), str: 4, hp: 3,
+        K.Summon(3, "mothhorror", "Moth Horror", F(Faction.Spirit, Faction.Beast), str: 5, hp: 4,
             text: "Battlecry: Put 2 Wounds on every summon in play.",
             triggers: new Triggers
             {
@@ -415,7 +423,7 @@ public static class Purple
                 },
             }),
 
-        K.Summon(3, "raingod", "Rain God", F(Faction.Spirit, Faction.Star), str: 2, hp: 5,
+        K.Summon(3, "raingod", "Rain God", F(Faction.Spirit, Faction.Star), str: 3, hp: 5,
             text: "At the start of your turn, deal 1 to every Wounded enemy summon.",
             triggers: new Triggers
             {
@@ -441,7 +449,7 @@ public static class Purple
             flipText: "Shuffle a Rot into the enemy's deck.",
             flip: c => c.Curse(c.Opp, "o-curse-rot", 1)),
 
-        K.Summon(3, "wickerman", "Wicker Man", F(Faction.Living, Faction.Spirit), str: 3, hp: 4,
+        K.Summon(3, "wickerman", "Wicker Man", F(Faction.Living, Faction.Spirit), str: 4, hp: 5,
             text: "Deathrattle: Shuffle 2 Rot into the enemy's deck.",
             triggers: new Triggers { OnDeath = c => c.Curse(c.Opp, "o-curse-rot", 2) }),
 

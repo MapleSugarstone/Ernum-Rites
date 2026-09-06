@@ -59,7 +59,9 @@ public static class Match
             int actor = state.CurrentActor;
             var action = players[actor] is { } np
                 ? np.Choose(state)
-                : Bot.ChooseAction(state, actor);
+                : agents[actor].Previous
+                    ? PreviousBot.ChooseAction(state, actor)
+                    : Bot.ChooseAction(state, actor);
 
             if (IsPlay(action.Type) && action.HandIndex >= 0
                 && action.HandIndex < state.Players[actor].Hand.Count)

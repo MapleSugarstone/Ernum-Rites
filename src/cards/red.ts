@@ -8,7 +8,7 @@ const k = colorKit('P', 'p', 'Red', 'Red/spells');
 
 export const redCards: CardDef[] = [
   k.starter('archlife', 'Archlife', ['Spirit', 'Star'], {
-    str: 2,
+    str: 3,
     hp: 3,
     effectDamage: 1,
     text: 'Effect Damage +1. At the start of your turn, loses 1 HP.',
@@ -38,9 +38,9 @@ export const redCards: CardDef[] = [
   }),
 
   // --- level 1 --------------------------------------------------------------
-  k.summon(1, 'beast', 'Red Beast', ['Beast'], { str: 3, hp: 2 }),
+  k.summon(1, 'beast', 'Red Beast', ['Beast'], { str: 3, hp: 1 }),
   k.summon(1, 'beetle', 'Ember Beetle', ['Beast'], {
-    str: 1,
+    str: 2,
     hp: 2,
     flipText: 'Deal 1 to an enemy summon.',
     flip: (c) => {
@@ -50,21 +50,21 @@ export const redCards: CardDef[] = [
   k.summon(1, 'bugbert', 'Bugbert', ['Beast'], {
     text: 'Deathrattle: Costs no debt.',
     triggers: { onDeath: (c) => c.clearDebt(c.me, 1) },
-    str: 1,
+    str: 2,
     hp: 3,
   }),
   k.summon(1, 'bunny', 'Cinder Bunny', ['Beast'], {
     text: 'Battlecry: Deal 1 to an enemy summon.',
     targets: [T.enemy()],
     triggers: { onEnter: (c) => { if (c.targets[0]) c.damage(c.targets[0], 1); } },
-    str: 2,
+    str: 3,
     hp: 2,
     flipText: 'Deal 1 to the enemy leader.',
     flipCost: { mana: { P: 1 } },
     flip: (c) => c.damage({ kind: 'leader', player: c.opp }, 1),
   }),
   k.summon(1, 'devil', 'Little Devil', ['Spirit'], {
-    str: 1,
+    str: 2,
     hp: 2,
     text: 'Battlecry: Deal 1 to both leaders.',
     triggers: {
@@ -81,7 +81,7 @@ export const redCards: CardDef[] = [
     },
   }),
   k.summon(1, 'firebat', 'Firebat', ['Beast'], {
-    str: 1,
+    str: 2,
     hp: 2,
     text: 'Strike: Deal 1 to the defender first.',
     triggers: {
@@ -96,8 +96,8 @@ export const redCards: CardDef[] = [
     },
   }),
   k.summon(1, 'firesprite', 'Fire Sprite', ['Spirit'], {
-    hp: 2,
-    str: 1,
+    hp: 1,
+    str: 2,
     powers: [
       {
         name: 'Spark',
@@ -113,7 +113,7 @@ export const redCards: CardDef[] = [
   }),
   k.summon(1, 'minimage', 'Minimage', ['Mortal', 'Scholar'], {
     hp: 2,
-    str: 1,
+    str: 2,
     powers: [
       {
         name: 'Cantrip',
@@ -138,7 +138,7 @@ export const redCards: CardDef[] = [
     flip: (c) => c.damage({ kind: 'leader', player: c.opp }, 1),
   }),
   k.summon(1, 'thinker', 'The Thinker', ['Mortal', 'Scholar'], {
-    str: 1,
+    str: 2,
     hp: 3,
     text: 'At the start of your turn, draw a card.',
     triggers: { onAwake: (c) => c.draw(c.me, 1) },
@@ -146,7 +146,7 @@ export const redCards: CardDef[] = [
 
   // --- level 2 --------------------------------------------------------------
   k.summon(2, 'ash demon', 'Ash Demon', ['Spirit'], {
-    str: 2,
+    str: 4,
     hp: 2,
     text: 'Deathrattle: Deal 1 to every enemy summon.',
     triggers: {
@@ -157,15 +157,15 @@ export const redCards: CardDef[] = [
     powers: [
       {
         name: 'Cinders',
-        cost: { P: 1 },
-        text: 'Deal 1 to an enemy character.',
+        cost: { P: 2 },
+        text: 'Deal 2 to an enemy character.',
         targets: [T.enemyOrLeader()],
-        effect: (c) => c.damage(c.targets[0], 1),
+        effect: (c) => c.damage(c.targets[0], 2),
       },
     ],
   }),
   k.summon(2, 'burnflayer', 'Burnflayer', ['Spirit'], {
-    str: 2,
+    str: 4,
     hp: 4,
     powers: [
       {
@@ -183,7 +183,7 @@ export const redCards: CardDef[] = [
   }),
   k.summon(2, 'deathknight', 'Death Knight', ['Mortal', 'Spirit'], {
     hp: 3,
-    str: 3,
+    str: 5,
     text:
       'Strike: Gains 1 HP off your deck. When an enemy summon dies, heal your leader 1.',
     triggers: {
@@ -198,7 +198,7 @@ export const redCards: CardDef[] = [
     },
   }),
   k.summon(2, 'dragon', 'Dragon', ['Beast'], {
-    str: 3,
+    str: 5,
     hp: 2,
     text: 'Strike: Deal 1 to every enemy summon.',
     triggers: {
@@ -212,7 +212,7 @@ export const redCards: CardDef[] = [
     flip: (c) => c.damage({ kind: 'leader', player: c.opp }, 2),
   }),
   k.summon(2, 'evil squire', 'Evil Squire', ['Mortal'], {
-    str: 2,
+    str: 4,
     hp: 3,
     text: 'Battlecry: An ally gains +3 attack until end of turn.',
     targets: [T.ally()],
@@ -223,7 +223,7 @@ export const redCards: CardDef[] = [
     },
   }),
   k.summon(2, 'lazylord', 'Lazy Lord', ['Mortal'], {
-    str: 4,
+    str: 6,
     hp: 3,
     text: 'Arrives sapped.',
     triggers: {
@@ -234,14 +234,14 @@ export const redCards: CardDef[] = [
     },
   }),
   k.summon(2, 'livingfort', 'Living Fort', ['Living'], {
-    str: 1,
+    str: 2,
     hp: 6,
     redirect: true,
     stationary: true,
     text: 'Redirection. Stationary.',
   }),
   k.summon(2, 'pinelyte', 'Pinelyte', ['Living'], {
-    str: 2,
+    str: 4,
     hp: 5,
     powers: [
       {
@@ -265,7 +265,7 @@ export const redCards: CardDef[] = [
     },
   }),
   k.summon(2, 'warmateer', 'Warmateer', ['Mortal'], {
-    str: 2,
+    str: 4,
     hp: 3,
     powers: [
       {
@@ -283,7 +283,7 @@ export const redCards: CardDef[] = [
   }),
   k.summon(2, 'wizard', 'Red Wizard', ['Mortal', 'Scholar'], {
     hp: 3,
-    str: 2,
+    str: 4,
     powers: [
       {
         name: 'Ember',
@@ -306,7 +306,7 @@ export const redCards: CardDef[] = [
 
   // --- level 3 --------------------------------------------------------------
   k.summon(3, 'classe', 'Classe', ['Mortal', 'Scholar'], {
-    str: 2,
+    str: 4,
     hp: 5,
     powers: [
       {
@@ -321,7 +321,7 @@ export const redCards: CardDef[] = [
     ],
   }),
   k.summon(3, 'heavenknows', 'Heaven Knows', ['Star', 'Spirit'], {
-    str: 3,
+    str: 5,
     hp: 5,
     text: 'At the end of your turn, deal 1 to every character.',
     triggers: {
@@ -333,17 +333,17 @@ export const redCards: CardDef[] = [
     },
   }),
   k.summon(3, 'helaks', 'Helaks', ['Spirit'], {
-    str: 3,
+    str: 5,
     hp: 6,
     text: 'Cannot be healed.',
   }),
   k.summon(3, 'helemy', 'Helemy', ['Spirit', 'Scholar'], {
-    str: 2,
+    str: 4,
     hp: 5,
     powers: [
       {
         name: 'Alchemize',
-        cost: { P: 2 },
+        cost: { P: 3 },
         text: 'Destroy one of your unsapped summons, then deal its attack to an enemy character.',
         // A sapped body has already spent its turn, so feeding it in was a free
         // second use of it.
@@ -367,7 +367,7 @@ export const redCards: CardDef[] = [
     ],
   }),
   k.summon(3, 'Looker', 'The Looker', ['Spirit'], {
-    str: 2,
+    str: 4,
     hp: 5,
     text: 'At the start of your turn, Scry 3 for any card.',
     triggers: {
@@ -377,7 +377,7 @@ export const redCards: CardDef[] = [
     },
   }),
   k.summon(3, 'Pod', 'The Pod', ['Living'], {
-    str: 2,
+    str: 3,
     hp: 7,
     text: 'Deathrattle: Return 2 spells from your discard pile to your hand.',
     triggers: {
@@ -387,15 +387,15 @@ export const redCards: CardDef[] = [
     },
   }),
   k.summon(3, 'Slicer', 'Slicer', ['Machine'], {
-    str: 2,
+    str: 3,
     hp: 4,
     effectDamage: 1,
     text: 'Effect Damage +1. Battlecry: You take 2 debt.',
     triggers: { onEnter: (c) => c.addDebt(c.me, 2, 'The Slicer bills its owner up front.') },
   }),
   k.summon(3, 'stareater', 'Star Eater', ['Beast', 'Star'], {
-    str: 4,
-    hp: 4,
+    str: 6,
+    hp: 5,
     powers: [
       {
         name: 'Devour',
@@ -410,7 +410,7 @@ export const redCards: CardDef[] = [
     ],
   }),
   k.summon(3, 'Tryybus', 'Tryybus', ['Star'], {
-    str: 2,
+    str: 3,
     hp: 3,
     text: 'All allies have +1 attack. At the start of your turn, loses 1 HP.',
     triggers: {

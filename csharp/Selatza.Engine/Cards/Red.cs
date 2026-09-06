@@ -9,7 +9,7 @@ public static class Red
 
     public static CardDef[] Build() => new[]
     {
-        K.Starter("archlife", "Archlife", F(Faction.Spirit, Faction.Star), str: 2, hp: 3,
+        K.Starter("archlife", "Archlife", F(Faction.Spirit, Faction.Star), str: 3, hp: 3,
             effectDamage: 1,
             text: "Effect Damage +1. At the start of your turn, loses 1 HP.",
             triggers: new Triggers
@@ -39,9 +39,9 @@ public static class Red
                 })),
 
         // --- level 1 ---------------------------------------------------------
-        K.Summon(1, "beast", "Red Beast", F(Faction.Beast), str: 3, hp: 2),
+        K.Summon(1, "beast", "Red Beast", F(Faction.Beast), str: 3, hp: 1),
 
-        K.Summon(1, "beetle", "Ember Beetle", F(Faction.Beast), str: 1, hp: 2,
+        K.Summon(1, "beetle", "Ember Beetle", F(Faction.Beast), str: 2, hp: 2,
             flipText: "Deal 1 to an enemy summon.",
             flip: c =>
             {
@@ -50,17 +50,17 @@ public static class Red
 
         K.Summon(1, "bugbert", "Bugbert", F(Faction.Beast),
             text: "Deathrattle: Costs no debt.",
-            triggers: new Triggers { OnDeath = c => c.ClearDebt(c.Me, 1) }, str: 1, hp: 3),
+            triggers: new Triggers { OnDeath = c => c.ClearDebt(c.Me, 1) }, str: 2, hp: 3),
 
         K.Summon(1, "bunny", "Cinder Bunny", F(Faction.Beast),
             text: "Battlecry: Deal 1 to an enemy summon.",
             targets: Specs(Enemy()),
-            triggers: new Triggers { OnEnter = c => { if (c.TargetOrNull(0) is { } t) c.Damage(t, 1); } }, str: 2, hp: 2,
+            triggers: new Triggers { OnEnter = c => { if (c.TargetOrNull(0) is { } t) c.Damage(t, 1); } }, str: 3, hp: 2,
             flipText: "Deal 1 to the enemy leader.",
             flipCost: new FlipCost { Mana = new Cost(P: 1) },
             flip: c => c.Damage(TargetRef.Leader(c.Opp), 1)),
 
-        K.Summon(1, "devil", "Little Devil", F(Faction.Spirit), str: 1, hp: 2,
+        K.Summon(1, "devil", "Little Devil", F(Faction.Spirit), str: 2, hp: 2,
             text: "Battlecry: Deal 1 to both leaders.",
             triggers: new Triggers { OnEnter = c =>
             {
@@ -76,7 +76,7 @@ public static class Red
             }),
 
         K.Summon(1, "firebat", "Firebat", F(Faction.Beast),
-            str: 1,
+            str: 2,
             hp: 2,
             text: "Strike: Deal 1 to the defender first.",
             triggers: new Triggers
@@ -89,8 +89,8 @@ public static class Red
                 c.Choose("deal-1", c.SummonsOf(c.Opp), "Deal 1 to which enemy summon?");
             }),
 
-        K.Summon(1, "firesprite", "Fire Sprite", F(Faction.Spirit), str: 1,
-            hp: 2,
+        K.Summon(1, "firesprite", "Fire Sprite", F(Faction.Spirit), str: 2,
+            hp: 1,
             powers: Powers(new Power
             {
                 Name = "Spark",
@@ -103,7 +103,7 @@ public static class Red
             flipCost: new FlipCost { Mana = new Cost(P: 1) },
             flip: c => c.Damage(TargetRef.Leader(c.Opp), 1)),
 
-        K.Summon(1, "minimage", "Minimage", F(Faction.Mortal, Faction.Scholar), str: 1,
+        K.Summon(1, "minimage", "Minimage", F(Faction.Mortal, Faction.Scholar), str: 2,
             hp: 2,
             powers: Powers(new Power
             {
@@ -128,12 +128,12 @@ public static class Red
             flipCost: new FlipCost { Mana = new Cost(P: 1) },
             flip: c => c.Damage(TargetRef.Leader(c.Opp), 1)),
 
-        K.Summon(1, "thinker", "The Thinker", F(Faction.Mortal, Faction.Scholar), str: 1, hp: 3,
+        K.Summon(1, "thinker", "The Thinker", F(Faction.Mortal, Faction.Scholar), str: 2, hp: 3,
             text: "At the start of your turn, draw a card.",
             triggers: new Triggers { OnAwake = c => c.Draw(c.Me, 1) }),
 
         // --- level 2 ---------------------------------------------------------
-        K.Summon(2, "ash demon", "Ash Demon", F(Faction.Spirit), str: 2, hp: 2,
+        K.Summon(2, "ash demon", "Ash Demon", F(Faction.Spirit), str: 4, hp: 2,
             text: "Deathrattle: Deal 1 to every enemy summon.",
             triggers: new Triggers
             {
@@ -142,14 +142,14 @@ public static class Red
             powers: Powers(new Power
             {
                 Name = "Cinders",
-                Cost = new Cost(P: 1),
-                Text = "Deal 1 to an enemy character.",
+                Cost = new Cost(P: 2),
+                Text = "Deal 2 to an enemy character.",
                 Targets = Specs(EnemyOrLeader()),
-                Effect = c => c.Damage(c.Target(0), 1),
+                Effect = c => c.Damage(c.Target(0), 2),
             })),
 
         K.Summon(2, "burnflayer", "Burnflayer", F(Faction.Spirit),
-            str: 2,
+            str: 4,
             hp: 4,
             powers: Powers(new Power
             {
@@ -164,7 +164,7 @@ public static class Red
                 },
             })),
 
-        K.Summon(2, "deathknight", "Death Knight", F(Faction.Mortal, Faction.Spirit), str: 3,
+        K.Summon(2, "deathknight", "Death Knight", F(Faction.Mortal, Faction.Spirit), str: 5,
             hp: 3,
             text: "Strike: Gains 1 HP off your deck. When an enemy summon dies, heal your leader 1.",
             triggers: new Triggers
@@ -177,7 +177,7 @@ public static class Red
                 },
             }),
 
-        K.Summon(2, "dragon", "Dragon", F(Faction.Beast), str: 3, hp: 2,
+        K.Summon(2, "dragon", "Dragon", F(Faction.Beast), str: 5, hp: 2,
             text: "Strike: Deal 1 to every enemy summon.",
             triggers: new Triggers
             {
@@ -189,7 +189,7 @@ public static class Red
             flip: c => c.Damage(TargetRef.Leader(c.Opp), 2)),
 
         K.Summon(2, "evil squire", "Evil Squire", F(Faction.Mortal),
-            str: 2,
+            str: 4,
             hp: 3,
             text: "Battlecry: An ally gains +3 attack until end of turn.",
             targets: Specs(Ally()),
@@ -201,15 +201,15 @@ public static class Red
                 },
             }),
 
-        K.Summon(2, "lazylord", "Lazy Lord", F(Faction.Mortal), str: 4, hp: 3,
+        K.Summon(2, "lazylord", "Lazy Lord", F(Faction.Mortal), str: 6, hp: 3,
             text: "Arrives sapped.",
             triggers: new Triggers { OnEnter = c => { if (c.Self is { } me) c.Sap(me); } }),
 
-        K.Summon(2, "livingfort", "Living Fort", F(Faction.Living), str: 1, hp: 6,
+        K.Summon(2, "livingfort", "Living Fort", F(Faction.Living), str: 2, hp: 6,
             stationary: true, redirect: true,
             text: "Redirection. Stationary."),
 
-        K.Summon(2, "pinelyte", "Pinelyte", F(Faction.Living), str: 2, hp: 5,
+        K.Summon(2, "pinelyte", "Pinelyte", F(Faction.Living), str: 4, hp: 5,
             powers: Powers(new Power
             {
                 Name = "Sap Burst",
@@ -232,7 +232,7 @@ public static class Red
             }),
 
         K.Summon(2, "warmateer", "Warmateer", F(Faction.Mortal),
-            str: 2,
+            str: 4,
             hp: 3,
             powers: Powers(new Power
             {
@@ -248,7 +248,7 @@ public static class Red
                 c.Choose("deal-1", c.SummonsOf(c.Opp), "Deal 1 to which enemy summon?");
             }),
 
-        K.Summon(2, "wizard", "Red Wizard", F(Faction.Mortal, Faction.Scholar), str: 2,
+        K.Summon(2, "wizard", "Red Wizard", F(Faction.Mortal, Faction.Scholar), str: 4,
             hp: 3,
             powers: Powers(
                 new Power
@@ -272,7 +272,7 @@ public static class Red
                 })),
 
         // --- level 3 ---------------------------------------------------------
-        K.Summon(3, "classe", "Classe", F(Faction.Mortal, Faction.Scholar), str: 2, hp: 5,
+        K.Summon(3, "classe", "Classe", F(Faction.Mortal, Faction.Scholar), str: 4, hp: 5,
             powers: Powers(new Power
             {
                 Name = "Burning Heart",
@@ -286,7 +286,7 @@ public static class Red
             })),
 
         K.Summon(3, "heavenknows", "Heaven Knows", F(Faction.Star, Faction.Spirit),
-            str: 3, hp: 5,
+            str: 5, hp: 5,
             text: "At the end of your turn, deal 1 to every character.",
             triggers: new Triggers
             {
@@ -297,14 +297,14 @@ public static class Red
                 },
             }),
 
-        K.Summon(3, "helaks", "Helaks", F(Faction.Spirit), str: 3, hp: 6,
+        K.Summon(3, "helaks", "Helaks", F(Faction.Spirit), str: 5, hp: 6,
             text: "Cannot be healed."),
 
-        K.Summon(3, "helemy", "Helemy", F(Faction.Spirit, Faction.Scholar), str: 2, hp: 5,
+        K.Summon(3, "helemy", "Helemy", F(Faction.Spirit, Faction.Scholar), str: 4, hp: 5,
             powers: Powers(new Power
             {
                 Name = "Alchemize",
-                Cost = new Cost(P: 2),
+                Cost = new Cost(P: 3),
                 Text = "Destroy one of your unsapped summons, then deal its attack to an enemy character.",
                 // A sapped body has already spent its turn, so feeding it in was
                 // a free second use of it.
@@ -327,11 +327,11 @@ public static class Red
                 },
             })),
 
-        K.Summon(3, "Looker", "The Looker", F(Faction.Spirit), str: 2, hp: 5,
+        K.Summon(3, "Looker", "The Looker", F(Faction.Spirit), str: 4, hp: 5,
             text: "At the start of your turn, Scry 3 for any card.",
             triggers: new Triggers { OnAwake = c => c.Dig(c.Me, 3, _ => true) }),
 
-        K.Summon(3, "Pod", "The Pod", F(Faction.Living), str: 2, hp: 7,
+        K.Summon(3, "Pod", "The Pod", F(Faction.Living), str: 3, hp: 7,
             text: "Deathrattle: Return 2 spells from your discard pile to your hand.",
             triggers: new Triggers
             {
@@ -339,7 +339,7 @@ public static class Red
                     "Return which spell to hand?"),
             }),
 
-        K.Summon(3, "Slicer", "Slicer", F(Faction.Machine), str: 2, hp: 4,
+        K.Summon(3, "Slicer", "Slicer", F(Faction.Machine), str: 3, hp: 4,
             effectDamage: 1,
             text: "Effect Damage +1. Battlecry: You take 2 debt.",
             triggers: new Triggers
@@ -348,7 +348,7 @@ public static class Red
             }),
 
         K.Summon(3, "stareater", "Star Eater", F(Faction.Beast, Faction.Star),
-            str: 4, hp: 4,
+            str: 6, hp: 5,
             powers: Powers(new Power
             {
                 Name = "Devour",
@@ -359,7 +359,7 @@ public static class Red
                 Effect = c => c.Devour(c.Target(0)),
             })),
 
-        K.Summon(3, "Tryybus", "Tryybus", F(Faction.Star), str: 2, hp: 3,
+        K.Summon(3, "Tryybus", "Tryybus", F(Faction.Star), str: 3, hp: 3,
             text: "All allies have +1 attack. At the start of your turn, loses 1 HP.",
             triggers: new Triggers
             {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import '../src/cards';
-import { DECK_SIZE } from '../src/engine/decklist';
+import { DECK_MAX, DECK_MIN } from '../src/engine/decklist';
 import {
   DRAFT_SECONDS,
   PACK_COUNT,
@@ -101,14 +101,14 @@ describe('what a drafted deck may hold', () => {
   const leader = 'f1-basicfish';
 
   it('takes a deck cut from the pool', () => {
-    const cards = Array.from({ length: DECK_SIZE }, () => 'f1-octopi');
+    const cards = Array.from({ length: DECK_MIN }, () => 'f1-octopi');
     const p = pool(leader, ...cards);
     expect(draftProblems(leader, cards, p)).toStrictEqual([]);
     expect(draftDeckLegal(leader, cards, p)).toBe(true);
   });
 
   it('lifts the copy limit, since the pool is the limit now', () => {
-    const cards = Array.from({ length: DECK_SIZE }, () => 'f1-octopi');
+    const cards = Array.from({ length: DECK_MIN }, () => 'f1-octopi');
     expect(cards.length).toBeGreaterThan(COPY_LIMIT);
     expect(draftProblems(leader, cards, pool(leader, ...cards))).toStrictEqual([]);
   });
@@ -122,12 +122,12 @@ describe('what a drafted deck may hold', () => {
         !colorsOf(d).every((c) => deckIdentity(leader).includes(c)),
     );
     expect(offColour).toBeTruthy();
-    const cards = Array.from({ length: DECK_SIZE }, () => offColour!.id);
+    const cards = Array.from({ length: DECK_MIN }, () => offColour!.id);
     expect(draftProblems(leader, cards, pool(leader, ...cards))).toStrictEqual([]);
   });
 
   it('refuses a copy the player never opened', () => {
-    const cards = Array.from({ length: DECK_SIZE }, () => 'f1-octopi');
+    const cards = Array.from({ length: DECK_MIN }, () => 'f1-octopi');
     // One short: the pool holds 47 octopi and the deck wants 48.
     const short = pool(leader, ...cards.slice(1));
     expect(draftProblems(leader, cards, short)).toContain(
@@ -136,14 +136,14 @@ describe('what a drafted deck may hold', () => {
   });
 
   it('charges the leader a copy of its own, because it came out of a pack', () => {
-    const cards = Array.from({ length: DECK_SIZE }, () => leader);
+    const cards = Array.from({ length: DECK_MIN }, () => leader);
     // 48 in the deck plus the one standing up is 49, and the pool holds 48.
     expect(draftDeckLegal(leader, cards, pool(...cards))).toBe(false);
     expect(draftDeckLegal(leader, cards, pool(leader, ...cards))).toBe(true);
   });
 
   it('wants a leader, and one that can be one', () => {
-    const cards = Array.from({ length: DECK_SIZE }, () => 'f1-octopi');
+    const cards = Array.from({ length: DECK_MIN }, () => 'f1-octopi');
     const p = pool(leader, ...cards, 'f-riptide');
     expect(draftProblems(null, cards, p)[0]).toBe(
       'Pick a leader: press lead under any summon in your pool.',
@@ -152,10 +152,14 @@ describe('what a drafted deck may hold', () => {
     expect(draftProblems('f-riptide', cards, p)).toContain('That card cannot be a leader.');
   });
 
-  it('wants exactly a full deck', () => {
-    const cards = Array.from({ length: DECK_SIZE - 1 }, () => 'f1-octopi');
-    expect(draftProblems(leader, cards, pool(leader, ...cards))).toContain(
-      `${DECK_SIZE - 1}/${DECK_SIZE} cards.`,
+  it('wants a deck inside the size range', () => {
+    const short = Array.from({ length: DECK_MIN - 1 }, () => 'f1-octopi');
+    expect(draftProblems(leader, short, pool(leader, ...short))).toContain(
+      `${DECK_MIN - 1} cards. A deck holds ${DECK_MIN} to ${DECK_MAX}.`,
+    );
+    const long = Array.from({ length: DECK_MAX + 1 }, () => 'f1-octopi');
+    expect(draftProblems(leader, long, pool(leader, ...long))).toContain(
+      `${DECK_MAX + 1} cards. A deck holds ${DECK_MIN} to ${DECK_MAX}.`,
     );
   });
 });
@@ -176,7 +180,7 @@ describe('a part-built deck on its way up to the room', () => {
   });
 
   it('refuses more cards than a deck holds', () => {
-    const many = Array.from({ length: DECK_SIZE + 1 }, () => 'f1-octopi');
+    const many = Array.from({ length: DECK_MAX + 1 }, () => 'f1-octopi');
     expect(withinPool(leader, many, pool(leader, ...many))).toBe(false);
   });
 });
@@ -190,7 +194,7 @@ describe('finishing a deck the clock ran out on', () => {
     const filled = autofill({ state: 5 }, p, leader, started);
     expect(filled.leaderId).toBe(leader);
     expect(filled.cards.slice(0, 20)).toStrictEqual(started);
-    expect(filled.cards).toHaveLength(DECK_SIZE);
+    expect(filled.cards).toHaveLength(DECK_MIN);
     expect(draftDeckLegal(filled.leaderId, filled.cards, p)).toBe(true);
   });
 
@@ -205,7 +209,7 @@ describe('finishing a deck the clock ran out on', () => {
   it('leaves a deck that was already finished exactly as it was', () => {
     const p = rollPacks({ state: 12 }).flat();
     const leader = p.find((id) => canBeLeader(id))!;
-    const cards = p.filter((id) => id !== leader).slice(0, DECK_SIZE);
+    const cards = p.filter((id) => id !== leader).slice(0, DECK_MIN);
     const filled = autofill({ state: 2 }, p, leader, cards);
     expect(filled.cards).toStrictEqual(cards);
   });

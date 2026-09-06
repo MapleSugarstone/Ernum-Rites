@@ -66,7 +66,7 @@ public static class Learning
             TrainReport last = first;
             for (int i = 0; i < 8; i++) last = Trainer.Train(brain, cfg, rng, threads);
             Harness.True(last.Value < first.Value * 0.6,
-                $"value loss {first.Value:0.0000} -> {last.Value:0.0000}");
+                $"value loss {first.Value:0.0000} -> {last.Value:0.0000} over {CardIndex.Count} cards");
         });
     }
 
@@ -74,9 +74,10 @@ public static class Learning
     {
         Harness.Test("every registered card has a column and a static profile", () =>
         {
-            Harness.Eq(Registry.All.Count, CardIndex.Count, "columns");
+            var printed = Registry.Printed.ToList();
+            Harness.Eq(printed.Count, CardIndex.Count, "columns");
             Harness.Eq(CardIndex.StaticChannels * CardIndex.Count, CardIndex.StaticPlane.Length, "plane");
-            foreach (var d in Registry.All) Harness.True(CardIndex.Of(d.Id) >= 0, d.Id);
+            foreach (var d in printed) Harness.True(CardIndex.Of(d.Id) >= 0, d.Id);
         });
 
         Harness.Test("the card axis groups by colour so a kernel spans related cards", () =>

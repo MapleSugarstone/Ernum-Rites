@@ -2,8 +2,9 @@ import { canBeLeader, colorsOf, deckIdentity } from './identity';
 import { tryCard } from './registry';
 import { COPY_LIMIT } from './types';
 
-/** How many cards a legal deck holds. */
-export const DECK_SIZE = 48;
+/** The range of card counts a legal deck may hold. */
+export const DECK_MIN = 48;
+export const DECK_MAX = 54;
 
 /** How many of each card sit in a list, keyed by card id. */
 export function counts(cards: string[]): Map<string, number> {
@@ -33,6 +34,8 @@ export function deckProblems(leaderId: string | null, cards: string[]): string[]
     if (n > COPY_LIMIT) out.push(`${def.name}: ${n} copies (limit ${COPY_LIMIT}).`);
   }
   if (off.size > 0) out.push(`Outside your leader's colors: ${[...off].join(', ')}.`);
-  if (cards.length !== DECK_SIZE) out.push(`${cards.length}/${DECK_SIZE} cards.`);
+  if (cards.length < DECK_MIN || cards.length > DECK_MAX) {
+    out.push(`${cards.length} cards. A deck holds ${DECK_MIN} to ${DECK_MAX}.`);
+  }
   return out;
 }

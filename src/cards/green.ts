@@ -26,8 +26,8 @@ function alone(state: GameState, player: PlayerIdx, self: SummonInstance | null)
 
 export const greenCards: CardDef[] = [
   k.starter('player1', 'Player One', ['Machine', 'Mortal'], {
-    str: 1,
-    hp: 4,
+    str: 2,
+    hp: 5,
     text:
       'Battlecry: If you control no other summons, this gains a Power Shield ' +
       'and +4 attack.',
@@ -185,7 +185,7 @@ export const greenCards: CardDef[] = [
   // --- level 2 --------------------------------------------------------------
   k.summon(2, 'badglitch', 'Bad Glitch', ['Machine'], {
     hp: 3,
-    str: 2,
+    str: 3,
     text: 'Battlecry: An enemy summon loses 2 attack.',
     targets: [T.enemy()],
     powers: [
@@ -210,7 +210,7 @@ export const greenCards: CardDef[] = [
     },
   }),
   k.summon(2, 'bellobot', 'Bellobot', ['Machine'], {
-    str: 1,
+    str: 2,
     hp: 2,
     text: 'Ally Machines have +1 attack.',
     triggers: {
@@ -223,7 +223,7 @@ export const greenCards: CardDef[] = [
     },
   }),
   k.summon(2, 'blackhat', 'Black Hat', ['Mortal', 'Scholar'], {
-    str: 2,
+    str: 3,
     hp: 2,
     powers: [
       {
@@ -236,7 +236,7 @@ export const greenCards: CardDef[] = [
     ],
   }),
   k.summon(2, 'digital nomad', 'Digital Nomad', ['Mortal', 'Machine'], {
-    str: 2,
+    str: 3,
     hp: 3,
     text: 'Deathrattle: An ally gains a Power Shield.',
     triggers: {
@@ -246,7 +246,7 @@ export const greenCards: CardDef[] = [
     },
   }),
   k.summon(2, 'digitalrabbits', 'Digital Rabbits', ['Machine', 'Beast'], {
-    str: 1,
+    str: 2,
     hp: 3,
     reborn: true,
     text: 'Reborn. Battlecry: Put a Digital Rabbits from your deck into an empty slot.',
@@ -262,7 +262,7 @@ export const greenCards: CardDef[] = [
   }),
   k.summon(2, 'engineer', 'Engineer', ['Mortal', 'Scholar'], {
     hp: 3,
-    str: 2,
+    str: 3,
     powers: [
       {
         name: 'Fabricate',
@@ -279,7 +279,7 @@ export const greenCards: CardDef[] = [
     ],
   }),
   k.summon(2, 'forklift', 'Forklift', ['Machine'], {
-    str: 1,
+    str: 2,
     hp: 4,
     powers: [
       {
@@ -304,7 +304,7 @@ export const greenCards: CardDef[] = [
     ],
   }),
   k.summon(2, 'hobbyist', 'Scoobert Engineer', ['Mortal'], {
-    str: 2,
+    str: 3,
     hp: 3,
     powers: [
       {
@@ -327,7 +327,7 @@ export const greenCards: CardDef[] = [
     ],
   }),
   k.summon(2, 'nommer', 'Nommer', ['Machine', 'Beast', 'Hedron'], {
-    str: 3,
+    str: 4,
     hp: 2,
     muffleFlips: true,
     text: 'FLIP effects of its combat damage are muted on any character, and it heals 1 HP for each.',
@@ -347,7 +347,7 @@ export const greenCards: CardDef[] = [
     ],
   }),
   k.summon(2, 'securitybot', 'Security Bot', ['Machine'], {
-    str: 1,
+    str: 2,
     hp: 4,
     text: 'Battlecry: Gains a Power Shield. When attacked, deal 2 to the attacker.',
     triggers: {
@@ -366,8 +366,8 @@ export const greenCards: CardDef[] = [
 
   // --- level 3 --------------------------------------------------------------
   k.summon(3, 'chemicalmen', 'Chemical Men', ['Machine', 'Mortal'], {
-    str: 2,
-    hp: 4,
+    str: 3,
+    hp: 5,
     reborn: true,
     text: 'Reborn. Deathrattle: Your Machines gain a Power Shield.',
     triggers: {
@@ -380,7 +380,7 @@ export const greenCards: CardDef[] = [
     },
   }),
   k.summon(3, 'cybersiren', 'Cyber Siren', ['Machine'], {
-    str: 2,
+    str: 3,
     hp: 5,
     powers: [
       {
@@ -404,7 +404,7 @@ export const greenCards: CardDef[] = [
     ],
   }),
   k.summon(3, 'greenstar', 'Green Star', ['Star', 'Machine'], {
-    str: 2,
+    str: 3,
     hp: 6,
     text: 'At the start of your turn, each of your characters gains 1 HP.',
     powers: [
@@ -425,8 +425,8 @@ export const greenCards: CardDef[] = [
     },
   }),
   k.summon(3, 'hatemachine', 'Hate Machine', ['Machine'], {
-    str: 5,
-    hp: 3,
+    str: 6,
+    hp: 4,
     text: 'At the start of your turn, you take 2 debt.',
     triggers: {
       onAwake: (c) => c.addDebt(c.me, 2, 'The hate machine bills its keeper.'),
@@ -443,7 +443,7 @@ export const greenCards: CardDef[] = [
     ],
   }),
   k.summon(3, 'infinitemind', 'Infinite Mind', ['Machine', 'Scholar'], {
-    str: 6,
+    str: 7,
     hp: 6,
     voidsDiscard: true,
     text:
@@ -451,8 +451,8 @@ export const greenCards: CardDef[] = [
     triggers: { onAwake: (c) => c.draw(c.me, 1) },
   }),
   k.summon(3, 'maliciouscode', 'Malicious Code', ['Machine'], {
-    str: 3,
-    hp: 4,
+    str: 4,
+    hp: 5,
     powers: [
       {
         name: 'Overwrite',
@@ -465,8 +465,8 @@ export const greenCards: CardDef[] = [
     ],
   }),
   k.summon(3, 'scoobertsingularity', 'Scoobert Singularity', ['Machine', 'Star'], {
-    str: 2,
-    hp: 4,
+    str: 3,
+    hp: 5,
     spellEcho: true,
     text: 'Your spells cast twice. When you play a Machine, draw a card and Mill 1.',
     triggers: {
@@ -480,7 +480,7 @@ export const greenCards: CardDef[] = [
     },
   }),
   k.summon(3, 'shapethink', 'Shapethink', ['Hedron', 'Scholar'], {
-    str: 2,
+    str: 3,
     hp: 5,
     text:
       'At the start of your turn, Scry 3 for any card. ' +

@@ -8,6 +8,7 @@ public static class Registry
     // Concurrent because generated cards register mid-game and the trainer
     // plays many games in parallel over this one map.
     private static readonly ConcurrentDictionary<string, CardDef> Map = new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, byte> Minted = new(StringComparer.Ordinal);
 
     public static void Register(IEnumerable<CardDef> cards)
     {
@@ -24,7 +25,7 @@ public static class Registry
     /// </summary>
     public static string RegisterGenerated(CardDef def)
     {
-        Map.TryAdd(def.Id, def);
+        if (Map.TryAdd(def.Id, def)) Minted[def.Id] = 0;
         return def.Id;
     }
 
@@ -35,5 +36,12 @@ public static class Registry
 
     public static IReadOnlyCollection<CardDef> All => (IReadOnlyCollection<CardDef>)Map.Values;
 
-    public static void Reset() => Map.Clear();
+    /// <summary>The sets as registered at load. A card minted during play is not in it.</summary>
+    public static IEnumerable<CardDef> Printed => Map.Values.Where(c => !Minted.ContainsKey(c.Id));
+
+    public static void Reset()
+    {
+        Map.Clear();
+        Minted.Clear();
+    }
 }

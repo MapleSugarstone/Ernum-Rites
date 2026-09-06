@@ -1,14 +1,16 @@
-// Decision-level tests of the bot: what it chooses on a hand-built board.
-// These pin choices to particular cards and search settings, so a card change
-// or a search change can move them without anything being wrong. They run on
-// demand with `npm run test:behaviour` and are not part of the deploy gate,
-// which keeps only the invariants: legality, termination, and parity.
+// Bot behavior: what the bot chooses on a board, and what it develops over a
+// game. These pin choices to particular cards and search settings, so a card
+// change or a search change can move them without anything being wrong. They
+// run when the bot changes, with `npm run test:behaviour`, and are not part of
+// the deploy gate, which keeps only general legal play: legality, termination,
+// and the two engines agreeing.
 import { describe, expect, it } from 'vitest';
-import '../../src/cards';
-import { chooseAction, clearPlan, evaluate } from '../../src/ai/bot';
+import { starterDecks } from '../../src/cards';
+import { chooseAction, clearPlan, evaluate, setIntel } from '../../src/ai/bot';
 import { applyAction, createGame } from '../../src/engine/engine';
 import {
   currentActor,
+  isOver,
   type GameState,
   type SummonInstance,
 } from '../../src/engine/state';
@@ -289,5 +291,79 @@ describe('store negotiation', () => {
     // Countered at the floor and settled one over it.
     expect(line[1]).toEqual({ type: 'STORE_COUNTER', price: 1 });
     expect(s.players[0].debtCount).toBe(2);
+  });
+});
+
+describe('bot development', () => {
+  it('develops its board rather than passing every turn', () => {
+    const [a, b] = starterDecks;
+    let s = createGame(
+      [
+        { name: a.name, leaderId: a.leaderId, cards: a.cards },
+        { name: b.name, leaderId: b.leaderId, cards: b.cards },
+      ],
+      99,
+      0,
+    );
+    // Six full rounds is enough to see a supporter row and bodies on the board.
+    for (let i = 0; i < 400 && s.turn < 12 && !isOver(s); i++) {
+      const actor = currentActor(s);
+      const res = applyAction(s, actor, chooseAction(s, actor));
+      if (!res.ok) throw new Error(res.error);
+      s = res.state;
+    }
+    // A game can finish well before turn 12, and one supporter a turn is the
+    // cap, so the bar scales with the turns a player actually got.
+    const ownTurns = Math.ceil(s.turn / 2);
+    for (const p of s.players) {
+      expect(p.supporters.length).toBeGreaterThanOrEqual(Math.min(2, ownTurns - 1));
+    }
+    const bodies = s.players.flatMap((p) => p.slots.filter(Boolean)).length;
+    const debt = s.players.reduce((n, p) => n + p.debtCount, 0);
+    expect(bodies + debt).toBeGreaterThan(0);
+  });
+});
+
+describe('the read on the opponent', () => {
+  it('plays the same move whatever the opponent is hiding, with peeks off', () => {
+    // The reply model used to play the opponent's turn on their real hand. It
+    // plays on the hand the bot believes in now, built from what they have
+    // shown, so two positions that differ only in the hidden hand must draw the
+    // same move. Peeks are off here; with them on the difference is the peek.
+    setIntel({ deckChance: 0, deckRolls: 0, handChance: 0, handRolls: 0, perfect: false });
+    try {
+      const deck = starterDecks[0];
+      const other = starterDecks[1];
+      const a = createGame(
+        [
+          { name: 'A', leaderId: deck.leaderId, cards: deck.cards },
+          { name: 'B', leaderId: other.leaderId, cards: other.cards },
+        ],
+        4242,
+        0,
+      );
+      // Play a few turns of real bot moves to reach a board with something on it.
+      let s = a;
+      for (let i = 0; i < 24 && !isOver(s); i++) {
+        const actor = currentActor(s);
+        const res = applyAction(s, actor, chooseAction(s, actor));
+        if (!res.ok) throw new Error(res.error);
+        s = res.state;
+      }
+      const me = currentActor(s);
+      const foe = me === 0 ? 1 : 0;
+      const alt = structuredClone(s);
+      // Same size, different cards: the ones at the bottom of their deck.
+      const n = alt.players[foe].hand.length;
+      alt.players[foe].hand = alt.players[foe].deck.slice(-n);
+      alt.players[foe].deck = alt.players[foe].deck.slice(0, -n).concat(s.players[foe].hand);
+      clearPlan();
+      const mine = chooseAction(s, me);
+      clearPlan();
+      const theirs = chooseAction(alt, me);
+      expect(JSON.stringify(theirs)).toBe(JSON.stringify(mine));
+    } finally {
+      setIntel(null);
+    }
   });
 });

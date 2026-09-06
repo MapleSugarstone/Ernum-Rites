@@ -36,7 +36,8 @@ import {
 } from './ui/retelling';
 import {
   BROWSE_TABS,
-  DECK_SIZE,
+  DECK_MAX,
+  DECK_MIN,
   RARITY_FILTERS,
   addSuggestion,
   browseSections,
@@ -4944,7 +4945,7 @@ function renderRules(): string {
       is a party game. A defeated player is eliminated and the last player standing wins.</p>
 
     <h2>1. The Game</h2>
-    ${sec('1-1.', `Ernum Rites is a game for two to four players. Each player brings one leader and one deck of ${DECK_SIZE} cards. A game of three or four players is a party game and follows section 2-3.`)}
+    ${sec('1-1.', `Ernum Rites is a game for two to four players. Each player brings one leader and one deck of ${DECK_MIN} to ${DECK_MAX} cards. A game of three or four players is a party game and follows section 2-3.`)}
     ${sec('1-1-1.', `A deck may hold at most ${COPY_LIMIT} copies of any one card.`)}
     ${sec('1-1-2.', 'A card is legal in a deck only if every color on it appears on the leader. A Neutral card has no color and is legal in any deck.')}
     ${sec('1-2.', 'Players take turns. Two players alternate. A party game passes the turn around the table in seat order.')}
@@ -5210,7 +5211,7 @@ function renderOnline(): string {
           : 'No timers. Everyone gets as long as they want. This only works in a game you host.'
       }${o.party > 2 ? ' Party games are hosted: share the code with everyone joining.' : ''}${
         o.draft
-          ? ` Draft: everyone opens ${PACK_COUNT} card packs and cuts a ${DECK_SIZE}-card deck out of the ${
+          ? ` Draft: everyone opens ${PACK_COUNT} card packs and cuts a deck of ${DECK_MIN} to ${DECK_MAX} cards out of the ${
               PACK_COUNT * PACK_SIZE
             } cards inside, on one ${
               DRAFT_SECONDS / 60
@@ -5285,8 +5286,11 @@ function renderSetup(): string {
     }</button>
   </div>
   <footer class="credits">
-    <p>Music and sound effects by <span class="who">Lemonadey</span></p>
-    <p>All other rights reserved, 2026, Krazvalt</p>
+    <p>Music and sound effects by <span class="who">Lemonadey</span> ·
+      All other rights reserved, 2026, Krazvalt</p>
+    <p>Support my free games at:
+      <a href="https://ko-fi.com/krazvalt" target="_blank" rel="noopener noreferrer"
+        >https://ko-fi.com/krazvalt</a> !</p>
   </footer></div>`;
 }
 
@@ -5619,7 +5623,7 @@ function renderBuilder(): string {
         ${tallyRow}
         <div class="deckfoot">
           <span class="countpill ${issues.length ? 'bad' : 'good'}"
-            ${issues.length ? `title="${esc(issues.join(' '))}"` : ''}>${b.cards.length}/${DECK_SIZE}</span>
+            ${issues.length ? `title="${esc(issues.join(' '))}"` : ''}>${b.cards.length}/${DECK_MIN}-${DECK_MAX}</span>
           <button class="primary" data-act="btn" data-cmd="bsave" ${issues.length ? 'disabled' : ''}>Save</button>
           <button data-act="btn" data-cmd="bplay" ${issues.length ? 'disabled' : ''}>Save and play</button>
           <button class="savecopy" data-act="btn" data-cmd="bcopy" ${issues.length ? 'disabled' : ''}
@@ -5925,7 +5929,7 @@ function packViewHtml(): string {
 function draftCellHtml(def: CardDef): string {
   const d = ui.draft;
   const left = leftOf(d, def.id);
-  const takeable = canTake(d, def.id, DECK_SIZE);
+  const takeable = canTake(d, def.id, DECK_MAX);
   const lead =
     canBeLeader(def.id) && d.leaderId !== def.id
       ? `<button class="tiny" data-act="btn" data-cmd="d-leader:${def.id}"
@@ -6060,7 +6064,7 @@ function draftBuildHtml(): string {
       </div>
       <div class="deckfoot">
         <span class="countpill ${issues.length ? 'bad' : 'good'}"
-          ${issues.length ? `title="${esc(issues.join(' '))}"` : ''}>${d.cards.length}/${DECK_SIZE}</span>
+          ${issues.length ? `title="${esc(issues.join(' '))}"` : ''}>${d.cards.length}/${DECK_MIN}-${DECK_MAX}</span>
         <button class="primary" data-act="btn" data-cmd="d-done" ${
           issues.length ? 'disabled' : ''
         }>Deck is ready</button>
@@ -6133,7 +6137,7 @@ function handleDraftCommand(cmd: string): boolean {
   }
   if (cmd.startsWith('d-add:')) {
     const id = cmd.slice(6);
-    if (canTake(d, id, DECK_SIZE)) {
+    if (canTake(d, id, DECK_MAX)) {
       d.cards.push(id);
       pushDraftDeck();
     }

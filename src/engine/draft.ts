@@ -8,7 +8,7 @@
  * can never come to different answers about the same pool.
  */
 import { canBeLeader } from './identity';
-import { counts, DECK_SIZE } from './decklist';
+import { counts, DECK_MAX, DECK_MIN } from './decklist';
 import { allCards, tryCard } from './registry';
 import { randInt, type Rng } from './rng';
 import type { Rarity } from './types';
@@ -144,7 +144,9 @@ export function draftProblems(
     over.push(def ? def.name : id);
   }
   if (over.length > 0) out.push(`More copies than you opened: ${over.join(', ')}.`);
-  if (cards.length !== DECK_SIZE) out.push(`${cards.length}/${DECK_SIZE} cards.`);
+  if (cards.length < DECK_MIN || cards.length > DECK_MAX) {
+    out.push(`${cards.length} cards. A deck holds ${DECK_MIN} to ${DECK_MAX}.`);
+  }
   return out;
 }
 
@@ -168,7 +170,7 @@ export function withinPool(
   pool: readonly string[],
 ): boolean {
   if (leaderId && !canBeLeader(leaderId)) return false;
-  if (cards.length > DECK_SIZE) return false;
+  if (cards.length > DECK_MAX) return false;
   const have = poolCounts(pool);
   for (const [id, n] of spentCounts(leaderId ?? '', cards)) {
     if (n > (have.get(id) ?? 0)) return false;
@@ -211,7 +213,7 @@ export function autofill(
   }
 
   const rest = spare();
-  while (out.cards.length < DECK_SIZE && rest.length > 0) {
+  while (out.cards.length < DECK_MIN && rest.length > 0) {
     out.cards.push(rest.splice(randInt(rng, rest.length), 1)[0]);
   }
   return out;

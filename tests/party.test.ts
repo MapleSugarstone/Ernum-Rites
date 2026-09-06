@@ -159,6 +159,7 @@ describe('party targeting', () => {
 describe('party spell windows', () => {
   function armed(): GameState {
     const s = game(3);
+    s.players[0].supporters.push({ cardId: 's1-fluterat', sapped: false });
     give(s, 1, 'sx-lemonaid');
     s.players[1].supporters.push({ cardId: 's1-fluterat', sapped: false });
     give(s, 2, 'rx-siphon');
@@ -182,7 +183,7 @@ describe('party spell windows', () => {
     expect(s.pending).toBeNull();
     // Wiretap counters: the spell reaches its caster's discard unresolved.
     expect(s.players[0].discard).toContain('sx-celebrate');
-    expect(s.players[0].supporters).toHaveLength(0);
+    expect(s.players[0].supporters).toHaveLength(1);
   });
 
   it('closes the whole queue when the first responder springs a trap', () => {
@@ -193,7 +194,7 @@ describe('party spell windows', () => {
     s = must(s, 1, { type: 'CAST_TRAP', handIndex: trapIdx, targets: [] });
     expect(s.pending).toBeNull();
     // Lemon Aid lets the spell through, so Celebrate still resolved.
-    expect(s.players[0].supporters).toHaveLength(1);
+    expect(s.players[0].supporters).toHaveLength(2);
     expect(s.players[2].hand).toContain('rx-siphon');
   });
 
@@ -204,7 +205,7 @@ describe('party spell windows', () => {
     s = must(s, 1, { type: 'PASS_RESPONSE' });
     s = must(s, 2, { type: 'PASS_RESPONSE' });
     expect(s.pending).toBeNull();
-    expect(s.players[0].supporters).toHaveLength(1);
+    expect(s.players[0].supporters).toHaveLength(2);
   });
 });
 
@@ -255,6 +256,7 @@ describe('party enemy choice', () => {
     expect(bare.ok).toBe(false);
     // The failed run raised the flag; a later effect that never reads the
     // enemy must not trip over it.
+    s.players[0].supporters.push({ cardId: 's1-fluterat', sapped: false });
     const quiet = give(s, 0, 'sx-celebrate');
     expect(applyAction(s, 0, { type: 'CAST_SPELL', handIndex: quiet, targets: [] }).ok).toBe(true);
   });
@@ -345,6 +347,7 @@ describe('party elimination', () => {
 
   it('advances a spell window past a responder who is knocked out', () => {
     let s = game(3);
+    s.players[0].supporters.push({ cardId: 's1-fluterat', sapped: false });
     give(s, 1, 'sx-lemonaid');
     give(s, 2, 'rx-siphon');
     const idx = give(s, 0, 'sx-celebrate');
@@ -356,7 +359,7 @@ describe('party elimination', () => {
     expect(s.pending?.player).toBe(2);
     s = must(s, 2, { type: 'PASS_RESPONSE' });
     expect(s.pending).toBeNull();
-    expect(s.players[0].supporters).toHaveLength(1);
+    expect(s.players[0].supporters).toHaveLength(2);
   });
 });
 

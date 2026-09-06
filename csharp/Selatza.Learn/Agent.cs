@@ -88,6 +88,13 @@ public sealed class Agent
     /// <summary>The shipped one-ply bot, kept at a fixed rating so the ladder has a zero.</summary>
     public bool ReferenceBot { get; init; }
 
+    /// <summary>
+    /// Plays the snapshot in <see cref="PreviousBot"/> rather than the current
+    /// bot, so a run can evolve decks under the new bot while its anchors hold
+    /// the old one.
+    /// </summary>
+    public bool Previous { get; init; }
+
     /// <summary>Anchors neither learn nor rebuild their decks.</summary>
     public bool Frozen { get; init; }
 

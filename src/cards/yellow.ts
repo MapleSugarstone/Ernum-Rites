@@ -7,8 +7,8 @@ const k = colorKit('S', 's', 'Yellow', 'Yellow/spells');
 
 export const yellowCards: CardDef[] = [
   k.starter('thejudge', 'The Judge', ['Star', 'Mortal'], {
-    str: 5,
-    hp: 3,
+    str: 6,
+    hp: 4,
     powers: [
       {
         name: 'Reincarnate',
@@ -87,9 +87,10 @@ export const yellowCards: CardDef[] = [
     flip: (c) => c.buffStrength(holderRef(c), 1, 'permanent'),
   }),
   k.summon(1, 'livingsong', 'Living Song', ['Living'], {
-    hp: 2,
+    hp: 1,
     str: 1,
-    text: 'Battlecry: You may play another supporter this turn.',
+    entersSapped: true,
+    text: 'Arrives sapped. Battlecry: You may play another supporter this turn.',
     triggers: {
       onEnter: (c) => {
         c.state.players[c.me].supportersLeft += 1;
@@ -160,7 +161,7 @@ export const yellowCards: CardDef[] = [
   // --- level 2 --------------------------------------------------------------
   k.summon(2, 'admirer', 'The Admirer', ['Mortal'], {
     hp: 3,
-    str: 2,
+    str: 3,
     text: 'Battlecry: An ally gains +2 attack.',
     targets: [T.ally()],
     triggers: {
@@ -183,7 +184,7 @@ export const yellowCards: CardDef[] = [
   }),
   k.summon(2, 'bubblemancer', 'Bubblemancer', ['Mortal', 'Scholar'], {
     hp: 3,
-    str: 3,
+    str: 4,
     powers: [
       {
         name: 'Bubble',
@@ -204,7 +205,7 @@ export const yellowCards: CardDef[] = [
     ],
   }),
   k.summon(2, 'bugleist', 'Bugleist', ['Mortal'], {
-    str: 1,
+    str: 2,
     hp: 4,
     text: 'At the start of your turn, each of your characters gains +1 attack until end of turn and heals 1.',
     triggers: {
@@ -218,7 +219,7 @@ export const yellowCards: CardDef[] = [
   }),
   k.summon(2, 'druid', 'Druid', ['Mortal', 'Scholar'], {
     hp: 3,
-    str: 3,
+    str: 4,
     powers: [
       {
         name: 'Grow',
@@ -248,7 +249,7 @@ export const yellowCards: CardDef[] = [
   }),
   k.summon(2, 'happybard', 'Happy Bard', ['Mortal'], {
     hp: 3,
-    str: 3,
+    str: 4,
     powers: [
       {
         name: 'Standing Ovation',
@@ -296,7 +297,7 @@ export const yellowCards: CardDef[] = [
     flip: (c) => c.reinforce(holderRef(c), 2),
   }),
   k.summon(2, 'livingruin', 'Living Ruin', ['Living'], {
-    str: 2,
+    str: 3,
     hp: 5,
     text:
       'Battlecry: Deal 1 to every summon. ' +
@@ -352,7 +353,7 @@ export const yellowCards: CardDef[] = [
     flip: (c) => c.unflip(holderRef(c), 2),
   }),
   k.summon(2, 'ragick', 'Ragick', ['Spirit', 'Living'], {
-    str: 3,
+    str: 4,
     hp: 4,
     text: 'Strike: Scry 5 for a spell.',
     triggers: {
@@ -367,7 +368,7 @@ export const yellowCards: CardDef[] = [
     },
   }),
   k.summon(2, 'sunwalker', 'Sunwalker', ['Star', 'Mortal'], {
-    str: 2,
+    str: 3,
     hp: 3,
     text: 'Your Stars have +1 attack.',
     triggers: {
@@ -378,8 +379,8 @@ export const yellowCards: CardDef[] = [
 
   // --- level 3 --------------------------------------------------------------
   k.summon(3, 'aetusvox', 'Aetus Vox', ['Star', 'Scholar'], {
-    str: 3,
-    hp: 4,
+    str: 4,
+    hp: 5,
     text: 'At the start of your turn, draw a card.',
     triggers: {
       onAwake: (c) => c.draw(c.me, 1),
@@ -397,8 +398,8 @@ export const yellowCards: CardDef[] = [
     ],
   }),
   k.summon(3, 'brokensun', 'Broken Sun', ['Star'], {
-    str: 3,
-    hp: 3,
+    str: 4,
+    hp: 4,
     text: 'Battlecry: Ally summons gain +1 attack.',
     triggers: {
       onEnter: (c) => {
@@ -421,7 +422,7 @@ export const yellowCards: CardDef[] = [
     ],
   }),
   k.summon(3, 'divergentlight', 'Divergent Light', ['Star'], {
-    str: 2,
+    str: 3,
     hp: 5,
     text: 'When you cast a spell, gains +1 attack.',
     triggers: {
@@ -470,7 +471,7 @@ export const yellowCards: CardDef[] = [
     ],
   }),
   k.summon(3, 'maestro', 'The Maestro', ['Mortal', 'Scholar'], {
-    str: 3,
+    str: 4,
     hp: 5,
     text: 'At the start of your turn, an ally gains 1 HP.',
     triggers: {
@@ -513,7 +514,7 @@ export const yellowCards: CardDef[] = [
     },
   }),
   k.summon(3, 'smallgod', 'The Small God', ['Star', 'Spirit'], {
-    str: 3,
+    str: 4,
     hp: 5,
     text: 'At the start of your turn, an ally gains 2 HP.',
     powers: [
@@ -533,7 +534,7 @@ export const yellowCards: CardDef[] = [
     },
   }),
   k.summon(3, 'solusdetteri', 'Solus Detteri', ['Star', 'Scholar'], {
-    str: 3,
+    str: 4,
     hp: 5,
     powers: [
       {
@@ -574,7 +575,7 @@ export const yellowCards: CardDef[] = [
       for (const ref of c.summonsOf(c.me, true)) c.unflip(ref, 4);
     },
   }),
-  k.spell('celebrate', 'Celebrate', {}, {
+  k.spell('celebrate', 'Celebrate', { S: 1 }, {
     text: 'The top card of your deck becomes a sapped supporter, then draw a card. Heal your leader for 2.',
     effect: (c) => {
       c.supporterFromDeck(c.me);

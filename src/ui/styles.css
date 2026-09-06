@@ -2964,6 +2964,17 @@ body.mobile .modes .mixer {
   color: var(--text);
   font-weight: 600;
 }
+/* The only link in the app, so it carries its own styling rather than a global
+   rule: the footer is muted throughout and a link that inherits that reads as
+   plain text. */
+.credits a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.credits a:hover,
+.credits a:focus-visible {
+  color: var(--text);
+}
 
 /* --- deckbuilder ----------------------------------------------------------
    Collection-book layout: a card browser panel on the left, the deck as a

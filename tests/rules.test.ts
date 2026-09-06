@@ -1689,7 +1689,8 @@ describe('card triggers', () => {
     s = must(s, 0, { type: 'ACTIVATE_POWER', source: src(0, 0), powerIndex: 0, targets: [] });
     expect(s.players[1].slots[0]!.wounds).toBe(0);
     expect(s.players[0].slots[1]!.wounds).toBe(0);
-    expect(effectiveStrength(s, s.players[0].slots[0]!)).toBe(2 + 2);
+    expect(effectiveStrength(s, s.players[0].slots[0]!))
+      .toBe((card('o2-parkranger').strength ?? 0) + 2);
   });
 
   it('raises the enemy dead in Oil, two bigger and a Spirit', () => {

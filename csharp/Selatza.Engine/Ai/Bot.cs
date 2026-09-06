@@ -85,6 +85,15 @@ public sealed class BotWeights
     /// value and counted as progress by the rollout's setup phase. Untuned.
     /// </summary>
     public double EffectDamage = 2;
+    /// <summary>
+    /// Per share of the opponent's nearer clock that the best kit in the bot's
+    /// own list reaches, scaled by how much of that kit it holds squared. A
+    /// kit is a set of cards the deck scan found to reach further together
+    /// than apart. This is what makes a piece worth keeping for a turn it
+    /// cannot use yet, and a draw or a mill worth its debt when the piece is
+    /// still in the deck. Untuned.
+    /// </summary>
+    public double Combo = 12;
 
     public static readonly BotWeights Default = new();
 }
@@ -269,6 +278,7 @@ public static class Bot
                     + w.Trigger * StandingHooks(def));
             }
             score += sign * w.EffectDamage * Effects.EffectDamageOf(state, side);
+            if (side == me) score += KitBonus(state, me, w);
 
             // Cards in hand are not interchangeable, and the game says so with levels.
             double hand = 0;
@@ -989,13 +999,246 @@ public static class Bot
         public CardDef? CheapestTrap;
         /// <summary>The seat this read is about.</summary>
         public int Seat;
+        /// <summary>A trap the bot has named in their hand that they could pay for now.</summary>
+        public bool KnownTrap;
+    }
+
+    /// <summary>
+    /// How much of the opponent's hidden cards the bot gets to read, a port of
+    /// the TypeScript <c>IntelConfig</c>. Counting what they have shown is free.
+    /// On top of that, once a turn, the bot rolls a few times to name a card in
+    /// their deck and once to name one in their hand, which stands in for a
+    /// player's intuition. Every number is a dial, and <see cref="Perfect"/>
+    /// reads the real hand, which is what the reply model did before.
+    /// </summary>
+    public sealed class ReadConfig
+    {
+        public double DeckChance = 0.15;
+        public int DeckRolls = 3;
+        public double HandChance = 0.05;
+        public int HandRolls = 1;
+        public bool Perfect;
+    }
+
+    /// <summary>Set once at startup rather than per game: it is read from every thread.</summary>
+    public static ReadConfig Intel { get; set; } = new();
+
+    private sealed class ReadTrack
+    {
+        public readonly Dictionary<string, int> KnownHand = new(StringComparer.Ordinal);
+        public readonly Dictionary<string, int> KnownDeck = new(StringComparer.Ordinal);
+        public int LastTurn = -1;
+    }
+
+    [ThreadStatic] private static Dictionary<string, ReadTrack>? _reads;
+
+    private static int CopiesIn(List<string> zone, string id)
+    {
+        int n = 0;
+        foreach (var c in zone) if (c == id) n++;
+        return n;
+    }
+
+    /// <summary>Forget any count the zone no longer bears out: the read may know less than the truth, never more.</summary>
+    private static void ClampKnown(Dictionary<string, int> known, List<string> zone)
+    {
+        foreach (var id in known.Keys.ToList())
+        {
+            int actual = CopiesIn(zone, id);
+            if (actual <= 0) known.Remove(id);
+            else if (known[id] > actual) known[id] = actual;
+        }
+    }
+
+    private static Rng RollsFor(GameState state, int me, int foe, int salt)
+    {
+        unchecked
+        {
+            return new Rng(state.Seed
+                ^ ((me + 1) * (int)0x9e3779b9)
+                ^ ((foe + 1) * (int)0xc2b2ae35)
+                ^ ((state.Turn + 1) * (int)0x85ebca6b)
+                ^ salt);
+        }
+    }
+
+    /// <summary>How many of a known count the zone still bears out: the read may know less than the truth, never more.</summary>
+    private static int KnownIn(List<string> zone, string id, int n) => Math.Min(n, CopiesIn(zone, id));
+
+    /// <summary>
+    /// The tracker for one opponent. Peeks are rolled by <see cref="Peek"/> at
+    /// the root of a decision and nowhere else.
+    /// </summary>
+    private static ReadTrack TrackOf(GameState state, int me, int foe)
+    {
+        _reads ??= new Dictionary<string, ReadTrack>(StringComparer.Ordinal);
+        string key = $"{state.Seed}/{me}/{foe}";
+        if (!_reads.TryGetValue(key, out var t))
+        {
+            Prune(_reads, state.Seed);
+            t = new ReadTrack();
+            _reads[key] = t;
+        }
+        return t;
+    }
+
+    /// <summary>
+    /// The rolls, at the root of a decision and nowhere else: a search state is
+    /// partly imagined, and a peek rolled inside one would name a card the bot
+    /// itself made up. Once a turn, seeded by the game and the turn, so the same
+    /// position reads the same way in both engines and on a replay. Counts the
+    /// real table no longer bears out are forgotten here too.
+    /// </summary>
+    private static void Peek(GameState state, int me)
+    {
+        if (Intel.Perfect) return;
+        for (int foe = 0; foe < state.Players.Length; foe++)
+        {
+            if (foe == me) continue;
+            var t = TrackOf(state, me, foe);
+            var p = state.Players[foe];
+            if (state.Turn > t.LastTurn)
+            {
+                var rng = RollsFor(state, me, foe, 0x1b873593);
+                for (int r = 0; r < Intel.DeckRolls; r++)
+                {
+                    double roll = rng.Next();
+                    if (roll >= Intel.DeckChance || p.Deck.Count == 0) continue;
+                    string id = p.Deck[rng.NextInt(p.Deck.Count)];
+                    if (t.KnownDeck.GetValueOrDefault(id) < CopiesIn(p.Deck, id)) t.KnownDeck[id] = t.KnownDeck.GetValueOrDefault(id) + 1;
+                }
+                for (int r = 0; r < Intel.HandRolls; r++)
+                {
+                    double roll = rng.Next();
+                    if (roll >= Intel.HandChance || p.Hand.Count == 0) continue;
+                    string id = p.Hand[rng.NextInt(p.Hand.Count)];
+                    if (t.KnownHand.GetValueOrDefault(id) < CopiesIn(p.Hand, id)) t.KnownHand[id] = t.KnownHand.GetValueOrDefault(id) + 1;
+                }
+                t.LastTurn = state.Turn;
+            }
+            ClampKnown(t.KnownHand, p.Hand);
+            ClampKnown(t.KnownDeck, p.Deck);
+        }
+    }
+
+    /// <summary>Whether a trap the bot has named in their hand is one they could pay for now.</summary>
+    private static bool KnownTrapIn(GameState state, int me, int foe)
+    {
+        var p = state.Players[foe];
+        if (Intel.Perfect)
+        {
+            return p.Hand.Any(id => Registry.Card(id).Type == CardType.Trap && Engine.CanPay(p, Engine.CostFor(p, Registry.Card(id))));
+        }
+        var t = TrackOf(state, me, foe);
+        foreach (var (id, n) in t.KnownHand)
+        {
+            if (KnownIn(p.Hand, id, n) <= 0) continue;
+            var def = Registry.Card(id);
+            if (def.Type == CardType.Trap && Engine.CanPay(p, Engine.CostFor(p, def))) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// The hand the bot believes the opponent holds: what it has named, then the
+    /// rest drawn from the cards their leader allows that they could still be
+    /// holding, a card they have shown counting in full and one they have not at
+    /// the unseen weight. The same size as the real hand, which is public.
+    /// </summary>
+    private static List<string> BelievedHand(GameState state, int me, int foe)
+    {
+        var p = state.Players[foe];
+        if (Intel.Perfect) return new List<string>(p.Hand);
+        var t = TrackOf(state, me, foe);
+        var hand = new List<string>();
+        // In id order, so both engines build the same hand from the same peeks.
+        foreach (var id in t.KnownHand.Keys.OrderBy(k => k, StringComparer.Ordinal))
+        {
+            int m = KnownIn(p.Hand, id, t.KnownHand[id]);
+            for (int i = 0; i < m && hand.Count < p.Hand.Count; i++) hand.Add(id);
+        }
+        if (hand.Count >= p.Hand.Count) return hand;
+
+        var pool = PoolBehind(p.LeaderCardId);
+        var seen = SeenCopies(state, foe, pool);
+        var ids = pool.Legal.OrderBy(k => k, StringComparer.Ordinal).ToList();
+        var weights = new double[ids.Count];
+        double total = 0;
+        for (int i = 0; i < ids.Count; i++)
+        {
+            int shown = seen.GetValueOrDefault(ids[i]) + CopiesIn(hand, ids[i]);
+            int left = Math.Max(0, Rarities.CopyLimit - shown);
+            weights[i] = left * (seen.ContainsKey(ids[i]) || t.KnownDeck.ContainsKey(ids[i]) ? 1 : UnseenWeight);
+            total += weights[i];
+        }
+        var rng = RollsFor(state, me, foe, 0x27d4eb2f);
+        while (hand.Count < p.Hand.Count && total > 0)
+        {
+            double roll = rng.Next() * total;
+            int pick = -1;
+            for (int i = 0; i < ids.Count; i++)
+            {
+                if (weights[i] <= 0) continue;
+                roll -= weights[i];
+                if (roll <= 0)
+                {
+                    pick = i;
+                    break;
+                }
+            }
+            if (pick < 0) break;
+            hand.Add(ids[pick]);
+            total -= weights[pick];
+            weights[pick] = 0;
+        }
+        return hand;
+    }
+
+    /// <summary>The position with every other seat's hidden hand replaced by the one the bot believes in.</summary>
+    private static GameState RedactTable(GameState state, int me)
+    {
+        if (Intel.Perfect) return state;
+        var s = state.Clone();
+        for (int foe = 0; foe < state.Players.Length; foe++)
+        {
+            if (foe != me) s.Players[foe].Hand = BelievedHand(state, me, foe);
+        }
+        return s;
+    }
+
+    /// <summary>Copies of each legal card the seat has shown in a public zone.</summary>
+    private static Dictionary<string, int> SeenCopies(GameState state, int seat, LeaderPool pool)
+    {
+        var foe = state.Players[seat];
+        var seen = new Dictionary<string, int>(StringComparer.Ordinal);
+        void Note(string id)
+        {
+            if (pool.Legal.Contains(id)) seen[id] = seen.GetValueOrDefault(id) + 1;
+        }
+        foreach (var id in foe.Discard) Note(id);
+        foreach (var id in foe.DebtZone) Note(id);
+        foreach (var sup in foe.Supporters) Note(sup.CardId);
+        if (foe.Stage is not null) Note(foe.Stage);
+        foreach (var b in foe.Slots.Append(foe.Leader))
+        {
+            if (b is null) continue;
+            Note(b.CardId);
+            // An HP card is face down until something flips it, and face up after.
+            foreach (var h in b.Hp) if (h.Flipped) Note(h.CardId);
+        }
+        return seen;
     }
 
     /// <summary>One read per living opponent: any of them can spring a trap.</summary>
     public static List<EnemyRead> ReadTable(GameState state, int me)
     {
         var reads = new List<EnemyRead>();
-        foreach (var foe in LivingOpponents(state, me)) reads.Add(ReadEnemy(state, foe));
+        foreach (var foe in LivingOpponents(state, me))
+        {
+            var read = ReadEnemy(state, foe);
+            read.KnownTrap = KnownTrapIn(state, me, foe);
+            reads.Add(read);
+        }
         return reads;
     }
 
@@ -1019,23 +1262,7 @@ public static class Bot
         var pool = PoolBehind(foe.LeaderCardId);
         if (pool.Total <= 0) return new EnemyRead { Seat = seat };
 
-        var seen = new Dictionary<string, int>(StringComparer.Ordinal);
-        void Note(string id)
-        {
-            if (pool.Legal.Contains(id)) seen[id] = seen.GetValueOrDefault(id) + 1;
-        }
-
-        foreach (var id in foe.Discard) Note(id);
-        foreach (var id in foe.DebtZone) Note(id);
-        foreach (var sup in foe.Supporters) Note(sup.CardId);
-        if (foe.Stage is not null) Note(foe.Stage);
-        foreach (var b in foe.Slots.Append(foe.Leader))
-        {
-            if (b is null) continue;
-            Note(b.CardId);
-            // An HP card is face down until something flips it, and face up after.
-            foreach (var h in b.Hp) if (h.Flipped) Note(h.CardId);
-        }
+        var seen = SeenCopies(state, seat, pool);
 
         // The pool above counted every card as unseen. Only the handful that
         // have actually surfaced need correcting, which is what keeps this off
@@ -1117,6 +1344,8 @@ public static class Bot
         foreach (var read in reads)
         {
             var foe = state.Players[read.Seat];
+            // A trap the bot has named in their hand is not a risk but a fact.
+            if (read.KnownTrap) return 1;
             if (foe.Hand.Count == 0 || read.TrapDensity <= 0 || read.CheapestTrap is null) continue;
             if (!Engine.CanPay(foe, Engine.CostFor(foe, read.CheapestTrap))) continue;
             double risk = 1 - Math.Pow(1 - read.TrapDensity, foe.Hand.Count);
@@ -1153,10 +1382,302 @@ public static class Bot
             int hpWas = was.Leader?.RemainingHp ?? 0;
             int hpNow = now.Leader?.RemainingHp ?? 0;
             int debtLeft = Rules.DebtLimit - was.DebtCount;
+            int debtWas = was.DebtCount + PendingFatigue(before, foe);
+            int debtNow = now.DebtCount + PendingFatigue(after, foe);
             total += (hpWas - hpNow) / (double)Math.Max(1, hpWas)
-                + (now.DebtCount - was.DebtCount) / (double)Math.Max(1, debtLeft);
+                + (debtNow - debtWas) / (double)Math.Max(1, debtLeft);
         }
         return total;
+    }
+
+    /// <summary>
+    /// The debt a player's next draw step will charge them before they see a
+    /// card: the deck-out bill, once the deck is too short for the draw. Milling
+    /// an opponent dry is progress on their debt clock one draw step early.
+    /// </summary>
+    private static int PendingFatigue(GameState state, int side) =>
+        state.Players[side].Deck.Count < Rules.DrawPerTurn ? Effects.ReshuffleCost(state, side) : 0;
+
+    // --- the deck scan -------------------------------------------------------
+    // A port of the TypeScript scan in src/ai/bot.ts. A kit is a set of cards
+    // from the bot's own list that, put together on a board, takes a share of
+    // the opponent's nearer clock. Found once per game by probing the list,
+    // and worth holding and assembling from then on: the search sees a combo
+    // only once its pieces are in reach of one turn, and the scan is what
+    // tells it, turns earlier, which pieces those are.
+
+    private sealed record Kit(string[] Cards, double Reach);
+
+    /// <summary>Share of the clock a kit has to take for the scan to keep it.</summary>
+    private const double KitMinReach = 0.4;
+    /// <summary>A set has to reach this much further than its parts to count as a kit.</summary>
+    private const double KitSynergy = 0.1;
+    /// <summary>Cards, by single reach, carried into the pair round.</summary>
+    private const int KitPairCards = 12;
+    /// <summary>Cards, by best pair reach, carried into the triple round.</summary>
+    private const int KitTripleCards = 6;
+    private const int KitKeep = 6;
+    /// <summary>Share of a piece's progress a copy still in the deck counts for.</summary>
+    private const double KitOutWeight = 0.3;
+
+    [ThreadStatic] private static Dictionary<string, List<Kit>>? _kits;
+    private static CardDef? _wall;
+    private static bool _wallFound;
+    private static CardDef? _blank;
+    private static bool _blankFound;
+
+    /// <summary>A collectible trap, the lowest id: a card the bot cannot play on its own turn.</summary>
+    private static CardDef? BlankCard()
+    {
+        if (_blankFound) return _blank;
+        CardDef? best = null;
+        foreach (var def in Registry.All)
+        {
+            if (def.Type != CardType.Trap || def.Uncollectible) continue;
+            if (best is null || string.CompareOrdinal(def.Id, best.Id) < 0) best = def;
+        }
+        _blank = best;
+        _blankFound = true;
+        return best;
+    }
+
+    private static string KitKey(GameState state, int me) =>
+        $"{state.Seed}/{me}/{state.Players[me].LeaderCardId}";
+
+    /// <summary>
+    /// The blocker every probe faces: the collectable vanilla summon with the
+    /// most HP in the set. A wall with no text makes the probe about the kit.
+    /// </summary>
+    private static CardDef? WallCard()
+    {
+        if (_wallFound) return _wall;
+        CardDef? best = null;
+        foreach (var def in Registry.All)
+        {
+            if (def.Type != CardType.Summon || def.Uncollectible) continue;
+            if (!string.IsNullOrEmpty(def.Text) || (def.Powers?.Length ?? 0) > 0 || def.Triggers is not null) continue;
+            if (def.Flip is not null || def.Stationary || def.Redirect) continue;
+            if (best is null || def.Hp > best.Hp) best = def;
+        }
+        _wall = best;
+        _wallFound = true;
+        return best;
+    }
+
+    /// <summary>
+    /// The board a kit is probed on: the real position with the bot's own slots
+    /// and hand replaced by the kit, three pips of every colour its leader
+    /// brings and three colourless, the bodies old enough to swing, a leader
+    /// still to come standing in at the HP the engine will give it, and a wall
+    /// in front of every opponent's leader so only lines that carry damage past
+    /// a blocker reach.
+    /// </summary>
+    private static GameState ProbeBoard(GameState state, int me, string[] kit)
+    {
+        var s = state.Clone();
+        var p = s.Players[me];
+        s.Active = me;
+        s.Phase = Phase.Main;
+        s.Pending = null;
+        s.Battle = null;
+        s.ChoiceQueue.Clear();
+        s.FlipQueue.Clear();
+        s.ReplaceQueue.Clear();
+        s.Winner = -1;
+        s.Drawn = false;
+        p.TurnsTaken = Math.Max(p.TurnsTaken, 3);
+        p.SupportersLeft = 1;
+        Array.Clear(p.Slots);
+        p.Hand.Clear();
+        string filler = p.Deck.Count > 0 ? p.Deck[^1] : kit[0];
+        // The rest of the list stays out of the measure. A single that dug a
+        // second piece out of the deck read as that piece's reach, and the
+        // set's baseline then counted the piece twice and refused the kit. The
+        // deck keeps its length, for the fatigue clock, and holds a card no
+        // turn of the bot's can play.
+        string blank = BlankCard()?.Id ?? filler;
+        for (int i = 0; i < p.Deck.Count; i++) p.Deck[i] = blank;
+
+        SummonInstance BodyOf(string id, int owner, int hp, bool isLeader) => new()
+        {
+            Uid = $"k{s.NextUid++}",
+            CardId = id,
+            Owner = owner,
+            IsLeader = isLeader,
+            Hp = Enumerable.Range(0, Math.Max(1, hp)).Select(_ => new HpCard { CardId = filler }).ToList(),
+            EnteredTurn = 0,
+        };
+
+        int slot = 0;
+        foreach (var id in kit)
+        {
+            var def = Registry.Card(id);
+            if (def.Type == CardType.Summon && slot < p.Slots.Length) p.Slots[slot++] = BodyOf(id, me, def.Hp, false);
+            else p.Hand.Add(id);
+        }
+        foreach (int side in new[] { me }.Concat(LivingOpponents(s, me)))
+        {
+            var q = s.Players[side];
+            if (q.Leader is null)
+            {
+                q.Leader = BodyOf(q.LeaderCardId, side, Registry.Card(q.LeaderCardId).Hp * 2 + 2, true);
+                q.LeaderPlayed = true;
+            }
+            if (side == me) continue;
+            var wall = WallCard();
+            if (wall is not null && q.Slots.All(b => b is null)) q.Slots[0] = BodyOf(wall.Id, side, wall.Hp, false);
+        }
+        Array.Clear(p.Mana);
+        p.Mana[Rules.Colorless] = 3;
+        foreach (var c in Identity.DeckIdentity(p.LeaderCardId)) p.Mana[(int)c] = 3;
+        return s;
+    }
+
+    /// <summary>Share of the nearer clock a kit takes off the probe board, 1 meaning a kill.</summary>
+    private static double KitReach(GameState state, int me, string[] kit, BotWeights w)
+    {
+        var probe = ProbeBoard(state, me, kit);
+        double best = 0;
+        foreach (int setup in new[] { 0, MaxSetupSteps })
+        {
+            var r = Burn(probe, me, MaxBurnSteps, w, setup, patient: true);
+            if (r.State.Winner == me) return 1;
+            best = Math.Max(best, ProgressAgainst(probe, r.State, me));
+        }
+        return Math.Min(1, best);
+    }
+
+    /// <summary>
+    /// Probe the bot's own list for kits: every card alone, then pairs among the
+    /// cards that reached furthest alone, then triples among the cards in the
+    /// best pairs. Only a set that reaches further than its parts added is a
+    /// kit; two bodies side by side are a pile, and the evaluator prices that.
+    /// </summary>
+    private static List<Kit> ScanKits(GameState state, int me, BotWeights w)
+    {
+        var p = state.Players[me];
+        var ids = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        void Note(string id)
+        {
+            if (seen.Add(id) && Registry.Card(id).Type != CardType.Trap) ids.Add(id);
+        }
+        foreach (var id in p.Deck) Note(id);
+        foreach (var id in p.Hand) Note(id);
+        foreach (var b in p.Slots)
+        {
+            if (b is not null) Note(b.CardId);
+        }
+
+        var single = new Dictionary<string, double>(StringComparer.Ordinal);
+        foreach (var id in ids) single[id] = KitReach(state, me, new[] { id }, w);
+        var pairCards = ids.OrderByDescending(id => single[id]).Take(KitPairCards).ToList();
+
+        var kits = new List<Kit>();
+        var pairBest = new Dictionary<string, double>(StringComparer.Ordinal);
+        for (int i = 0; i < pairCards.Count; i++)
+        {
+            for (int j = i + 1; j < pairCards.Count; j++)
+            {
+                var set = new[] { pairCards[i], pairCards[j] };
+                double reach = KitReach(state, me, set, w);
+                // Added, not the larger: two bodies that each reach a third reach
+                // two thirds side by side, and that is a pile rather than a kit.
+                double parts = Math.Min(1, single[set[0]] + single[set[1]]);
+                foreach (var id in set) pairBest[id] = Math.Max(pairBest.GetValueOrDefault(id), reach);
+                if (reach >= KitMinReach && reach > parts + KitSynergy) kits.Add(new Kit(set, reach));
+            }
+        }
+
+        var tripleCards = pairBest.OrderByDescending(kv => kv.Value).Take(KitTripleCards).Select(kv => kv.Key).ToList();
+        for (int i = 0; i < tripleCards.Count; i++)
+        {
+            for (int j = i + 1; j < tripleCards.Count; j++)
+            {
+                for (int k = j + 1; k < tripleCards.Count; k++)
+                {
+                    var set = new[] { tripleCards[i], tripleCards[j], tripleCards[k] };
+                    double parts = Math.Min(1, set.Sum(id => single[id]));
+                    foreach (var kit in kits)
+                    {
+                        if (!kit.Cards.All(id => set.Contains(id))) continue;
+                        var rest = set.FirstOrDefault(id => !kit.Cards.Contains(id));
+                        parts = Math.Max(parts, Math.Min(1, kit.Reach + (rest is null ? 0 : single[rest])));
+                    }
+                    double reach = KitReach(state, me, set, w);
+                    if (reach >= KitMinReach && reach > parts + KitSynergy) kits.Add(new Kit(set, reach));
+                }
+            }
+        }
+
+        return kits.OrderByDescending(k => k.Reach).Take(KitKeep).ToList();
+    }
+
+    /// <summary>Runs the scan once per game and seat. The scan evaluates positions itself, so the key is filled first.</summary>
+    private static void EnsureKits(GameState state, int me, BotWeights w)
+    {
+        // The light bot is for balance runs and tests, where a scan a game is
+        // most of the cost and none of the point.
+        if (Light) return;
+        _kits ??= new Dictionary<string, List<Kit>>(StringComparer.Ordinal);
+        string key = KitKey(state, me);
+        if (_kits.ContainsKey(key)) return;
+        Prune(_kits, state.Seed);
+        _kits[key] = new List<Kit>();
+        _kits[key] = ScanKits(state, me, w);
+    }
+
+    /// <summary>Per-game caches on a thread that plays thousands of games: keep the current game's entries, drop the rest once there are many.</summary>
+    private const int CacheKeep = 64;
+
+    private static void Prune<T>(Dictionary<string, T> cache, int seed)
+    {
+        if (cache.Count < CacheKeep) return;
+        string mine = $"{seed}/";
+        foreach (var key in cache.Keys.Where(k => !k.StartsWith(mine, StringComparison.Ordinal)).ToList())
+        {
+            cache.Remove(key);
+        }
+    }
+
+    /// <summary>The kits found for a seat this game, for tests and for reading what the bot is building toward.</summary>
+    public static IReadOnlyList<(string[] Cards, double Reach)> KitsFor(GameState state, int me)
+    {
+        if (_kits is null || !_kits.TryGetValue(KitKey(state, me), out var kits)) return Array.Empty<(string[], double)>();
+        return kits.Select(k => (k.Cards, k.Reach)).ToList();
+    }
+
+    /// <summary>
+    /// What holding the pieces of the best kit is worth right now: the kit's
+    /// reach, scaled by the share of it in hand or on the board squared, with a
+    /// copy still in the deck counting for a little. Squared, so two pieces of
+    /// three are worth far more than one, which is what makes the last piece
+    /// worth digging for.
+    /// </summary>
+    private static double KitBonus(GameState state, int me, BotWeights w)
+    {
+        if (_kits is null || !_kits.TryGetValue(KitKey(state, me), out var kits) || kits.Count == 0) return 0;
+        var p = state.Players[me];
+        var held = new HashSet<string>(p.Hand, StringComparer.Ordinal);
+        foreach (var b in p.Slots)
+        {
+            if (b is not null) held.Add(b.CardId);
+        }
+        if (p.Leader is not null) held.Add(p.Leader.CardId);
+        var inDeck = new HashSet<string>(p.Deck, StringComparer.Ordinal);
+        double best = 0;
+        foreach (var kit in kits)
+        {
+            int have = 0, outs = 0;
+            foreach (var id in kit.Cards)
+            {
+                if (held.Contains(id)) have++;
+                else if (inDeck.Contains(id)) outs++;
+            }
+            double progress = (have + KitOutWeight * outs) / kit.Cards.Length;
+            best = Math.Max(best, kit.Reach * progress * progress);
+        }
+        return w.Combo * best;
     }
 
     /// <summary>The leader closest to falling, which a threat is measured against.</summary>
@@ -1206,6 +1727,41 @@ public static class Bot
     }
 
     /// <summary>Whether an action hands the game to the opponent or ends it level.</summary>
+    /// <summary>Paid Powers a patient climb fires once it has built everything it can.</summary>
+    private const int CashSteps = 4;
+
+    /// <summary>
+    /// Potential with the best paid Power still to fire. A Power that sets a
+    /// body's attack from something the free steps build, debt say, gains
+    /// nothing until it fires, and fired early it fixes the attack at what the
+    /// pile was then. A climb greedy on the plain measure took it first, for
+    /// the largest step on offer, and every free step after that built toward
+    /// nothing. Counting the follow-up without taking it lets the climb build
+    /// first and cash in last.
+    /// </summary>
+    private static (double Value, GameAction? Cash, GameState? CashState) CashPotential(GameState state, int me, BotWeights w)
+    {
+        double value = Potential(state, me);
+        GameAction? cash = null;
+        GameState? cashState = null;
+        foreach (var action in CandidateActions(state, me, forKill: true))
+        {
+            if (action.Type != ActionType.ActivatePower || FreeRepeat(state, me, action)) continue;
+            var res = Engine.Apply(state, me, action);
+            if (!res.Ok) continue;
+            var after = Settle(res.State!, w, buyOut: true);
+            if (LosesIt(after, me)) continue;
+            double pot = Potential(after, me);
+            if (pot > value + 1e-9)
+            {
+                value = pot;
+                cash = action;
+                cashState = after;
+            }
+        }
+        return (value, cash, cashState);
+    }
+
     /// <summary>
     /// A Power that costs no mana and does not sap its body: the kind that can
     /// be fired again next step, which is what makes a flat step worth taking.
@@ -1286,6 +1842,9 @@ public static class Bot
         // measure inflated what a board still threatened, and the bot held
         // pieces it should have cashed, measured at four points on random decks.
         int flat = 0;
+        // The last state a gain was made in, and how long the line was there.
+        var firm = cur;
+        int firmLength = 0;
         for (int step = 0; step < setup; step++)
         {
             if (!TurnGoesOn(cur, me)) break;
@@ -1293,7 +1852,7 @@ public static class Bot
             GameState? builtState = null;
             GameAction? level = null;
             GameState? levelState = null;
-            double standing = Potential(cur, me);
+            double standing = patient ? CashPotential(cur, me, w).Value : Potential(cur, me);
             double best = standing;
 
             foreach (var action in CandidateActions(cur, me, forKill: true))
@@ -1307,8 +1866,17 @@ public static class Bot
                     return new Rollout { State = after, Line = line, Damage = WorstDrop(after) };
                 }
                 if (LosesIt(after, me)) continue;
-                double pot = Potential(after, me);
-                if (pot > best + 1e-9)
+                double pot = patient ? CashPotential(after, me, w).Value : Potential(after, me);
+                // On a tie the free step goes first: the paid one is still there
+                // after it, and the free one may be worth more once the paid one
+                // has fired.
+                bool ahead = pot > best + 1e-9
+                    || (patient
+                        && built is not null
+                        && Math.Abs(pot - best) <= 1e-9
+                        && FreeRepeat(cur, me, action)
+                        && !FreeRepeat(cur, me, built));
+                if (ahead)
                 {
                     best = pot;
                     built = action;
@@ -1334,6 +1902,35 @@ public static class Bot
             if (built is null || builtState is null) break;
             line.Add(built);
             cur = builtState;
+            if (flat == 0)
+            {
+                firm = cur;
+                firmLength = line.Count;
+            }
+        }
+        // A flat step no gain followed built nothing, and it still spent what
+        // the Power spends: a point of debt, say, that the kill below may not
+        // have.
+        if (line.Count > firmLength)
+        {
+            cur = firm;
+            line.RemoveRange(firmLength, line.Count - firmLength);
+        }
+
+        // The climb counted a paid Power it never took. Now that nothing free
+        // gains, it fires: the attack it sets is read off everything built above.
+        for (int cashed = 0; patient && cashed < CashSteps; cashed++)
+        {
+            if (!TurnGoesOn(cur, me)) break;
+            var (_, cash, cashState) = CashPotential(cur, me, w);
+            if (cash is null || cashState is null) break;
+            if (cashState.Winner == me)
+            {
+                line.Add(cash);
+                return new Rollout { State = cashState, Line = line, Damage = WorstDrop(cashState) };
+            }
+            line.Add(cash);
+            cur = cashState;
         }
 
         for (int step = 0; step < steps; step++)
@@ -1413,6 +2010,9 @@ public static class Bot
             if (s.Active != me && s.Pending is null && s.Phase == Phase.Main)
             {
                 int seat = s.Active;
+                // Their turn is played on the hand the bot believes they hold. The
+                // table was redacted at the root of this decision, so a reply
+                // cannot dodge a held trap or spell it has never been shown.
                 s = ReplyOf(s, seat, w);
                 if (s.IsOver) return s;
                 if (s.Active == seat && s.Phase == Phase.Main && s.Pending is null)
@@ -1637,6 +2237,8 @@ public static class Bot
     {
         _plan = null;
         ClearShops();
+        _kits?.Clear();
+        _reads?.Clear();
     }
 
     /// <summary>The next action of the standing plan, or null if there is nothing to follow.</summary>
@@ -1695,6 +2297,19 @@ public static class Bot
         // Shops are priced against the board this decision is made on and the
         // price stands for the whole of it, searches included.
         ClearShops();
+
+        // Peeks roll on the real table, once a turn. Then the search sees only
+        // what the bot is entitled to: from here to the leaves every other hand
+        // is the one it believes in, so no line is priced on a card it could not
+        // know about. The evaluator prices hands by level and decks by their
+        // outs, and before this the reply model alone was redacted, so the
+        // root's own scores leaked the truth.
+        Peek(state, me);
+        state = RedactTable(state, me);
+
+        // Once a game: what the bot's own list can assemble, so the evaluator
+        // can price a piece before the turn that uses it.
+        EnsureKits(state, me, w);
 
         // Haggling is answered from the policy before any search: a price only
         // pays off if the other side takes it, which is not something the

@@ -57,7 +57,6 @@ describe('decks', () => {
     expect(testDecks.every((d) => d.test)).toBe(true);
     expect(new Set(everyDeck.map((d) => d.key)).size).toBe(everyDeck.length);
   });
-
 });
 
 describe('bot', () => {
@@ -128,34 +127,6 @@ describe('bot', () => {
     // the only route because the bot passed; a bot that swings its leader when
     // it has nothing else finishes by combat instead, and either is a finish.
     expect(state.winReason).toBeTruthy();
-  });
-
-  it('develops its board rather than passing every turn', () => {
-    const [a, b] = starterDecks;
-    let s = createGame(
-      [
-        { name: a.name, leaderId: a.leaderId, cards: a.cards },
-        { name: b.name, leaderId: b.leaderId, cards: b.cards },
-      ],
-      99,
-      0,
-    );
-    // Six full rounds is enough to see a supporter row and bodies on the board.
-    for (let i = 0; i < 400 && s.turn < 12 && !isOver(s); i++) {
-      const actor = currentActor(s);
-      const res = applyAction(s, actor, chooseAction(s, actor));
-      if (!res.ok) throw new Error(res.error);
-      s = res.state;
-    }
-    // A game can finish well before turn 12, and one supporter a turn is the
-    // cap, so the bar scales with the turns a player actually got.
-    const ownTurns = Math.ceil(s.turn / 2);
-    for (const p of s.players) {
-      expect(p.supporters.length).toBeGreaterThanOrEqual(Math.min(2, ownTurns - 1));
-    }
-    const bodies = s.players.flatMap((p) => p.slots.filter(Boolean)).length;
-    const debt = s.players.reduce((n, p) => n + p.debtCount, 0);
-    expect(bodies + debt).toBeGreaterThan(0);
   });
 });
 

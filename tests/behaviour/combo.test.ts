@@ -6,6 +6,7 @@ import {
   clearPlan,
   evaluate,
   fullSearch,
+  kitsFor,
   quickSearch,
   readEnemy,
   setSearchLimits,
@@ -193,7 +194,8 @@ describe('combo search', () => {
     me.slots[2] = body(s, 'o2-scientist', 0, 4);
     me.debtCount = 4;
     me.debt = Array(4).fill(FILLER);
-    me.mana.P = 2;
+    me.mana.P = 3;
+    me.mana.O = 1;
     me.deck = Array(40).fill(FILLER);
     foe.slots[0] = body(s, FILLER, 1, 4);
 
@@ -223,7 +225,8 @@ describe('combo search', () => {
     me.deck = Array(4).fill(FILLER);
     me.discard = [];
     me.deckOuts = 0;
-    me.mana.P = 2;
+    me.mana.P = 3;
+    me.mana.O = 1;
     foe.slots[0] = body(s, 'p3-helaks', 1, 6);
 
     const { state, line } = playTurn(s, 0);
@@ -251,7 +254,8 @@ describe('combo search', () => {
     me.debtCount = 6;
     me.debt = Array(6).fill(FILLER);
     me.deck = Array(30).fill(FILLER);
-    me.mana.P = 2;
+    me.mana.P = 3;
+    me.mana.O = 1;
     foe.slots[0] = body(s, 'p3-helaks', 1, 6);
 
     const { state, line } = playTurn(s, 0);
@@ -316,5 +320,40 @@ describe('reading the opponent', () => {
     const cold = readEnemy(facing([], ['x-r-dummy-1']), 1);
     const shown = readEnemy(facing([legal!.id], ['x-r-dummy-1']), 1);
     expect(shown.trapDensity).toBeGreaterThan(cold.trapDensity);
+  });
+});
+
+describe('the deck scan', () => {
+  it('finds the Scientist kit in a list that carries it, and nothing in a list of vanillas', () => {
+    // The probe puts a wall in front of the enemy leader, so three bodies that
+    // could swing at an open leader are a pile rather than a kit. Experiments
+    // into Bone Known and Alchemize reach past the wall, and that is the one
+    // set the scan should keep.
+    const kit = [
+      ...Array(38).fill(FILLER),
+      'p3-helemy', 'p3-helemy', 'o2-boneknown', 'o2-boneknown', 'o2-scientist', 'o2-scientist',
+      'p1-beast', 'p1-beast', 'x-p-bolt', 'x-p-bolt',
+    ];
+    const s = createGame(
+      [
+        { name: 'A', leaderId: LEADER, cards: kit },
+        { name: 'B', leaderId: LEADER, cards: Array(48).fill(FILLER) },
+      ],
+      1,
+      0,
+    );
+    clearPlan();
+    chooseAction(s, 0);
+    const found = kitsFor(s, 0);
+    expect(found.length, 'one kit').toBeGreaterThan(0);
+    const best = found[0];
+    expect(best.reach).toBeGreaterThanOrEqual(0.9);
+    for (const id of ['p3-helemy', 'o2-scientist', 'o2-boneknown']) {
+      expect(best.cards, `${id} is in the best kit`).toContain(id);
+    }
+    expect(best.cards, 'and the vanilla is not').not.toContain('p1-beast');
+
+    chooseAction(s, 1);
+    expect(kitsFor(s, 1), 'a list of vanillas holds no kit').toHaveLength(0);
   });
 });

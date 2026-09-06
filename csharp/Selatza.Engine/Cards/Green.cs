@@ -26,7 +26,7 @@ public static class Green
 
     public static CardDef[] Build() => new[]
     {
-        K.Starter("player1", "Player One", F(Faction.Machine, Faction.Mortal), str: 1, hp: 4,
+        K.Starter("player1", "Player One", F(Faction.Machine, Faction.Mortal), str: 2, hp: 5,
             text: "Battlecry: If you control no other summons, this gains a Power Shield "
                 + "and +4 attack.",
             triggers: new Triggers
@@ -167,7 +167,7 @@ public static class Green
 
         K.Summon(1, "slicebot", "Slicebot", F(Faction.Machine, Faction.Hedron), str: 4, hp: 1),
 
-        K.Summon(2, "badglitch", "Bad Glitch", F(Faction.Machine), str: 2,
+        K.Summon(2, "badglitch", "Bad Glitch", F(Faction.Machine), str: 3,
             hp: 3,
             text: "Battlecry: An enemy summon loses 2 attack.",
             targets: Specs(Enemy()),
@@ -194,7 +194,7 @@ public static class Green
                 foreach (var t in c.SummonsOf(c.Me, true)) c.Shield(t, 1);
             }),
 
-        K.Summon(2, "bellobot", "Bellobot", F(Faction.Machine), str: 1, hp: 2,
+        K.Summon(2, "bellobot", "Bellobot", F(Faction.Machine), str: 2, hp: 2,
             text: "Ally Machines have +1 attack.",
             triggers: new Triggers
             {
@@ -204,7 +204,7 @@ public static class Green
             }),
 
         K.Summon(2, "blackhat", "Black Hat", F(Faction.Mortal, Faction.Scholar),
-            str: 2,
+            str: 3,
             hp: 2,
             powers: Powers(new Power
             {
@@ -216,7 +216,7 @@ public static class Green
             })),
 
         K.Summon(2, "digital nomad", "Digital Nomad", F(Faction.Mortal, Faction.Machine),
-            str: 2,
+            str: 3,
             hp: 3,
             text: "Deathrattle: An ally gains a Power Shield.",
             triggers: new Triggers
@@ -228,7 +228,7 @@ public static class Green
             }),
 
         K.Summon(2, "digitalrabbits", "Digital Rabbits", F(Faction.Machine, Faction.Beast),
-            str: 1, hp: 3,
+            str: 2, hp: 3,
             reborn: true,
             text: "Reborn. Battlecry: Put a Digital Rabbits from your deck into an empty slot.",
             triggers: new Triggers
@@ -241,7 +241,7 @@ public static class Green
                 },
             }),
 
-        K.Summon(2, "engineer", "Engineer", F(Faction.Mortal, Faction.Scholar), str: 2,
+        K.Summon(2, "engineer", "Engineer", F(Faction.Mortal, Faction.Scholar), str: 3,
             hp: 3,
             powers: Powers(new Power
             {
@@ -256,7 +256,7 @@ public static class Green
                 },
             })),
 
-        K.Summon(2, "forklift", "Forklift", F(Faction.Machine), str: 1, hp: 4,
+        K.Summon(2, "forklift", "Forklift", F(Faction.Machine), str: 2, hp: 4,
             powers: Powers(new Power
             {
                 Name = "Reposition",
@@ -279,7 +279,7 @@ public static class Green
             })),
 
         K.Summon(2, "hobbyist", "Scoobert Engineer", F(Faction.Mortal),
-            str: 2,
+            str: 3,
             hp: 3,
             powers: Powers(new Power
             {
@@ -303,7 +303,7 @@ public static class Green
                 },
             })),
 
-        K.Summon(2, "nommer", "Nommer", F(Faction.Machine, Faction.Beast, Faction.Hedron), str: 3, hp: 2,
+        K.Summon(2, "nommer", "Nommer", F(Faction.Machine, Faction.Beast, Faction.Hedron), str: 4, hp: 2,
             muffleFlips: true,
             text: "FLIP effects of its combat damage are muted on any character, and it heals 1 HP for each.",
             powers: Powers(new Power
@@ -320,7 +320,7 @@ public static class Green
                 },
             })),
 
-        K.Summon(2, "securitybot", "Security Bot", F(Faction.Machine), str: 1, hp: 4,
+        K.Summon(2, "securitybot", "Security Bot", F(Faction.Machine), str: 2, hp: 4,
             text: "Battlecry: Gains a Power Shield. When attacked, deal 2 to the attacker.",
             triggers: new Triggers
             {
@@ -331,7 +331,7 @@ public static class Green
             flip: c => c.Shield(c.HolderRef, 1)),
 
         K.Summon(3, "chemicalmen", "Chemical Men", F(Faction.Machine, Faction.Mortal),
-            str: 2, hp: 4,
+            str: 3, hp: 5,
             reborn: true,
             text: "Reborn. Deathrattle: Your Machines gain a Power Shield.",
             triggers: new Triggers
@@ -349,7 +349,7 @@ public static class Green
                 },
             }),
 
-        K.Summon(3, "cybersiren", "Cyber Siren", F(Faction.Machine), str: 2, hp: 5,
+        K.Summon(3, "cybersiren", "Cyber Siren", F(Faction.Machine), str: 3, hp: 5,
             powers: Powers(new Power
             {
                 Name = "Enthrall",
@@ -373,7 +373,7 @@ public static class Green
                 },
             })),
 
-        K.Summon(3, "greenstar", "Green Star", F(Faction.Star, Faction.Machine), str: 2, hp: 6,
+        K.Summon(3, "greenstar", "Green Star", F(Faction.Star, Faction.Machine), str: 3, hp: 6,
             text: "At the start of your turn, each of your characters gains 1 HP.",
             powers: Powers(new Power
             {
@@ -388,7 +388,7 @@ public static class Green
                 OnAwake = c => { foreach (var r in c.SummonsOf(c.Me, true)) c.Reinforce(r, 1); },
             }),
 
-        K.Summon(3, "hatemachine", "Hate Machine", F(Faction.Machine), str: 5, hp: 3,
+        K.Summon(3, "hatemachine", "Hate Machine", F(Faction.Machine), str: 6, hp: 4,
             text: "At the start of your turn, you take 2 debt.",
             triggers: new Triggers
             {
@@ -405,13 +405,13 @@ public static class Green
             })),
 
         K.Summon(3, "infinitemind", "Infinite Mind", F(Faction.Machine, Faction.Scholar),
-            str: 6, hp: 6,
+            str: 7, hp: 6,
             voidsDiscard: true,
             text: "At the start of your turn, draw a card. Your cards that go to "
                 + "the discard pile are annihilated.",
             triggers: new Triggers { OnAwake = c => c.Draw(c.Me, 1) }),
 
-        K.Summon(3, "maliciouscode", "Malicious Code", F(Faction.Machine), str: 3, hp: 4,
+        K.Summon(3, "maliciouscode", "Malicious Code", F(Faction.Machine), str: 4, hp: 5,
             powers: Powers(new Power
             {
                 Name = "Overwrite",
@@ -423,7 +423,7 @@ public static class Green
             })),
 
         K.Summon(3, "scoobertsingularity", "Scoobert Singularity",
-            F(Faction.Machine, Faction.Star), str: 2, hp: 4,
+            F(Faction.Machine, Faction.Star), str: 3, hp: 5,
             spellEcho: true,
             text: "Your spells cast twice. When you play a Machine, draw a card and Mill 1.",
             triggers: new Triggers
@@ -438,7 +438,7 @@ public static class Green
                 },
             }),
 
-        K.Summon(3, "shapethink", "Shapethink", F(Faction.Hedron, Faction.Scholar), str: 2, hp: 5,
+        K.Summon(3, "shapethink", "Shapethink", F(Faction.Hedron, Faction.Scholar), str: 3, hp: 5,
             text: "At the start of your turn, Scry 3 for any card. "
                 + "When an enemy uses a Power, deal 1 to them.",
             triggers: new Triggers

@@ -14,14 +14,14 @@ import type { PlayerIdx } from '../src/engine/types';
  * An aura buffs every ally but itself and knows itself by card id. A minted id
  * breaks that test, so a fusion carrying an aura would buff the body it rides
  * on, and the merge used to answer that by refusing every bonus aimed at the
- * fused body. That is exactly what a self-buff is: Bone Known reads "+1 attack
- * for every 2 debt you carry" and applies to nothing else, so grafting or
- * recompiling it handed over a trigger that could never pay out.
+ * fused body. That is exactly what a self-buff is: Serpant reads "+1 attack for
+ * every 6 cards in the enemy's discard pile" and applies to nothing else, so
+ * grafting or recompiling it handed over a trigger that could never pay out.
  */
 
 const FILLER = 'x-r-dummy-1';
 const LEADER = 'x-hero-dummy-warden';
-const BONE = 'o2-boneknown';
+const SELFBUFF = 'f3-serpant';
 const HOST = 'o1-skeleton';
 const KING = 'm-rp-theking';
 /** A Mortal for the aura to land on, which is not the aura itself. */
@@ -36,15 +36,14 @@ function body(s: GameState, cardId: string, owner: PlayerIdx, hp: number): Summo
   };
 }
 
-function board(debt = 0): GameState {
+function board(pile = 0): GameState {
   const s = createGame(
     [
       { name: 'A', leaderId: LEADER, cards: Array(40).fill(FILLER) },
       { name: 'B', leaderId: LEADER, cards: Array(40).fill(FILLER) },
     ], 1, 0);
   s.players[0].slots = [null, null, null];
-  s.players[0].debtCount = debt;
-  s.players[0].debt = Array(debt).fill(FILLER);
+  s.players[1].discard = Array(pile).fill(FILLER);
   return s;
 }
 
@@ -61,22 +60,22 @@ function grafted(sourceId: string): string {
 
 describe('a strength trigger carried onto another body', () => {
   it('names the two kinds it has to tell apart', () => {
-    expect(card(BONE).text, 'a self-buff').toContain('for every 2 debt you carry');
+    expect(card(SELFBUFF).text, 'a self-buff').toContain("for every 6 cards in the enemy's discard pile");
     expect(card(KING).text, 'an aura').toContain('Ally Mortals');
     expect(card(MORTAL).factions).toContain('Mortal');
   });
 
   it('pays out a self-buff that was grafted on', () => {
-    const s = board(10);
-    const id = grafted(BONE);
+    const s = board(30);
+    const id = grafted(SELFBUFF);
     s.players[0].slots[0] = body(s, id, 0, 3);
-    // Skeleton prints 1 attack, and ten debt is five more.
+    // Skeleton prints 1 attack, and a thirty-card pile is five more.
     expect(effectiveStrength(s, s.players[0].slots[0]!)).toBe((card(HOST).strength ?? 0) + 5);
   });
 
   it('pays out a self-buff that was recompiled in', () => {
-    const s = board(10);
-    const id = fusedRecomp(HOST, BONE, 2, 4, 2);
+    const s = board(30);
+    const id = fusedRecomp(HOST, SELFBUFF, 2, 4, 2);
     s.players[0].slots[0] = body(s, id, 0, 4);
     expect(effectiveStrength(s, s.players[0].slots[0]!)).toBe(2 + 5);
   });

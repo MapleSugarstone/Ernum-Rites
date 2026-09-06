@@ -32,8 +32,8 @@ const anyDamaged = (state: import('../engine/state').GameState) =>
 export const pinkCards: CardDef[] = [
   // --- leader ----------------------------------------------------------------
   k.starter('PinkDeus', 'Pink Deus', ['Saccharine', 'Ernum'], {
-    str: 3,
-    hp: 4,
+    str: 4,
+    hp: 5,
     powers: [
       {
         name: 'Charm',
@@ -145,7 +145,7 @@ export const pinkCards: CardDef[] = [
 
   // --- level 2 ---------------------------------------------------------------
   k.summon(2, 'Briber', 'Briber', ['Mortal'], {
-    str: 3,
+    str: 4,
     hp: 4,
     text: 'Battlecry: Each enemy heals 1 debt. Gain 1 Love for each.',
     triggers: {
@@ -157,7 +157,7 @@ export const pinkCards: CardDef[] = [
     },
   }),
   k.summon(2, 'CandyGuardSeller', 'CandyGuard Seller', ['Saccharine', 'Mortal', 'Scholar'], {
-    str: 3,
+    str: 4,
     hp: 3,
     text: 'Store: Put a CandyGuard into an empty slot.',
     store: {
@@ -175,7 +175,7 @@ export const pinkCards: CardDef[] = [
     },
   }),
   k.summon(2, 'CandyWizard', 'Candy Wizard', ['Mortal', 'Scholar'], {
-    str: 3,
+    str: 4,
     hp: 3,
     powers: [
       {
@@ -198,7 +198,7 @@ export const pinkCards: CardDef[] = [
     ],
   }),
   k.summon(2, 'GunForHire', 'Gun for Hire', ['Saccharine', 'Mortal', 'Beast'], {
-    str: 4,
+    str: 5,
     hp: 3,
     text: 'Store: Annihilate a non-Candy summon. Store costs +2.',
     // Candy here is the colour, not the tribe: the gun refuses every pink card.
@@ -222,7 +222,7 @@ export const pinkCards: CardDef[] = [
     },
   }),
   k.summon(2, 'HotcakeSeller', 'Hotcake Seller', ['Saccharine', 'Mortal'], {
-    str: 3,
+    str: 4,
     hp: 3,
     text: 'Store: One of your summons gains +2 attack.',
     store: {
@@ -234,7 +234,7 @@ export const pinkCards: CardDef[] = [
     },
   }),
   k.summon(2, 'Nurse', 'Nurse', ['Mortal'], {
-    str: 3,
+    str: 4,
     hp: 4,
     text: 'Store: Heal a character for 3.',
     store: {
@@ -247,7 +247,7 @@ export const pinkCards: CardDef[] = [
   }),
   k.summon(2, 'PrivateDetective', 'Private Detective', ['Mortal', 'Scholar'], {
     entersSapped: true,
-    str: 3,
+    str: 4,
     hp: 3,
     text: 'Arrives sapped. Battlecry: Scry 4 for any card. Store: Scry 4 for any card.',
     triggers: { onEnter: (c) => c.dig(c.me, 4, () => true) },
@@ -257,7 +257,7 @@ export const pinkCards: CardDef[] = [
     },
   }),
   k.summon(2, 'Recycler', 'Recycler', ['Living'], {
-    str: 3,
+    str: 4,
     hp: 4,
     text: 'Store: Shuffle 5 random cards from your discard pile into your deck.',
     store: {
@@ -266,7 +266,7 @@ export const pinkCards: CardDef[] = [
     },
   }),
   k.summon(2, 'SnoozingGiant', 'Snoozing Giant', ['Saccharine', 'Beast'], {
-    str: 4,
+    str: 5,
     hp: 5,
     text: 'Arrives sapped.',
     triggers: {
@@ -279,7 +279,7 @@ export const pinkCards: CardDef[] = [
     flip: (c) => c.gainLove(c.me, 1),
   }),
   k.summon(2, 'spellsell', 'Spell Seller', ['Mortal', 'Scholar'], {
-    str: 3,
+    str: 4,
     hp: 3,
     text: 'Store: Scry 6 for a spell.',
     store: {
@@ -290,7 +290,7 @@ export const pinkCards: CardDef[] = [
 
   // --- level 3 ---------------------------------------------------------------
   k.summon(3, 'AncientSugar', 'Ancient Sugar', ['Saccharine', 'Spirit'], {
-    str: 4,
+    str: 5,
     hp: 5,
     text: 'At the start of your turn, gain 1 Love.',
     triggers: { onAwake: (c) => c.gainLove(c.me, 1) },
@@ -298,7 +298,7 @@ export const pinkCards: CardDef[] = [
       {
         // No sap: the pump exists to swing with, and a sapped body cannot.
         name: 'Sugar Rush',
-        cost: { K: 1 },
+        cost: { K: 2 },
         text: 'Love: Gains +1 attack until end of turn.',
         needsLove: true,
         effect: (c) => {
@@ -310,7 +310,7 @@ export const pinkCards: CardDef[] = [
     ],
   }),
   k.summon(3, 'DebtReliever', 'Debt Reliever', ['Saccharine', 'Grinkle'], {
-    str: 4,
+    str: 5,
     hp: 5,
     text: 'Store: Heal 3 debt.',
     store: {
@@ -319,7 +319,7 @@ export const pinkCards: CardDef[] = [
     },
   }),
   k.summon(3, 'DerangedCandyfolk', 'Deranged Candyfolk', ['Saccharine', 'Mortal'], {
-    str: 5,
+    str: 6,
     hp: 6,
     text: 'Battlecry: You take 2 debt.',
     triggers: { onEnter: (c) => c.addDebt(c.me, 2) },
@@ -338,7 +338,7 @@ export const pinkCards: CardDef[] = [
     ],
   }),
   k.summon(3, 'Eidola', 'Eidola', ['Saccharine', 'Spirit'], {
-    str: 3,
+    str: 4,
     hp: 5,
     powers: [
       {
@@ -355,7 +355,7 @@ export const pinkCards: CardDef[] = [
     ],
   }),
   k.summon(3, 'Final Unicorn', 'Final Unicorn', ['Saccharine', 'Beast', 'Star'], {
-    str: 4,
+    str: 5,
     hp: 6,
     powers: [
       {
@@ -377,7 +377,7 @@ export const pinkCards: CardDef[] = [
     },
   }),
   k.summon(3, 'HyperCapitalist', 'Hyper Capitalist', ['Saccharine', 'Mortal'], {
-    str: 4,
+    str: 5,
     hp: 5,
     text: 'When another player buys from one of your Stores, draw a card.',
     triggers: { onStoreSold: (c) => c.draw(c.me, 1) },
@@ -445,7 +445,7 @@ export const pinkCards: CardDef[] = [
     ],
   }),
   k.summon(3, 'SweetHarmony', 'Sweet Harmony', ['Saccharine', 'Star'], {
-    str: 4,
+    str: 5,
     hp: 5,
     powers: [
       {
@@ -463,7 +463,7 @@ export const pinkCards: CardDef[] = [
   }),
 
   // --- spells, field and traps ------------------------------------------------
-  k.spell('Candycane', 'Candy Cane', { K: 1 }, {
+  k.spell('Candycane', 'Candy Cane', { K: 2 }, {
     text: 'An ally character gains +2 attack until end of turn. Love: +1 attack.',
     targets: [T.allyOrLeader()],
     effect: (c) => {
@@ -487,7 +487,7 @@ export const pinkCards: CardDef[] = [
       c.returnThis();
     },
   }),
-  k.stage('FieldClearanceSale', 'Field: Clearance Sale', { K: 2, C: 1 }, {
+  k.stage('FieldClearanceSale', 'Field: Clearance Sale', { K: 3 }, {
     text: 'Your Stores may be used twice per turn and cost 1 less. At the start of your turn, draw a card. When another player buys from one of your Stores, heal 1 debt.',
     storeBoost: true,
     stageHooks: {
