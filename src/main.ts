@@ -123,6 +123,7 @@ import {
   HAND_LIMIT,
   isParty,
   livingOpponents,
+  type PendingStore,
   nextLiving,
   OPENING_HAND,
   PARTY_DEBT_LIMIT,
@@ -292,9 +293,7 @@ interface Ui {
   hpView: TargetRef | null;
   /** The Store slider's position, or null to follow the price on the table. */
   storePrice: number | null;
-  /** The buyer moved the slider, which locks Accept until a counter is sent. */
-  storeMoved: boolean;
-  /** Which negotiation pass the two fields above belong to. */
+  /** Which negotiation pass the field above belongs to. */
   storePass: number;
 }
 
@@ -338,9 +337,19 @@ const ui: Ui = {
   discardView: null,
   hpView: null,
   storePrice: null,
-  storeMoved: false,
   storePass: -1,
 };
+
+const STORE_OFF_PRICE = 'Your price is not the one on the table: counter, or slide back to accept.';
+
+/**
+ * Whether the buyer's slider is somewhere other than the price on the table.
+ * Read fresh wherever it is needed rather than latched when the slider first
+ * moves, because sliding back onto the offer is the buyer taking it.
+ */
+function offTheTable(w: PendingStore): boolean {
+  return ui.storePrice !== null && ui.storePrice !== w.price;
+}
 
 /**
  * The name and deck picks kept from the last visit. A deck that has been
@@ -3389,10 +3398,9 @@ function promptHtml(state: GameState): string {
     const def = card(s.cardId);
     const shop = storeOf(s, def);
     const { min, max } = shop ? storePriceBounds(shop) : { min: 1, max: 4 };
-    // The slider and the moved flag belong to one pass of the haggle.
+    // The slider belongs to one pass of the haggle.
     if (ui.storePass !== w.pass) {
       ui.storePass = w.pass;
-      ui.storeMoved = false;
       ui.storePrice = null;
     }
     const iAmSeller = me === w.seller;
@@ -3422,13 +3430,14 @@ function promptHtml(state: GameState): string {
           (canTake ? btn('store-accept', `Accept ${w.price}`) : '');
         if (w.pass >= 4) row = `${slider}${btn('store-final', 'Final offer', 'primary')}${canTake ? btn('store-accept', `Accept ${w.price}`) : ''}`;
       } else {
-        const acceptDead = ui.storeMoved
-          ? `<button disabled title="You moved the slider: send the counter or reject.">Accept ${w.price}</button>`
-          : btn('store-accept', `Accept ${w.price}`, 'primary');
+        const off = offTheTable(w);
+        const accept =
+          `<button class="${off ? '' : 'primary'}" data-act="btn" data-cmd="store-accept"` +
+          `${off ? ` disabled title="${STORE_OFF_PRICE}"` : ''}>Accept ${w.price}</button>`;
         const canCounter = !w.final && w.pass < 4;
         row =
           (canCounter ? slider + btn('store-counter', 'Counter') : '') +
-          acceptDead +
+          accept +
           btn('store-reject', 'Reject');
       }
     } else {
@@ -7857,7 +7866,7 @@ function handleCommand(cmd: string): void {
       max,
       Math.max(min, ui.storePrice ?? w.price ?? Math.min(max, min + 1)),
     );
-    ui.storeMoved = false;
+    ui.storePrice = null;
     if (cmd === 'store-counter') return dispatch({ type: 'STORE_COUNTER', price });
     return dispatch({ type: 'STORE_OFFER', price, final: cmd === 'store-final' });
   }
@@ -8547,16 +8556,19 @@ root.addEventListener('input', (ev) => {
     const out = document.getElementById('storepriceval');
     if (out) out.textContent = String(ui.storePrice);
     const w = ui.state?.pending;
-    if (w?.kind === 'store' && viewSeat() === w.buyer && canAct() && !ui.storeMoved) {
-      ui.storeMoved = true;
-      // Patched rather than rendered: the full repaint this used to do replaced
-      // the slider under the pointer, which read as the window blinking out.
+    if (w?.kind === 'store' && viewSeat() === w.buyer && canAct()) {
+      const off = offTheTable(w);
+      // Patched rather than rendered: the full repaint this used to do
+      // replaced the slider under the pointer, which read as the window
+      // blinking out.
       const accept = document.querySelector<HTMLButtonElement>(
         '#prompt [data-cmd="store-accept"]',
       );
       if (accept) {
-        accept.disabled = true;
-        accept.title = 'You moved the slider: send the counter or reject.';
+        accept.disabled = off;
+        accept.classList.toggle('primary', !off);
+        if (off) accept.title = STORE_OFF_PRICE;
+        else accept.removeAttribute('title');
       }
     }
     return;

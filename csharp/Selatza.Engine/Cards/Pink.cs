@@ -186,7 +186,7 @@ public static class Pink
 
         K.Summon(2, "GunForHire", "Gun for Hire",
             F(Faction.Saccharine, Faction.Mortal, Faction.Beast), str: 5, hp: 3,
-            text: "Store: Annihilate a non-Candy summon, ignoring Redirection. Store costs +2.",
+            text: "Store: Annihilate a non-Candy summon, bypassing Redirection. Store costs +2.",
             // Candy here is the colour, not the tribe: the gun refuses pink cards.
             store: new StoreDef
             {
@@ -196,7 +196,7 @@ public static class Pink
                     Kind = TargetKind.Summon,
                     Side = Side.Any,
                     Label = "a non-Candy summon to annihilate",
-                    IgnoreRedirect = true,
+                    BypassRedirect = true,
                     Filter = a => a.Summon is { } s && a.Card is { } d
                         && GameState.ColorOf(s, d) != Color.K,
                 }),

@@ -601,7 +601,7 @@ public sealed class TargetSpec
     public bool Optional { get; init; }
 
     /// <summary>Reaches past an enemy Redirection body instead of being pulled onto it.</summary>
-    public bool IgnoreRedirect { get; init; }
+    public bool BypassRedirect { get; init; }
 
     public Func<TargetFilterArgs, bool>? Filter { get; init; }
 }

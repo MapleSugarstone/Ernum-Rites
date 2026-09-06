@@ -212,7 +212,7 @@ export const pinkCards: CardDef[] = [
   k.summon(2, 'GunForHire', 'Gun for Hire', ['Saccharine', 'Mortal', 'Beast'], {
     str: 5,
     hp: 3,
-    text: 'Store: Annihilate a non-Candy summon, ignoring Redirection. Store costs +2.',
+    text: 'Store: Annihilate a non-Candy summon, bypassing Redirection. Store costs +2.',
     // Candy here is the colour, not the tribe: the gun refuses every pink card.
     store: {
       surcharge: 2,
@@ -221,7 +221,7 @@ export const pinkCards: CardDef[] = [
           kind: 'summon',
           side: 'any',
           label: 'a non-Candy summon to annihilate',
-          ignoreRedirect: true,
+          bypassRedirect: true,
           filter: (a) => !!a.summon && !!a.card && colorOf(a.summon, a.card) !== 'K',
         },
       ],

@@ -531,3 +531,7 @@ for `--every-leader` on the full pool. The mixed leaders are all in it, and
 every deck draws from its leader's whole legal pool, mixed cards included.
 Fewer seeds than six is the trade for the slower bot; two is enough for
 colours and card lift, and a single-leader claim still needs six.
+
+Maple's standing preference once the cloud quota allows it: 300 to 400
+rounds rather than 200, so the decks evolve longer. Continue a seed already
+run at 200 by rerunning the script with the same tag and `--rounds 400`.
