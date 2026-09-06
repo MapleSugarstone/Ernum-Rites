@@ -4,6 +4,7 @@ import {
   candidateActions,
   chooseAction,
   clearPlan,
+  defaultWeights,
   evaluate,
   fullSearch,
   kitsFor,
@@ -13,6 +14,7 @@ import {
 } from '../../src/ai/bot';
 import { applyAction, createGame } from '../../src/engine/engine';
 import { allCards, card } from '../../src/engine/registry';
+import { fusedRecomp, graftedCopy } from '../../src/engine/generated';
 import { deckIdentity, isLegalUnder } from '../../src/engine/identity';
 import { DEBT_LIMIT, type GameState, type SummonInstance } from '../../src/engine/state';
 import type { Action } from '../../src/engine/actions';
@@ -264,10 +266,11 @@ describe('combo search', () => {
     expect(state.players[0].debtCount, 'and never crossed it').toBeLessThan(DEBT_LIMIT);
   });
 
-  it('never reads a Graft pairing off the evaluator alone', () => {
-    // The guard on the test above. Every pairing scores the same the instant it
-    // resolves, because the evaluator has no term for what a body's text says,
-    // so anything that picks between them has to have played the turn out.
+  it('tells a Graft pairing apart by what the graft does', () => {
+    // Once every pairing scored the same the instant it resolved, because the
+    // evaluator had no term for what a body's text says. The reach term plays
+    // each minted body out, so the pairing that puts the Deathrattle on the
+    // body that keeps coming back is the one the evaluator prefers.
     const s = board();
     const me = s.players[0];
     const foe = s.players[1];
@@ -279,14 +282,23 @@ describe('combo search', () => {
     me.mana.O = 3;
     foe.slots[0] = body(s, 'p3-helaks', 1, 6);
 
+    clearPlan();
     const scores = new Set<number>();
+    let best = Number.NEGATIVE_INFINITY;
+    let bestBody = '';
     for (const action of candidateActions(s, 0)) {
       if (action.type !== 'CAST_SPELL') continue;
       const res = applyAction(s, 0, action);
       if (!res.ok) continue;
-      scores.add(Math.round(evaluate(res.state, 0)));
+      const score = evaluate(res.state, 0);
+      scores.add(Math.round(score));
+      if (score > best) {
+        best = score;
+        bestBody = res.state.players[0].slots[0]?.cardId ?? '';
+      }
     }
-    expect(scores.size, 'the evaluator can already tell the pairings apart').toBe(1);
+    expect(scores.size, 'the pairings score apart').toBeGreaterThan(1);
+    expect(bestBody.startsWith('gen-graft-o1-skeleton+m-rp-falsehumanity'), `the loop is the one it prefers: ${bestBody}`).toBe(true);
   });
 });
 
@@ -355,5 +367,95 @@ describe('the deck scan', () => {
 
     chooseAction(s, 1);
     expect(kitsFor(s, 1), 'a list of vanillas holds no kit').toHaveLength(0);
+  });
+});
+
+describe('minted cards', () => {
+  it('prices what a minted body carries', () => {
+    // A Recomp is registered when it is minted, with the higher stats, both
+    // faction lines, both Powers and both trigger lines of its parts. The
+    // evaluator reads it through the registry like any printed card, so a
+    // Recomp that inherited a Deathrattle is worth more than a vanilla body of
+    // the same stats: the Deathrattle term at least, and whatever the reach
+    // probe finds the Deathrattle does past the wall on top.
+    const plain = card(FILLER);
+    const fused = fusedRecomp(FILLER, 'm-rp-falsehumanity', plain.strength ?? 1, plain.hp ?? 1, 1);
+    expect(card(fused).triggers?.onDeath, 'the fusion kept the Deathrattle').toBeTruthy();
+
+    const a = board();
+    a.players[0].leader = body(a, LEADER, 0, 10, true);
+    a.players[1].leader = body(a, LEADER, 1, 10, true);
+    const b = structuredClone(a);
+    a.players[0].slots[0] = body(a, FILLER, 0, plain.hp ?? 1);
+    b.players[0].slots[0] = body(b, fused, 0, plain.hp ?? 1);
+    clearPlan();
+    const gap = evaluate(b, 0) - evaluate(a, 0);
+    expect(gap).toBeGreaterThanOrEqual(defaultWeights.deathrattle);
+  });
+
+  it('plays a Recomp from hand and fires the Powers it inherited for the kill', () => {
+    // Helemy and Bone Known fused: Alchemize and Dark Knowledge rebuilt in
+    // Robot and Pepper on one body. Dark Knowledge sets its attack from the
+    // debt pile and Alchemize spends the body on the enemy leader, past the
+    // blocker. The Recomp is a minted card in hand: the bot has to enumerate
+    // playing it, then its Powers, none of which exist in any printed list.
+    const s = board();
+    const me = s.players[0];
+    const foe = s.players[1];
+    me.leader = body(s, LEADER, 0, 10, true);
+    foe.leader = body(s, LEADER, 1, 12, true);
+    me.hand = [fusedRecomp('p3-helemy', 'o2-boneknown', 4, 5, 3)];
+    me.debtCount = 20;
+    me.debt = Array(20).fill(FILLER);
+    me.mana.R = 3;
+    me.mana.P = 1;
+    foe.slots[0] = body(s, 'p3-helaks', 1, 6);
+
+    const { state, line } = playTurn(s, 0);
+    expect(state.winner, `line: ${line.map((a) => a.type).join(' ')}`).toBe(0);
+    expect(line.some((a) => a.type === 'PLAY_SUMMON'), 'the Recomp was played').toBe(true);
+  });
+});
+
+describe('what a card can do', () => {
+  it('prices a Recomp in hand by the Powers it inherited', () => {
+    // Nothing in the printed set says what a Recomp of Helemy and Bone Known
+    // does. The reach term plays it out on a probe board: Dark Knowledge sets
+    // its attack from the debt pile and Alchemize spends it on the leader, so
+    // at 20 debt the card in hand is a kill in waiting, and a vanilla of the
+    // same level is a body.
+    const s = board();
+    s.players[0].leader = body(s, LEADER, 0, 10, true);
+    s.players[1].leader = body(s, LEADER, 1, 10, true);
+    s.players[0].debtCount = 20;
+    s.players[0].debt = Array(20).fill(FILLER);
+    const plain = structuredClone(s);
+    plain.players[0].hand = ['x-r-dummy-3'];
+    const fused = structuredClone(s);
+    fused.players[0].hand = [fusedRecomp('p3-helemy', 'o2-boneknown', 4, 5, 3)];
+    clearPlan();
+    expect(evaluate(fused, 0)).toBeGreaterThan(evaluate(plain, 0) + defaultWeights.reach * 0.25);
+  });
+
+  it('prices a grafted Skeleton by the loop it carries', () => {
+    // Skeleton returns to hand one HP smaller each death. With False
+    // Humanity's Deathrattle grafted on, every death also deals 2 to the enemy
+    // leader past any blocker, so the body is a line and not a 1/3.
+    const skeleton = card('o1-skeleton');
+    const grafted = graftedCopy('o1-skeleton', 'm-rp-falsehumanity', {
+      strength: skeleton.strength ?? 1,
+      color: skeleton.color,
+      level: skeleton.level ?? 1,
+      powers: [],
+    });
+    const s = board();
+    s.players[0].leader = body(s, LEADER, 0, 10, true);
+    s.players[1].leader = body(s, LEADER, 1, 10, true);
+    const plain = structuredClone(s);
+    plain.players[0].slots[0] = body(plain, 'o1-skeleton', 0, 3);
+    const looped = structuredClone(s);
+    looped.players[0].slots[0] = body(looped, grafted, 0, 3);
+    clearPlan();
+    expect(evaluate(looped, 0)).toBeGreaterThan(evaluate(plain, 0) + defaultWeights.deathrattle);
   });
 });

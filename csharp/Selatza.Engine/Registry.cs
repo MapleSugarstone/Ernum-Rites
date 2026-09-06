@@ -29,6 +29,13 @@ public static class Registry
         return def.Id;
     }
 
+    /// <summary>Swaps a registered card for a changed one. Tooling only: a fake version of the game for measuring a bot.</summary>
+    public static void Replace(CardDef def)
+    {
+        if (!Map.ContainsKey(def.Id)) throw new KeyNotFoundException($"unknown card id: {def.Id}");
+        Map[def.Id] = def;
+    }
+
     public static CardDef Card(string id) =>
         Map.TryGetValue(id, out var c) ? c : throw new KeyNotFoundException($"unknown card id: {id}");
 

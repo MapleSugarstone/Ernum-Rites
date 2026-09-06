@@ -80,9 +80,8 @@ export const blueCards: CardDef[] = [
     powers: [
       {
         name: 'Eight Hands',
-        cost: { F: 1 },
+        cost: { F: 2 },
         text: 'Unsap an ally summon.',
-        sapSelf: true,
         targets: [T.ally()],
         effect: (c) => c.unsap(c.targets[0]),
       },

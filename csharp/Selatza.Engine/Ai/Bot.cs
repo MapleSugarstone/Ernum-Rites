@@ -94,6 +94,18 @@ public sealed class BotWeights
     /// still in the deck. Untuned.
     /// </summary>
     public double Combo = 12;
+    /// <summary>
+    /// Per share of the opponent's nearer clock a card takes on its own off a
+    /// bare probe board, with its side's mana and debt. Measured by playing the
+    /// card out, so it prices what a card does rather than what it says: a
+    /// body whose Powers turn a debt pile into damage, a spell that burns, a
+    /// Deathrattle that fires past a blocker. Vanilla bodies reach nothing
+    /// past the wall and cost nothing to skip. A card in hand counts at half,
+    /// for the turn it takes to land. Minted cards are priced the same way,
+    /// which is how a Recomp or a grafted body is worth what it inherited.
+    /// Untuned.
+    /// </summary>
+    public double Reach = 8;
 
     public static readonly BotWeights Default = new();
 }
@@ -275,8 +287,11 @@ public static class Bot
                     + w.Level * GameState.LevelOf(s, def)
                     - w.Wound * s.Wounds
                     + (def.Triggers?.OnDeath is not null ? w.Deathrattle : 0)
-                    + w.Trigger * StandingHooks(def));
+                    + w.Trigger * StandingHooks(def)
+                    + w.Reach * ReachOf(state, side, def, w));
             }
+            if (p.Leader is not null) score += sign * w.Reach * ReachOf(state, side, Registry.Card(p.Leader.CardId), w);
+            foreach (var id in p.Hand) score += sign * w.Reach * HandReachShare * ReachOf(state, side, Registry.Card(id), w);
             score += sign * w.EffectDamage * Effects.EffectDamageOf(state, side);
             if (side == me) score += KitBonus(state, me, w);
 
@@ -1421,6 +1436,58 @@ public static class Bot
     private const double KitOutWeight = 0.3;
 
     [ThreadStatic] private static Dictionary<string, List<Kit>>? _kits;
+
+    /// <summary>A card in hand reaches at this share of what it reaches on the board: landing it costs the turn.</summary>
+    private const double HandReachShare = 0.5;
+    /// <summary>Debt is bucketed for the reach probe, so a card that reads the pile is re-measured as the pile grows.</summary>
+    private const int ReachBucket = 4;
+    /// <summary>Per card id, per side and debt bucket, for the current game only.</summary>
+    [ThreadStatic] private static Dictionary<string, Dictionary<int, double>>? _reach;
+    [ThreadStatic] private static int _reachSeed;
+    [ThreadStatic] private static bool _reachSeeded;
+
+    /// <summary>
+    /// What a card does on its own: the share of the opponent's nearer clock it
+    /// takes off the probe board with its side's mana, at its side's debt.
+    /// Cards that are only a stat line skip the probe, because nothing on it
+    /// swings past the wall. A card is probed at most once per debt bucket a
+    /// game, and a minted card the first time it is seen, which is how a
+    /// Recomp or a grafted body is priced by what it inherited rather than by
+    /// its printed line.
+    /// </summary>
+    private static double ReachOf(GameState state, int side, CardDef def, BotWeights w)
+    {
+        if (w.Reach == 0) return 0;
+        return ProbedReach(state, side, def, w);
+    }
+
+    /// <summary>The probe behind <see cref="ReachOf"/>, which the scan reads whatever the weight is.</summary>
+    private static double ProbedReach(GameState state, int side, CardDef def, BotWeights w)
+    {
+        if (Light) return 0;
+        if (def.Type == CardType.Trap) return 0;
+        if (def.Type == CardType.Summon && (def.Powers?.Length ?? 0) == 0 && def.Triggers is null && def.EffectDamage == 0) return 0;
+        if (_reach is null || !_reachSeeded || _reachSeed != state.Seed)
+        {
+            _reach = new Dictionary<string, Dictionary<int, double>>(StringComparer.Ordinal);
+            _reachSeed = state.Seed;
+            _reachSeeded = true;
+        }
+        int bucket = state.Players[side].DebtCount / ReachBucket;
+        int slot = side * 64 + bucket;
+        if (!_reach.TryGetValue(def.Id, out var byBucket))
+        {
+            byBucket = new Dictionary<int, double>();
+            _reach[def.Id] = byBucket;
+        }
+        if (byBucket.TryGetValue(slot, out double hit)) return hit;
+        // Set before the probe runs: the probe evaluates positions, and a card
+        // that reaches itself would recurse.
+        byBucket[slot] = 0;
+        double reach = KitReach(state, side, new[] { def.Id }, w, bucket * ReachBucket);
+        byBucket[slot] = reach;
+        return reach;
+    }
     private static CardDef? _wall;
     private static bool _wallFound;
     private static CardDef? _blank;
@@ -1472,7 +1539,7 @@ public static class Bot
     /// in front of every opponent's leader so only lines that carry damage past
     /// a blocker reach.
     /// </summary>
-    private static GameState ProbeBoard(GameState state, int me, string[] kit)
+    private static GameState ProbeBoard(GameState state, int me, string[] kit, int debt = 0)
     {
         var s = state.Clone();
         var p = s.Players[me];
@@ -1490,6 +1557,10 @@ public static class Bot
         Array.Clear(p.Slots);
         p.Hand.Clear();
         string filler = p.Deck.Count > 0 ? p.Deck[^1] : kit[0];
+        p.DebtCount = debt;
+        p.DebtZone.Clear();
+        for (int i = 0; i < debt; i++) p.DebtZone.Add(filler);
+        p.DeckOuts = 0;
         // The rest of the list stays out of the measure. A single that dug a
         // second piece out of the deck read as that piece's reach, and the
         // set's baseline then counted the piece twice and refused the kit. The
@@ -1515,17 +1586,23 @@ public static class Bot
             if (def.Type == CardType.Summon && slot < p.Slots.Length) p.Slots[slot++] = BodyOf(id, me, def.Hp, false);
             else p.Hand.Add(id);
         }
+        // Every leader stands in fresh at the HP the engine gives it. Every
+        // opponent gets a wall in front of the leader and nothing else, so the
+        // same card measures the same whenever it is probed and in both engines.
         foreach (int side in new[] { me }.Concat(LivingOpponents(s, me)))
         {
             var q = s.Players[side];
-            if (q.Leader is null)
-            {
-                q.Leader = BodyOf(q.LeaderCardId, side, Registry.Card(q.LeaderCardId).Hp * 2 + 2, true);
-                q.LeaderPlayed = true;
-            }
+            q.Leader = BodyOf(q.LeaderCardId, side, Registry.Card(q.LeaderCardId).Hp * 2 + 2, true);
+            q.LeaderPlayed = true;
+            q.Supporters.Clear();
+            q.Stage = null;
+            q.Love = 0;
             if (side == me) continue;
+            Array.Clear(q.Slots);
+            q.DebtCount = 0;
+            q.DebtZone.Clear();
             var wall = WallCard();
-            if (wall is not null && q.Slots.All(b => b is null)) q.Slots[0] = BodyOf(wall.Id, side, wall.Hp, false);
+            if (wall is not null) q.Slots[0] = BodyOf(wall.Id, side, wall.Hp, false);
         }
         Array.Clear(p.Mana);
         p.Mana[Rules.Colorless] = 3;
@@ -1534,15 +1611,28 @@ public static class Bot
     }
 
     /// <summary>Share of the nearer clock a kit takes off the probe board, 1 meaning a kill.</summary>
-    private static double KitReach(GameState state, int me, string[] kit, BotWeights w)
+    private static double KitReach(GameState state, int me, string[] kit, BotWeights w, int debt = 0)
     {
-        var probe = ProbeBoard(state, me, kit);
+        var probe = ProbeBoard(state, me, kit, debt);
+        // Shop prices are filed by seat and slot and stand for the whole
+        // decision, and the probe puts its own bodies in those slots. What its
+        // rollout prices there must not stand for the real table.
+        var prices = _shopPrices is null ? null : new Dictionary<string, SaleWorth>(_shopPrices, StringComparer.Ordinal);
+        var deals = _shopDeals is null ? null : new Dictionary<string, int?>(_shopDeals, StringComparer.Ordinal);
         double best = 0;
-        foreach (int setup in new[] { 0, MaxSetupSteps })
+        try
         {
-            var r = Burn(probe, me, MaxBurnSteps, w, setup, patient: true);
-            if (r.State.Winner == me) return 1;
-            best = Math.Max(best, ProgressAgainst(probe, r.State, me));
+            foreach (int setup in new[] { 0, MaxSetupSteps })
+            {
+                var r = Burn(probe, me, MaxBurnSteps, w, setup, patient: true);
+                if (r.State.Winner == me) return 1;
+                best = Math.Max(best, ProgressAgainst(probe, r.State, me));
+            }
+        }
+        finally
+        {
+            _shopPrices = prices;
+            _shopDeals = deals;
         }
         return Math.Min(1, best);
     }
@@ -1570,7 +1660,7 @@ public static class Bot
         }
 
         var single = new Dictionary<string, double>(StringComparer.Ordinal);
-        foreach (var id in ids) single[id] = KitReach(state, me, new[] { id }, w);
+        foreach (var id in ids) single[id] = ProbedReach(state, me, Registry.Card(id), w);
         var pairCards = ids.OrderByDescending(id => single[id]).Take(KitPairCards).ToList();
 
         var kits = new List<Kit>();
@@ -2239,6 +2329,8 @@ public static class Bot
         ClearShops();
         _kits?.Clear();
         _reads?.Clear();
+        _reach?.Clear();
+        _reachSeeded = false;
     }
 
     /// <summary>The next action of the standing plan, or null if there is nothing to follow.</summary>

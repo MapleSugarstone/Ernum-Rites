@@ -765,6 +765,9 @@ public sealed class StageHooks
 
 public sealed class CardDef
 {
+    /// <summary>A shallow copy, for tooling that builds a changed card off a printed one.</summary>
+    public CardDef Copy() => (CardDef)MemberwiseClone();
+
     public required string Id { get; init; }
     public required string Name { get; init; }
     public required Color Color { get; init; }

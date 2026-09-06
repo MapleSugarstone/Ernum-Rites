@@ -75,9 +75,8 @@ public static class Blue
             powers: Powers(new Power
             {
                 Name = "Eight Hands",
-                Cost = new Cost(F: 1),
+                Cost = new Cost(F: 2),
                 Text = "Unsap an ally summon.",
-                SapSelf = true,
                 Targets = Specs(Ally()),
                 Effect = c => c.Unsap(c.Target(0)),
             }),

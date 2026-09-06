@@ -15,12 +15,27 @@ namespace Selatza.Sim;
 ///   dotnet run --project csharp/Selatza.Sim -- pair --a deepcurrent --b emberchoir --games 500
 ///   dotnet run --project csharp/Selatza.Sim -- record --games 12
 ///   dotnet run --project csharp/Selatza.Sim -- verify
+///   dotnet run --project csharp/Selatza.Sim -- versus --games 600 --decks random --mutate 1
 /// </summary>
 public static class Program
 {
     public static int Main(string[] args)
     {
         CardSets.RegisterAll();
+        // --mutate <seed> plays a fake version of the game: random stat changes,
+        // random effects and new cards, applied before any deck or index is
+        // built. A bot that holds its own here handles a balance patch it has
+        // never seen.
+        int mutate = ArgInt(args, "--mutate", 0);
+        if (mutate > 0)
+        {
+            string changes = Mutate.Apply(mutate,
+                ArgInt(args, "--mutate-stats", 30), ArgInt(args, "--mutate-effects", 15), ArgInt(args, "--mutate-new", 8));
+            Directory.CreateDirectory("runs");
+            string where = Path.Combine("runs", $"mutate-{mutate}.txt");
+            File.WriteAllText(where, changes);
+            Console.WriteLine(changes.Split('\n')[0] + $" (written to {where})");
+        }
         var cmd = args.FirstOrDefault() ?? "sweep";
         int games = ArgInt(args, "--games", 50);
         string a = ArgStr(args, "--a", "deepcurrent");
@@ -31,7 +46,8 @@ public static class Program
             "sweep" => Sweep(games),
             "duel" => Duel(games),
             "versus" => Versus(games, ArgInt(args, "--threads", Environment.ProcessorCount),
-                ArgStr(args, "--decks", "random"), ArgStr(args, "--set", ""), ArgInt(args, "--seed", 1), Flag2(args, "--self")),
+                ArgStr(args, "--decks", "random"), ArgStr(args, "--set", ""), ArgInt(args, "--seed", 1), Flag2(args, "--self"),
+                Flag2(args, "--perfect")),
             "tune" => Tune(games, ArgInt(args, "--rounds", 3),
                 ArgInt(args, "--threads", Environment.ProcessorCount),
                 ArgStr(args, "--only", ""), ArgStr(args, "--decks", "random")),
@@ -345,8 +361,11 @@ public static class Program
     /// seat are out of the comparison and only the change is left. This is the
     /// answer to "is the new bot better", measured rather than argued.
     /// </summary>
-    private static int Versus(int games, int threads, string pool, string set, int seed, bool self)
+    private static int Versus(int games, int threads, string pool, string set, int seed, bool self, bool perfect = false)
     {
+        // --perfect hands the current bot the opponent's real hand, as the
+        // snapshot always has, so the read can be measured on its own.
+        if (perfect) Bot.Intel = new Bot.ReadConfig { Perfect = true };
         // --set Name=value,... overrides weights on the current side only, so a
         // new term can be measured with and without the search change it came
         // with: zero it here and what is left is the search.

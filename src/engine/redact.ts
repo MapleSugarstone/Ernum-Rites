@@ -14,6 +14,10 @@ export const hiddenCard: CardDef = {
   color: 'R',
   type: 'spell',
   text: 'Hidden from you.',
+  // A stand-in, never a card a deck could hold. The bot's read of what an
+  // opponent may be holding walks every collectible card, and the C# engine
+  // has no such card, so a collectible stand-in put the two bots one card apart.
+  uncollectible: true,
 };
 
 /**

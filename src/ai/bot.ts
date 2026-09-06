@@ -160,6 +160,17 @@ export interface BotWeights {
    * deck. Untuned.
    */
   combo: number;
+  /**
+   * Per share of the opponent's nearer clock a card takes on its own off a
+   * bare probe board, with its side's mana and debt. Measured by playing the
+   * card out, so it prices what a card does rather than what it says: a body
+   * whose Powers turn a debt pile into damage, a spell that burns, a
+   * Deathrattle that fires past a blocker. Vanilla bodies reach nothing past
+   * the wall and cost nothing to skip. A card in hand counts at half, for the
+   * turn it takes to land. Minted cards are priced the same way, which is how
+   * a Recomp or a grafted body is worth what it inherited. Untuned.
+   */
+  reach: number;
 }
 
 export const defaultWeights: BotWeights = {
@@ -188,6 +199,7 @@ export const defaultWeights: BotWeights = {
   trigger: 1,
   effectDamage: 2,
   combo: 12,
+  reach: 8,
 };
 
 /** Trigger hooks that keep firing while the body stands. */
@@ -305,8 +317,11 @@ export function evaluate(state: GameState, me: PlayerIdx, w = defaultWeights): n
           w.level * levelOf(s, def) -
           w.wound * s.wounds +
           (def.triggers?.onDeath ? w.deathrattle : 0) +
-          w.trigger * standingHooks(def));
+          w.trigger * standingHooks(def) +
+          w.reach * reachOf(state, side, def, w));
     }
+    if (p.leader) score += sign * w.reach * reachOf(state, side, card(p.leader.cardId), w);
+    for (const id of p.hand) score += sign * w.reach * HAND_REACH_SHARE * reachOf(state, side, card(id), w);
     score += sign * w.effectDamage * effectDamageOf(state, side);
     if (side === me) score += kitBonus(state, me, w);
 
@@ -1568,13 +1583,67 @@ function kitKey(state: GameState, me: PlayerIdx): string {
   return `${state.seed}/${me}/${state.players[me].leaderCardId}`;
 }
 
+/** What one card does on its own, for tests and tooling: see `reachOf`. */
+export function cardReach(state: GameState, side: PlayerIdx, id: string, w: BotWeights = defaultWeights): number {
+  return reachOf(state, side, card(id), w);
+}
+
+/** A card in hand reaches at this share of what it reaches on the board: landing it costs the turn. */
+const HAND_REACH_SHARE = 0.5;
+/** Debt is bucketed for the reach probe, so a card that reads the pile is re-measured as the pile grows. */
+const REACH_BUCKET = 4;
+/** Per card id, per side and debt bucket, for the current game only. */
+const reachCache = new Map<string, Map<number, number>>();
+let reachSeed = Number.NaN;
+
 /**
- * The board a kit is probed on: the real position with the bot's own slots and
- * hand replaced by the kit, three pips of every colour its leader brings and
- * three colourless, and the bodies old enough to swing. The opponent stands as
- * they are, so a kit is measured against the leader it will actually face.
+ * What a card does on its own: the share of the opponent's nearer clock it
+ * takes off the probe board with its side's mana, at its side's debt. Cards
+ * that are only a stat line skip the probe, because nothing on it swings past
+ * the wall. A card is probed at most once per debt bucket a game, and a
+ * minted card the first time it is seen, which is how a Recomp or a grafted
+ * body is priced by what it inherited rather than by its printed line.
  */
-function probeBoard(state: GameState, me: PlayerIdx, kit: string[]): GameState {
+function reachOf(state: GameState, side: PlayerIdx, def: CardDef, w: BotWeights): number {
+  if (w.reach === 0) return 0;
+  return probedReach(state, side, def, w);
+}
+
+/** The probe behind `reachOf`, which the scan reads whatever the weight is. */
+function probedReach(state: GameState, side: PlayerIdx, def: CardDef, w: BotWeights): number {
+  if (!limits.scan) return 0;
+  if (def.type === 'trap') return 0;
+  if (def.type === 'summon' && !def.powers?.length && !def.triggers && !def.effectDamage) return 0;
+  if (reachSeed !== state.seed) {
+    reachCache.clear();
+    reachSeed = state.seed;
+  }
+  const bucket = Math.floor(state.players[side].debtCount / REACH_BUCKET);
+  const slot = side * 64 + bucket;
+  let byBucket = reachCache.get(def.id);
+  if (!byBucket) {
+    byBucket = new Map();
+    reachCache.set(def.id, byBucket);
+  }
+  const hit = byBucket.get(slot);
+  if (hit !== undefined) return hit;
+  // Set before the probe runs: the probe evaluates positions, and a card that
+  // reaches itself would recurse.
+  byBucket.set(slot, 0);
+  const reach = kitReach(state, side, [def.id], w, bucket * REACH_BUCKET);
+  byBucket.set(slot, reach);
+  return reach;
+}
+
+/**
+ * The board a kit is probed on: the real table's leaders and lists, with the
+ * bot's own slots and hand replaced by the kit, three pips of every colour its
+ * leader brings and three colourless, the bodies old enough to swing, and the
+ * debt asked for. Everything else is reset to the start of a game, every
+ * leader at the HP the engine gives it and every opponent behind a wall, so
+ * the same card measures the same whenever it is probed and in both engines.
+ */
+function probeBoard(state: GameState, me: PlayerIdx, kit: string[], debt = 0): GameState {
   const s = structuredClone(state);
   const p = s.players[me];
   s.active = me;
@@ -1590,6 +1659,9 @@ function probeBoard(state: GameState, me: PlayerIdx, kit: string[]): GameState {
   p.supportersLeft = 1;
   p.slots = [null, null, null];
   p.hand = [];
+  p.debtCount = debt;
+  p.debt = Array.from({ length: debt }, () => p.deck[p.deck.length - 1] ?? kit[0]);
+  p.deckOuts = 0;
   const filler = p.deck[p.deck.length - 1] ?? kit[0];
   // The rest of the list stays out of the measure. A single that dug a second
   // piece out of the deck read as that piece's reach, and the set's baseline
@@ -1612,20 +1684,23 @@ function probeBoard(state: GameState, me: PlayerIdx, kit: string[]): GameState {
     powerUses: {},
     enteredTurn: 0,
   });
-  // The scan runs at the first decision, before either leader has entered, so
-  // a leader still to come stands in at the HP the engine will give it. Every
-  // opponent also gets a wall in front of the leader: without one, any three
-  // bodies reach a leader by swinging, and the scan would find stat piles
-  // rather than the lines that carry damage past a blocker.
+  // Every leader stands in fresh at the HP the engine gives it. Every opponent
+  // gets a wall in front of the leader and nothing else: without one, any
+  // three bodies reach a leader by swinging, and the scan would find stat
+  // piles rather than the lines that carry damage past a blocker.
   for (const side of [me, ...livingOpponents(s, me)]) {
     const q = s.players[side];
-    if (!q.leader) {
-      q.leader = bodyOf(q.leaderCardId, side, (card(q.leaderCardId).hp ?? 0) * 2 + 2, true);
-      q.leaderPlayed = true;
-    }
+    q.leader = bodyOf(q.leaderCardId, side, (card(q.leaderCardId).hp ?? 0) * 2 + 2, true);
+    q.leaderPlayed = true;
+    q.supporters = [];
+    q.stage = null;
+    q.love = 0;
     if (side === me) continue;
+    q.slots = [null, null, null];
+    q.debtCount = 0;
+    q.debt = [];
     const wall = wallCard();
-    if (wall && !q.slots.some(Boolean)) q.slots[0] = bodyOf(wall.id, side, wall.hp ?? 1, false);
+    if (wall) q.slots[0] = bodyOf(wall.id, side, wall.hp ?? 1, false);
   }
   let slot = 0;
   for (const id of kit) {
@@ -1658,13 +1733,25 @@ function probeBoard(state: GameState, me: PlayerIdx, kit: string[]): GameState {
 }
 
 /** Share of the nearer clock a kit takes off the probe board, 1 meaning a kill. */
-function kitReach(state: GameState, me: PlayerIdx, kit: string[], w: BotWeights): number {
-  const probe = probeBoard(state, me, kit);
+function kitReach(state: GameState, me: PlayerIdx, kit: string[], w: BotWeights, debt = 0): number {
+  const probe = probeBoard(state, me, kit, debt);
+  // Shop prices are filed by seat and slot and stand for the whole decision,
+  // and the probe puts its own bodies in those slots. What its rollout prices
+  // there must not stand for the real table.
+  const prices = new Map(shopPrices);
+  const deals = new Map(shopDeals);
   let best = 0;
-  for (const setup of [0, limits.maxSetupSteps]) {
-    const r = burn(probe, me, limits.maxBurnSteps, w, setup, true);
-    if (r.state.winner === me) return 1;
-    best = Math.max(best, progressAgainst(probe, r.state, me));
+  try {
+    for (const setup of [0, limits.maxSetupSteps]) {
+      const r = burn(probe, me, limits.maxBurnSteps, w, setup, true);
+      if (r.state.winner === me) return 1;
+      best = Math.max(best, progressAgainst(probe, r.state, me));
+    }
+  } finally {
+    shopPrices.clear();
+    for (const [k, v] of prices) shopPrices.set(k, v);
+    shopDeals.clear();
+    for (const [k, v] of deals) shopDeals.set(k, v);
   }
   return Math.min(1, best);
 }
@@ -1690,7 +1777,7 @@ function scanKits(state: GameState, me: PlayerIdx, w: BotWeights): Kit[] {
   for (const s of p.slots) if (s) note(s.cardId);
 
   const single = new Map<string, number>();
-  for (const id of ids) single.set(id, kitReach(state, me, [id], w));
+  for (const id of ids) single.set(id, probedReach(state, me, card(id), w));
   const byReach = (a: string, b: string) => (single.get(b) ?? 0) - (single.get(a) ?? 0);
   const pairCards = [...ids].sort(byReach).slice(0, KIT_PAIR_CARDS);
 
@@ -2328,6 +2415,8 @@ export function clearPlan(): void {
   shopDeals.clear();
   kitCache.clear();
   intelCache.clear();
+  reachCache.clear();
+  reachSeed = Number.NaN;
 }
 
 /** The next action of the standing plan, or null if there is nothing to follow. */
