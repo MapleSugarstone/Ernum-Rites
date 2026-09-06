@@ -425,7 +425,7 @@ public static class Engine
         {
             if (r.IsBody && byCast && summon is not null
                 && Registry.Card(summon.CardId).SpellImmune) return;
-            if (r.IsBody && r.Player != me)
+            if (r.IsBody && r.Player != me && !spec.IgnoreRedirect)
             {
                 var forced = RedirectTargets(state, r.Player);
                 if (forced.Count > 0 && !forced.Contains(r)) return;

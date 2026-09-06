@@ -47,7 +47,7 @@ public static class Program
             "duel" => Duel(games),
             "versus" => Versus(games, ArgInt(args, "--threads", Environment.ProcessorCount),
                 ArgStr(args, "--decks", "random"), ArgStr(args, "--set", ""), ArgInt(args, "--seed", 1), Flag2(args, "--self"),
-                Flag2(args, "--perfect")),
+                Flag2(args, "--perfect"), ArgStr(args, "--read", ""), ArgStr(args, "--hand", "")),
             "tune" => Tune(games, ArgInt(args, "--rounds", 3),
                 ArgInt(args, "--threads", Environment.ProcessorCount),
                 ArgStr(args, "--only", ""), ArgStr(args, "--decks", "random")),
@@ -361,11 +361,24 @@ public static class Program
     /// seat are out of the comparison and only the change is left. This is the
     /// answer to "is the new bot better", measured rather than argued.
     /// </summary>
-    private static int Versus(int games, int threads, string pool, string set, int seed, bool self, bool perfect = false)
+    private static int Versus(int games, int threads, string pool, string set, int seed, bool self, bool perfect = false,
+        string read = "", string hand = "")
     {
         // --perfect hands the current bot the opponent's real hand, as the
         // snapshot always has, so the read can be measured on its own.
+        // --read known fills the believed hand with named cards only, --read
+        // sample fills it from the legal pool as it once did by default, and
+        // --hand <chance>x<rolls> sets the hand peeks, so a read model can be
+        // measured against another without a build.
         if (perfect) Bot.Intel = new Bot.ReadConfig { Perfect = true };
+        if (read == "known") Bot.Intel = new Bot.ReadConfig { KnownOnly = true };
+        if (read == "sample") Bot.Intel = new Bot.ReadConfig { KnownOnly = false };
+        if (hand.Length > 0)
+        {
+            var parts = hand.Split('x');
+            Bot.Intel.HandChance = double.Parse(parts[0], System.Globalization.CultureInfo.InvariantCulture);
+            Bot.Intel.HandRolls = int.Parse(parts[1]);
+        }
         // --set Name=value,... overrides weights on the current side only, so a
         // new term can be measured with and without the search change it came
         // with: zero it here and what is left is the search.

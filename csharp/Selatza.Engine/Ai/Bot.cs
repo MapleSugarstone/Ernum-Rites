@@ -1033,6 +1033,15 @@ public static class Bot
         public double HandChance = 0.05;
         public int HandRolls = 1;
         public bool Perfect;
+        /// <summary>
+        /// The believed hand holds only what the bot has named, and the rest is a
+        /// card no turn of theirs can play. Sampling the rest from the legal pool
+        /// was measured at four points worse on candy decks and even on random
+        /// ones; this is ten points better on candy and four on random, against
+        /// the deployed snapshot, which sees the real hand. What is unseen is
+        /// priced as risk by the trap read and not imagined as cards.
+        /// </summary>
+        public bool KnownOnly = true;
     }
 
     /// <summary>Set once at startup rather than per game: it is read from every thread.</summary>
@@ -1173,6 +1182,12 @@ public static class Bot
             for (int i = 0; i < m && hand.Count < p.Hand.Count; i++) hand.Add(id);
         }
         if (hand.Count >= p.Hand.Count) return hand;
+        if (Intel.KnownOnly)
+        {
+            string blank = BlankCard()?.Id ?? p.Hand[0];
+            while (hand.Count < p.Hand.Count) hand.Add(blank);
+            return hand;
+        }
 
         var pool = PoolBehind(p.LeaderCardId);
         var seen = SeenCopies(state, foe, pool);

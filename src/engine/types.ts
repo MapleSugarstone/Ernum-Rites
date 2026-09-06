@@ -570,6 +570,8 @@ export interface TargetSpec {
   side?: 'ally' | 'enemy' | 'any';
   includeLeader?: boolean;
   optional?: boolean;
+  /** Reaches past an enemy Redirection body instead of being pulled onto it. */
+  ignoreRedirect?: boolean;
   filter?: (args: TargetFilterArgs) => boolean;
 }
 

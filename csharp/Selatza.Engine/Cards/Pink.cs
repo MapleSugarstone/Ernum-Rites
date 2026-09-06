@@ -131,7 +131,19 @@ public static class Pink
                     c.ClearDebt(c.Opp, 1);
                     c.GainLove(c.Me, 1);
                 },
-            }),
+            },
+            powers: Powers(new Power
+            {
+                Name = "Kickback",
+                Cost = new Cost(),
+                Text = "An enemy heals 2 debt. Gain 2 Love.",
+                SapSelf = true,
+                Effect = c =>
+                {
+                    c.ClearDebt(c.Opp, 2);
+                    c.GainLove(c.Me, 2);
+                },
+            })),
 
         K.Summon(2, "CandyGuardSeller", "CandyGuard Seller",
             F(Faction.Saccharine, Faction.Mortal, Faction.Scholar), str: 4, hp: 3,
@@ -174,7 +186,7 @@ public static class Pink
 
         K.Summon(2, "GunForHire", "Gun for Hire",
             F(Faction.Saccharine, Faction.Mortal, Faction.Beast), str: 5, hp: 3,
-            text: "Store: Annihilate a non-Candy summon. Store costs +2.",
+            text: "Store: Annihilate a non-Candy summon, ignoring Redirection. Store costs +2.",
             // Candy here is the colour, not the tribe: the gun refuses pink cards.
             store: new StoreDef
             {
@@ -184,6 +196,7 @@ public static class Pink
                     Kind = TargetKind.Summon,
                     Side = Side.Any,
                     Label = "a non-Candy summon to annihilate",
+                    IgnoreRedirect = true,
                     Filter = a => a.Summon is { } s && a.Card is { } d
                         && GameState.ColorOf(s, d) != Color.K,
                 }),
@@ -207,7 +220,7 @@ public static class Pink
 
         K.Summon(2, "HotcakeSeller", "Hotcake Seller", F(Faction.Saccharine, Faction.Mortal),
             str: 4, hp: 3,
-            text: "Store: One of your summons gains +2 attack.",
+            text: "Store: One of your summons gains +3 attack.",
             store: new StoreDef
             {
                 Targets = Specs(Ally("one of your summons")),
@@ -218,7 +231,7 @@ public static class Pink
                 },
                 Effect = c =>
                 {
-                    if (c.TargetOrNull(0) is { } t) c.BuffStrength(t, 2, ModDuration.Permanent);
+                    if (c.TargetOrNull(0) is { } t) c.BuffStrength(t, 3, ModDuration.Permanent);
                 },
             }),
 
@@ -418,7 +431,7 @@ public static class Pink
             powers: Powers(new Power
             {
                 Name = "Harmonize",
-                Cost = new Cost(),
+                Cost = new Cost(K: 3),
                 Text = "Love: Heal 1 debt.",
                 SapSelf = true,
                 NeedsLove = true,
@@ -511,7 +524,7 @@ public static class Pink
             flipText: "Gain 1 Love.",
             flip: c => c.GainLove(c.Me, 1)),
 
-        K.Spell("cuffed", "Cuffed", new Cost(K: 2),
+        K.Spell("cuffed", "Cuffed", new Cost(K: 2, C: 1),
             "An enemy summon becomes Stationary. Annihilate this card.",
             targets: Specs(Enemy()),
             effect: c =>

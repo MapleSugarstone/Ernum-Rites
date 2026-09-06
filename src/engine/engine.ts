@@ -388,7 +388,7 @@ export function targetCandidates(
   const push = (ref: TargetRef, def: ReturnType<typeof card> | null, summon: SummonInstance | null) => {
     const isBody = ref.kind === 'summon' || ref.kind === 'leader';
     if (isBody && byCast && summon && card(summon.cardId).spellImmune) return;
-    if (isBody && ref.player !== me) {
+    if (isBody && ref.player !== me && !spec.ignoreRedirect) {
       const forced = redirectTargets(state, ref.player);
       if (forced.length && !forced.some((f) => sameRef(f, ref))) return;
     }

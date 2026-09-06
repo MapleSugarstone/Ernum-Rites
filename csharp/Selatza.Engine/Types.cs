@@ -599,6 +599,10 @@ public sealed class TargetSpec
     public Side Side { get; init; } = Side.Any;
     public bool IncludeLeader { get; init; }
     public bool Optional { get; init; }
+
+    /// <summary>Reaches past an enemy Redirection body instead of being pulled onto it.</summary>
+    public bool IgnoreRedirect { get; init; }
+
     public Func<TargetFilterArgs, bool>? Filter { get; init; }
 }
 

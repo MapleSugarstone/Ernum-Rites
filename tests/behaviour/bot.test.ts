@@ -330,7 +330,7 @@ describe('the read on the opponent', () => {
     // plays on the hand the bot believes in now, built from what they have
     // shown, so two positions that differ only in the hidden hand must draw the
     // same move. Peeks are off here; with them on the difference is the peek.
-    setIntel({ deckChance: 0, deckRolls: 0, handChance: 0, handRolls: 0, perfect: false });
+    setIntel({ deckChance: 0, deckRolls: 0, handChance: 0, handRolls: 0, perfect: false, knownOnly: true });
     try {
       const deck = starterDecks[0];
       const other = starterDecks[1];

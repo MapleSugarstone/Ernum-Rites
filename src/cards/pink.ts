@@ -155,6 +155,18 @@ export const pinkCards: CardDef[] = [
         c.gainLove(c.me, foes.length);
       },
     },
+    powers: [
+      {
+        name: 'Kickback',
+        cost: {},
+        text: 'An enemy heals 2 debt. Gain 2 Love.',
+        sapSelf: true,
+        effect: (c) => {
+          c.clearDebt(c.opp, 2);
+          c.gainLove(c.me, 2);
+        },
+      },
+    ],
   }),
   k.summon(2, 'CandyGuardSeller', 'CandyGuard Seller', ['Saccharine', 'Mortal', 'Scholar'], {
     str: 4,
@@ -200,7 +212,7 @@ export const pinkCards: CardDef[] = [
   k.summon(2, 'GunForHire', 'Gun for Hire', ['Saccharine', 'Mortal', 'Beast'], {
     str: 5,
     hp: 3,
-    text: 'Store: Annihilate a non-Candy summon. Store costs +2.',
+    text: 'Store: Annihilate a non-Candy summon, ignoring Redirection. Store costs +2.',
     // Candy here is the colour, not the tribe: the gun refuses every pink card.
     store: {
       surcharge: 2,
@@ -209,6 +221,7 @@ export const pinkCards: CardDef[] = [
           kind: 'summon',
           side: 'any',
           label: 'a non-Candy summon to annihilate',
+          ignoreRedirect: true,
           filter: (a) => !!a.summon && !!a.card && colorOf(a.summon, a.card) !== 'K',
         },
       ],
@@ -224,12 +237,12 @@ export const pinkCards: CardDef[] = [
   k.summon(2, 'HotcakeSeller', 'Hotcake Seller', ['Saccharine', 'Mortal'], {
     str: 4,
     hp: 3,
-    text: 'Store: One of your summons gains +2 attack.',
+    text: 'Store: One of your summons gains +3 attack.',
     store: {
       targets: [T.ally('one of your summons')],
       useful: (state, user) => state.players[user].slots.some((s) => s !== null),
       effect: (c) => {
-        if (c.targets[0]) c.buffStrength(c.targets[0], 2, 'permanent');
+        if (c.targets[0]) c.buffStrength(c.targets[0], 3, 'permanent');
       },
     },
   }),
@@ -450,7 +463,7 @@ export const pinkCards: CardDef[] = [
     powers: [
       {
         name: 'Harmonize',
-        cost: {},
+        cost: { K: 3 },
         text: 'Love: Heal 1 debt.',
         sapSelf: true,
         needsLove: true,
@@ -541,7 +554,7 @@ export const pinkCards: CardDef[] = [
     flipText: 'Gain 1 Love.',
     flip: (c) => c.gainLove(c.me, 1),
   }),
-  k.spell('cuffed', 'Cuffed', { K: 2 }, {
+  k.spell('cuffed', 'Cuffed', { K: 2, C: 1 }, {
     text: 'An enemy summon becomes Stationary. Annihilate this card.',
     annihilateAfterCast: true,
     targets: [T.enemy()],
