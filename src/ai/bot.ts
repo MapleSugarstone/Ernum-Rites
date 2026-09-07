@@ -9,6 +9,8 @@ import {
   availableMana,
   canPay,
   costFor,
+  createGame,
+  manaKindFor,
   legalAttackTargets,
   powerBlockers,
   readyAttackers,
@@ -45,6 +47,7 @@ import {
   costColored,
   type CardDef,
   type Cost,
+  type CostKind,
   type PlayerIdx,
   type TargetRef,
   type TargetSpec,
@@ -124,6 +127,57 @@ export interface BotWeights {
    * one guess about it.
    */
   reply: number;
+  /**
+   * Share of a pool's worst case priced into each card the enemy holds unseen:
+   * the burst of the best cards their leader allows, measured beside that
+   * leader. Zero reads an unseen card as nothing. Measured even with zero
+   * against bots, so it is on for what it does against people.
+   */
+  worstCase: number;
+  /**
+   * Share of a position's outlook read from their turn played with every
+   * unseen card replaced by the worst their pool holds, beside the turn played
+   * on the hand the bot believes in. Zero plays only the believed hand.
+   */
+  paranoia: number;
+  /** Whether the kill rollout clears the bodies in front of a leader when nothing else moves a clock. Zero leaves it greedy on the clocks alone. */
+  breach: number;
+  /** Whether the bot's own response windows during their turn are answered with what it holds. Zero passes them all. */
+  windowAnswers: number;
+  /**
+   * Whether a card's burst is the kill rollout's damage beside its leader
+   * rather than its best single action. Off: measured two points down on
+   * random decks with it on, since the danger term then sat at its cap.
+   */
+  deepBurst: number;
+  /**
+   * A supporter whose mana the list has no use for: a colourless one, which
+   * only pays what any supporter pays, or a colour no card or Power asks for.
+   * Against `supporter` for one the list can spend.
+   */
+  supporterOff: number;
+  /** Share of a supporter's worth kept past what a turn of the list can spend. */
+  supporterExcess: number;
+  /** Per card a card in hand draws when it is played, on top of its level. */
+  handDraw: number;
+  /** Per HP a Deathrattle takes off an enemy leader. */
+  deathBurst: number;
+  /** Per debt a Deathrattle costs beyond the body's own funeral. */
+  deathDebt: number;
+  /** Share of a body's own board value credited when its Deathrattle hands the body back to the hand. */
+  deathReturn: number;
+  /** A Deathrattle that seals the enemy's slots for the locker's turn, so the bodies it kills stay dead. */
+  deathLock: number;
+  /** Per HP a Deathrattle takes off the enemy's bodies. */
+  deathFront: number;
+  /**
+   * Share of a body's standing value written off when the opponent's reply
+   * kills it. The standing side of the blend otherwise keeps pricing a body
+   * the visible board is about to take, so cashing it in for less than its
+   * full value never reads as a gain. Off: measured even on evolved decks
+   * and one to two and a half points down on candy and random at 0.5 and 1.
+   */
+  fallen: number;
   /** What opening a response window costs when they are certainly holding a trap. */
   trapWindow: number;
   /**
@@ -199,6 +253,20 @@ export const defaultWeights: BotWeights = {
   threat: 4,
   standingKill: 60,
   reply: 0.6,
+  worstCase: 1,
+  paranoia: 0,
+  breach: 1,
+  windowAnswers: 1,
+  deepBurst: 0,
+  supporterOff: 1,
+  supporterExcess: 0.5,
+  handDraw: 1,
+  deathBurst: 1,
+  deathDebt: 0.5,
+  deathReturn: 0.5,
+  deathLock: 2.5,
+  deathFront: 1,
+  fallen: 0,
   trapWindow: 12,
   love: 0.6,
   deathrattle: 1.5,
@@ -303,6 +371,42 @@ function scoredStrength(state: GameState, s: SummonInstance): number {
   return Math.max(0, base + perm) + auras;
 }
 
+/** What one body on the board is worth to its own side. */
+function bodyWorth(state: GameState, side: PlayerIdx, s: SummonInstance, w: BotWeights): number {
+  const def = card(s.cardId);
+  return (
+    w.strength * scoredStrength(state, s) +
+    w.hp * remainingHp(s) +
+    w.level * levelOf(s, def) -
+    w.wound * s.wounds +
+    (def.triggers?.onDeath ? w.deathrattle + deathWorth(state, side, def, w) : 0) +
+    w.trigger * standingHooks(def) +
+    w.reach * reachOf(state, side, def, w)
+  );
+}
+
+/**
+ * Standing value of every body, on either side, that is on the board now and
+ * gone once the reply has been played: positive for the bot's own losses,
+ * negative for the enemy's. A body the reply bounces to hand counts too; the
+ * reply side of the blend still credits the card it became.
+ */
+export function fallenWorth(state: GameState, next: GameState, me: PlayerIdx, w: BotWeights): number {
+  let lost = 0;
+  const sides: { side: PlayerIdx; sign: number }[] = [{ side: me, sign: 1 }];
+  for (const foe of livingOpponents(state, me)) sides.push({ side: foe, sign: -1 });
+  for (const { side, sign } of sides) {
+    const after = next.players[side];
+    if (!after) continue;
+    for (const s of state.players[side].slots) {
+      if (!s) continue;
+      if (after.slots.some((b) => b && b.uid === s.uid)) continue;
+      lost += sign * bodyWorth(state, side, s, w);
+    }
+  }
+  return lost;
+}
+
 export function evaluate(state: GameState, me: PlayerIdx, w = defaultWeights): number {
   if (state.winner === me) return 1e9;
   if (state.winner !== null) return -1e9;
@@ -331,19 +435,7 @@ export function evaluate(state: GameState, me: PlayerIdx, w = defaultWeights): n
     score -= sign * (debtCharge(state, p.debtCount - eased, w) + cliff);
     score += sign * w.love * p.love;
 
-    for (const s of p.slots) {
-      if (!s) continue;
-      const def = card(s.cardId);
-      score +=
-        sign *
-        (w.strength * scoredStrength(state, s) +
-          w.hp * remainingHp(s) +
-          w.level * levelOf(s, def) -
-          w.wound * s.wounds +
-          (def.triggers?.onDeath ? w.deathrattle : 0) +
-          w.trigger * standingHooks(def) +
-          w.reach * reachOf(state, side, def, w));
-    }
+    for (const s of p.slots) if (s) score += sign * bodyWorth(state, side, s, w);
     if (p.leader) score += sign * w.reach * reachOf(state, side, card(p.leader.cardId), w);
     for (const id of p.hand) score += sign * w.reach * HAND_REACH_SHARE * reachOf(state, side, card(id), w);
     score += sign * w.effectDamage * effectDamageOf(state, side);
@@ -351,10 +443,13 @@ export function evaluate(state: GameState, me: PlayerIdx, w = defaultWeights): n
 
     // Cards in hand are not interchangeable, and the game says so with levels.
     let hand = 0;
-    for (const id of p.hand) hand += w.hand + w.handLevel * ((card(id).level ?? 1) - 1);
+    for (const id of p.hand) {
+      const def = card(id);
+      hand += w.hand + w.handLevel * ((def.level ?? 1) - 1) + w.handDraw * cardDoes(state, side, def, w).draw;
+    }
     score += sign * hand;
 
-    score += sign * w.supporter * p.supporters.length;
+    score += sign * supportWorth(state, side, w);
     score += sign * w.deck * Math.min(p.deck.length, DECK_VALUE_CAP);
 
     // The list is read only when it is the bot's own. Anyone else's outs are
@@ -773,17 +868,45 @@ function settleStore(state: GameState, w: BotWeights): GameState {
  * deterministic haggling policies instead, so the candidate that opened it is
  * valued by the deal it settles at.
  */
-function settle(state: GameState, w: BotWeights = defaultWeights, buyOut = false): GameState {
+export function settle(state: GameState, w: BotWeights = defaultWeights, buyOut = false): GameState {
   let s = state;
   if (s.pending) {
     if (s.pending.kind === 'store') {
       s = buyOut ? buyOutStore(s, w) : settleStore(s, w);
+    } else if (w.windowAnswers > 0 && s.pending.player === rootSeat && s.active !== rootSeat) {
+      s = answerWindow(s, w);
     } else {
       const res = applyAction(s, s.pending.player, { type: 'PASS_RESPONSE' });
       s = res.ok ? res.state : s;
     }
   }
   return answerFlips(s, w);
+}
+
+/**
+ * A response window that opened on the bot during someone else's turn is
+ * answered with what the bot holds, greedily on its own evaluation: pass, or
+ * any trap it can pay for. Before this every window was passed, so a trap
+ * in hand was worth its card and nothing more, and the bot turned traps into
+ * supporters freely. Other seats' windows are still passed: their hands are
+ * believed rather than known, and the trap read prices the risk.
+ */
+function answerWindow(state: GameState, w: BotWeights): GameState {
+  const me = state.pending?.player;
+  if (me === undefined) return state;
+  let pick: GameState | null = null;
+  let best = Number.NEGATIVE_INFINITY;
+  for (const action of [passAction(state), ...candidateActions(state, me, w)]) {
+    const res = applyAction(state, me, action);
+    if (!res.ok) continue;
+    const after = answerFlips(res.state, w);
+    const score = evaluate(after, me, w);
+    if (score > best + 1e-6) {
+      best = score;
+      pick = after;
+    }
+  }
+  return pick ?? state;
 }
 
 /** Flip offers one settle answers for the side that is not taking the turn. */
@@ -799,14 +922,15 @@ const FLIP_ANSWERS = 8;
  * kill search and in the reply alike. Their answer is the greedy one on their
  * own reading of the board, the same guess the reply model makes for them.
  * The acting side's own offers stay with the search, which already holds
- * both answers as candidates.
+ * both answers as candidates, unless `own` asks for them: the reply walker
+ * closes the offers a finished reply left open before it ends their turn.
  */
-function answerFlips(state: GameState, w: BotWeights): GameState {
+function answerFlips(state: GameState, w: BotWeights, own = false): GameState {
   let s = state;
   for (let i = 0; i < FLIP_ANSWERS; i++) {
     if (isOver(s) || s.flipQueue.length === 0) break;
     const offer = s.flipQueue[0];
-    if (offer.player === s.active) break;
+    if ((offer.player === s.active) !== own) break;
     const owner = offer.player;
     let pick: GameState | null = null;
     let best = Number.NEGATIVE_INFINITY;
@@ -1296,7 +1420,7 @@ export interface IntelConfig {
 }
 
 export const defaultIntel: IntelConfig = {
-  deckChance: 0.15,
+  deckChance: 0.3,
   deckRolls: 3,
   handChance: 0.05,
   handRolls: 1,
@@ -1363,7 +1487,7 @@ function rollFloat(rng: Rng): number {
  * a turn, seeded by the game and the turn, so the same position reads the same
  * way in both engines and on a replay.
  */
-function trackOf(state: GameState, me: PlayerIdx, foe: PlayerIdx): IntelTrack {
+export function trackOf(state: GameState, me: PlayerIdx, foe: PlayerIdx): IntelTrack {
   const key = `${state.seed}/${me}/${foe}`;
   let t = intelCache.get(key);
   if (!t) {
@@ -1430,7 +1554,7 @@ function knownTrapIn(state: GameState, me: PlayerIdx, foe: PlayerIdx): boolean {
  * holding, a card they have shown counting in full and one they have not at
  * the unseen weight. The same size as the real hand, which is public.
  */
-function believedHand(state: GameState, me: PlayerIdx, foe: PlayerIdx): string[] {
+export function believedHand(state: GameState, me: PlayerIdx, foe: PlayerIdx): string[] {
   const p = state.players[foe];
   if (intel.perfect) return [...p.hand];
   const t = trackOf(state, me, foe);
@@ -1481,7 +1605,7 @@ function believedHand(state: GameState, me: PlayerIdx, foe: PlayerIdx): string[]
 }
 
 /** The position with every other seat's hidden hand replaced by the one the bot believes in. */
-function redactTable(state: GameState, me: PlayerIdx): GameState {
+export function redactTable(state: GameState, me: PlayerIdx): GameState {
   if (intel.perfect) return state;
   const s = cloneState(state);
   for (let seat = 0; seat < state.players.length; seat++) {
@@ -1747,9 +1871,11 @@ interface CardDoes {
   relief: number;
   heal: number;
   burst: number;
+  /** Cards the side holds after the action beyond what it held before, the card played counted back in. */
+  draw: number;
 }
 
-const NOTHING_DONE: CardDoes = { relief: 0, heal: 0, burst: 0 };
+const NOTHING_DONE: CardDoes = { relief: 0, heal: 0, burst: 0, draw: 0 };
 const doesCache: Map<string, CardDoes>[] = [new Map(), new Map(), new Map(), new Map()];
 let doesSeed = Number.NaN;
 const PROBE_DEBT = 20;
@@ -1767,6 +1893,7 @@ function cardDoes(state: GameState, side: PlayerIdx, def: CardDef, w: BotWeights
   if (!limits.scan || probing || def.type === 'trap') return NOTHING_DONE;
   if (doesSeed !== state.seed) {
     for (const m of doesCache) m.clear();
+    for (const m of deathCache) m.clear();
     doesSeed = state.seed;
   }
   const cache = doesCache[side];
@@ -1781,21 +1908,37 @@ function cardDoes(state: GameState, side: PlayerIdx, def: CardDef, w: BotWeights
   try {
     // The board can do things on its own: a leader's Store, a flip. Only what
     // the card adds counts, so an empty probe is the baseline.
-    const empty = cache.get(EMPTY_PROBE) ?? measureProbe(probeBoard(state, side, [], PROBE_DEBT, true, false, true), side, w);
-    cache.set(EMPTY_PROBE, empty);
+    let empty = cache.get(EMPTY_PROBE);
+    if (!empty) {
+      const one = measureProbe(probeBoard(state, side, [], PROBE_DEBT, true, false, true), side, w);
+      empty = {
+        relief: one.relief,
+        heal: one.heal,
+        burst: w.deepBurst > 0 ? probeDamage(state, side, [], w, PROBE_DEBT, PROBE_PIPS) : one.burst,
+        draw: one.draw,
+      };
+      cache.set(EMPTY_PROBE, empty);
+    }
     // A summon is measured from the hand, for its battlecry, and from a slot,
-    // for its Powers and its Store.
-    const with_: CardDoes = { relief: 0, heal: 0, burst: 0 };
+    // for its Powers and its Store. Relief and heal are the most one action
+    // does. Burst is the kill rollout's damage, a turn deep and beside the
+    // side's own leader: one action never saw a buff repeated into a cash-in.
+    const with_: CardDoes = { relief: 0, heal: 0, burst: 0, draw: 0 };
     for (const inHand of def.type === 'summon' ? [true, false] : [true]) {
       const m = measureProbe(probeBoard(state, side, [def.id], PROBE_DEBT, true, inHand, true), side, w);
       with_.relief = Math.max(with_.relief, m.relief);
       with_.heal = Math.max(with_.heal, m.heal);
-      with_.burst = Math.max(with_.burst, m.burst);
+      with_.draw = Math.max(with_.draw, m.draw);
+      with_.burst = Math.max(
+        with_.burst,
+        w.deepBurst > 0 ? probeDamage(state, side, [def.id], w, PROBE_DEBT, PROBE_PIPS, inHand) : m.burst,
+      );
     }
     done = {
       relief: Math.max(0, with_.relief - empty.relief),
       heal: Math.max(0, with_.heal - empty.heal),
       burst: Math.max(0, with_.burst - empty.burst),
+      draw: Math.max(0, with_.draw - empty.draw),
     };
   } finally {
     probing = outer;
@@ -1810,6 +1953,45 @@ function cardDoes(state: GameState, side: PlayerIdx, def: CardDef, w: BotWeights
 
 const EMPTY_PROBE = '';
 
+/** Pips of each colour a card probe holds: the board's own default. */
+const PROBE_PIPS = 3;
+
+/**
+ * The most a kill rollout takes off an enemy leader from a probe board: the
+ * race and the patient climb, whichever hurts more. The side's own leader
+ * stands, so a card is measured beside what it will actually be played with.
+ */
+function probeDamage(
+  state: GameState,
+  side: PlayerIdx,
+  kit: string[],
+  w: BotWeights,
+  debt: number,
+  pips: number,
+  inHand = false,
+): number {
+  const probe = probeBoard(state, side, kit, debt, false, inHand, false, pips);
+  const prices = new Map(shopPrices);
+  const deals = new Map(shopDeals);
+  const outer = probing;
+  probing = true;
+  let best = 0;
+  try {
+    for (const setup of [0, limits.maxSetupSteps]) {
+      const r = burn(probe, side, limits.maxBurnSteps, w, setup, true);
+      best = Math.max(best, r.damage);
+      if (r.state.winner === side) break;
+    }
+  } finally {
+    probing = outer;
+    shopPrices.clear();
+    for (const [k, v] of prices) shopPrices.set(k, v);
+    shopDeals.clear();
+    for (const [k, v] of deals) shopDeals.set(k, v);
+  }
+  return best;
+}
+
 /** The most one action on a probe board does for each measure, its picks answered. */
 function measureProbe(probe: GameState, side: PlayerIdx, w: BotWeights): CardDoes {
   const foes = livingOpponents(probe, side);
@@ -1817,18 +1999,339 @@ function measureProbe(probe: GameState, side: PlayerIdx, w: BotWeights): CardDoe
   const hp = leaderHpOf(probe, side);
   let theirs = 0;
   for (const f of foes) theirs += leaderHpOf(probe, f);
-  const done: CardDoes = { relief: 0, heal: 0, burst: 0 };
+  const held = probe.players[side].hand.length;
+  const done: CardDoes = { relief: 0, heal: 0, burst: 0, draw: 0 };
   for (const action of candidateActions(probe, side, w)) {
     const res = applyAction(probe, side, action);
     if (!res.ok) continue;
     const after = answerPicks(settle(res.state, w), w);
     done.relief = Math.max(done.relief, debt - after.players[side].debtCount);
     done.heal = Math.max(done.heal, leaderHpOf(after, side) - hp);
+    const played = action.type === 'CAST_SPELL' || action.type === 'PLAY_SUMMON' || action.type === 'PLAY_STAGE' ? 1 : 0;
+    done.draw = Math.max(done.draw, after.players[side].hand.length - held + played);
     let left = 0;
     for (const f of foes) left += leaderHpOf(after, f);
     done.burst = Math.max(done.burst, theirs - left);
   }
   return done;
+}
+
+/** Pips of each colour a pool is ranked with: enough for a buff repeated into a cash-in. */
+const PRIOR_PIPS = 6;
+/** Debt the probed side carries when a pool is ranked: a mid-game pile, so a body that scales with debt reads at a mid-game size. */
+const PRIOR_DEBT = 10;
+/** Blank cards behind each leader on the board a pool is ranked on. */
+const PRIOR_DECK = 50;
+
+/** A leader's legal pool ranked by what each card does beside that leader. */
+interface PoolPrior {
+  /** Card ids, the most dangerous first. */
+  ranked: string[];
+  /** Mean burst of the top quarter: what one unseen card is priced at. */
+  top: number;
+}
+const priorCache = new Map<string, PoolPrior>();
+const NO_PRIOR: PoolPrior = { ranked: [], top: 0 };
+
+/**
+ * The worst a leader's pool holds: every legal card's kill rollout beside that
+ * leader on a board built from nothing else, with six pips of each colour the
+ * leader brings, as HP off the enemy leader. A whole turn rather than one
+ * action, so a buff that repeats into the leader's own cash-in reads at
+ * what the pair does rather than at nothing. Measured once per process per
+ * leader. It reads no game state, so it is the same table in every game and
+ * in both engines whichever thread fills it first.
+ */
+function poolPrior(leaderId: string, w: BotWeights): PoolPrior {
+  const hit = priorCache.get(leaderId);
+  if (hit) return hit;
+  if (probing || !limits.scan) return NO_PRIOR;
+  const blank = blankCard()?.id ?? leaderId;
+  const deck = Array.from({ length: PRIOR_DECK }, () => blank);
+  const base = createGame(
+    [
+      { name: 'A', leaderId, cards: [...deck] },
+      { name: 'B', leaderId, cards: [...deck] },
+    ],
+    0,
+    0,
+  );
+  const ids = [...poolBehind(leaderId).legal].filter((id) => card(id).type !== 'trap').sort();
+  const empty = probeDamage(base, 0, [], w, PRIOR_DEBT, PRIOR_PIPS);
+  const bursts = new Map<string, number>();
+  for (const id of ids) {
+    bursts.set(id, Math.max(0, probeDamage(base, 0, [id], w, PRIOR_DEBT, PRIOR_PIPS) - empty));
+  }
+  const ranked = ids
+    .slice()
+    .sort((a, b) => bursts.get(b)! - bursts.get(a)! || (a < b ? -1 : a > b ? 1 : 0));
+  const quarter = Math.ceil(ranked.length / 4);
+  let sum = 0;
+  for (let i = 0; i < quarter; i++) sum += bursts.get(ranked[i])!;
+  const prior: PoolPrior = { ranked, top: quarter > 0 ? sum / quarter : 0 };
+  priorCache.set(leaderId, prior);
+  return prior;
+}
+
+/** How many of a seat's hand the bot has not named: the stand-in card, at the root and below it. */
+function unseenIn(p: { hand: readonly string[] }): number {
+  const blank = blankCard()?.id;
+  if (!blank) return 0;
+  let n = 0;
+  for (const id of p.hand) if (id === blank) n++;
+  return n;
+}
+
+/**
+ * The table with every other seat's unseen cards replaced by the worst their
+ * leader's pool holds, best first, so a turn played on it is the turn the bot
+ * should fear rather than the one it believes in. The table itself when no
+ * seat has an unseen card.
+ */
+function withWorstHand(state: GameState, me: PlayerIdx, w: BotWeights): GameState {
+  const blank = blankCard()?.id;
+  if (!blank) return state;
+  let s: GameState | null = null;
+  for (const foe of livingOpponents(state, me)) {
+    const prior = poolPrior(state.players[foe].leaderCardId, w);
+    if (prior.ranked.length === 0) continue;
+    let k = 0;
+    const hand = state.players[foe].hand.map((id) => (id === blank ? prior.ranked[k++ % prior.ranked.length] : id));
+    if (k === 0) continue;
+    if (!s) s = cloneState(state);
+    s.players[foe].hand = hand;
+  }
+  return s ?? state;
+}
+
+/** What a list can spend: the colours any of its costs ask for, and the most pips one item asks for. */
+interface ManaNeed {
+  colours: Set<CostKind>;
+  most: number;
+}
+const needCache = new Map<PlayerIdx, ManaNeed>();
+/** Supporters priced in full however small the list's costs are. */
+const SUPPORT_FLOOR = 4;
+/** Supporters priced in full beyond the most one item costs, for a turn that fires more than one. */
+const SUPPORT_SLACK = 2;
+
+function noteCost(need: ManaNeed, cost: Cost | undefined): void {
+  if (!cost) return;
+  let pips = 0;
+  for (const kind of Object.keys(cost) as CostKind[]) {
+    const n = cost[kind] ?? 0;
+    if (n <= 0) continue;
+    need.colours.add(kind);
+    pips += n;
+  }
+  if (pips > need.most) need.most = pips;
+}
+
+/**
+ * The mana a side's list can spend: every cost on its cards, its Powers and
+ * its paid flips, read from the whole list when it is the bot's own and from
+ * what the side has shown when it is not. Held for the decision.
+ */
+function manaNeed(state: GameState, side: PlayerIdx): ManaNeed {
+  const hit = needCache.get(side);
+  if (hit) return hit;
+  const p = state.players[side];
+  const ids: string[] = rootSeat === null || side === rootSeat ? [...p.hand, ...p.deck] : [];
+  for (const id of shownIds(p)) ids.push(id);
+  const need: ManaNeed = { colours: new Set(), most: 0 };
+  const seen = new Set<string>();
+  for (const id of ids) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const def = card(id);
+    noteCost(need, def.cost);
+    for (const power of def.powers ?? []) noteCost(need, power.cost);
+    noteCost(need, def.flipCost?.mana);
+  }
+  needCache.set(side, need);
+  return need;
+}
+
+/**
+ * What a side's supporters are worth: a supporter the list can spend counts
+ * in full, a colourless one or one of a colour nothing asks for counts as an
+ * off supporter, and every supporter past what a turn of the list can spend
+ * keeps only a share. A flat count priced every supporter alike and without
+ * end, so a level-one card always became one and a neutral one read as a
+ * colour.
+ */
+function supportWorth(state: GameState, side: PlayerIdx, w: BotWeights): number {
+  const p = state.players[side];
+  if (p.supporters.length === 0) return 0;
+  const need = manaNeed(state, side);
+  const cap = Math.max(SUPPORT_FLOOR, need.most + SUPPORT_SLACK);
+  let worth = 0;
+  p.supporters.forEach((s, i) => {
+    const kind = manaKindFor(p, card(s.cardId));
+    const fits = kind === 'E' || (kind !== 'C' && need.colours.has(kind));
+    const each = fits ? w.supporter : w.supporterOff;
+    worth += i < cap ? each : each * w.supporterExcess;
+  });
+  return worth;
+}
+
+/** What a body's Deathrattle did when a probe killed it. */
+interface DeathDoes {
+  /** Cards in hand after the death: a body that returns to hand counts one. */
+  draw: number;
+  /** HP off the enemy leader. */
+  burst: number;
+  /** Debt beyond the body's own funeral. */
+  debt: number;
+  /** Printed attack, HP and level of every body that came back to the hand, summed. */
+  backStrength: number;
+  backHp: number;
+  backLevel: number;
+  /** One when the enemy's slots were sealed by the death. */
+  lock: number;
+  /** HP off the enemy's bodies beyond the clash itself. */
+  front: number;
+}
+const NO_DEATH: DeathDoes = { draw: 0, burst: 0, debt: 0, backStrength: 0, backHp: 0, backLevel: 0, lock: 0, front: 0 };
+/** HP cards the death probe's attacker carries, so it outlives the clash and what the Deathrattle does to it is read. */
+const DEATH_ATTACKER_HP = 10;
+const deathCache: Map<string, DeathDoes>[] = [new Map(), new Map(), new Map(), new Map()];
+let deathAttackerId: string | null | undefined;
+
+/** The plainest body that can swing: the first collectible summon by id with an attack, neither stationary nor a Redirection. */
+function deathAttacker(): string | null {
+  if (deathAttackerId !== undefined) return deathAttackerId;
+  const ids = allCards()
+    .filter((d) => d.type === 'summon' && !d.uncollectible && !d.stationary && !d.redirect && (d.strength ?? 0) >= 1)
+    .map((d) => d.id)
+    .sort();
+  deathAttackerId = ids[0] ?? null;
+  return deathAttackerId;
+}
+
+/**
+ * What a Deathrattle does, measured by killing the body: it stands alone on
+ * the probe board at one HP, the other side gets the plainest attacker there
+ * is, and that attacker swings. Read once a game per card, and once for a
+ * minted card the first time it is seen, so a grafted Deathrattle is priced
+ * by what it does rather than as any Deathrattle. A flat term priced a body
+ * that returns to hand the same as one that stays down.
+ */
+function deathDoes(state: GameState, side: PlayerIdx, def: CardDef, w: BotWeights): DeathDoes {
+  if (!limits.scan || probing || !def.triggers?.onDeath) return NO_DEATH;
+  if (doesSeed !== state.seed) {
+    for (const m of doesCache) m.clear();
+    for (const m of deathCache) m.clear();
+    doesSeed = state.seed;
+  }
+  // A Deathrattle that reads the discard pile is worth what the pile holds,
+  // so the pile comes along and the reading is kept per size of it, to two.
+  const spells = Math.min(2, state.players[side].discard.filter((id) => card(id).type === 'spell').length);
+  const key = `${def.id}:${spells}`;
+  const cache = deathCache[side];
+  const hit = cache.get(key);
+  if (hit) return hit;
+  cache.set(key, NO_DEATH);
+  const attacker = deathAttacker();
+  if (!attacker || def.type !== 'summon') return NO_DEATH;
+  const prices = new Map(shopPrices);
+  const deals = new Map(shopDeals);
+  const outer = probing;
+  probing = true;
+  let done = NO_DEATH;
+  try {
+    // The side's real leader stands: a plain one is a wall with Redirection,
+    // which no attack on the body could get past.
+    const probe = probeBoard(state, side, [def.id], 0, false, false, false);
+    probe.players[side].discard = [...state.players[side].discard];
+    const body = probe.players[side].slots[0];
+    const foes = livingOpponents(probe, side);
+    if (body && foes.length > 0) {
+      const foe = foes[0];
+      for (let i = 0; i < body.hp.length - 1; i++) body.hp[i].flipped = true;
+      const q = probe.players[foe];
+      q.slots[1] = {
+        uid: `k${probe.nextUid++}`,
+        cardId: attacker,
+        owner: foe,
+        isLeader: false,
+        hp: Array.from({ length: DEATH_ATTACKER_HP }, () => ({ cardId: attacker, flipped: false })),
+        sapped: false,
+        wounds: 0,
+        shields: 0,
+        strengthMods: [],
+        effectDamageMod: 0,
+        powerUses: {},
+        enteredTurn: 0,
+        storeStock: 1,
+      };
+      q.turnsTaken = Math.max(q.turnsTaken, 3);
+      probe.active = foe;
+      const theirs = leaderHpOf(probe, foe);
+      const debt = probe.players[side].debtCount;
+      const front = frontHp(probe, side);
+      const clash = effectiveStrength(probe, body);
+      const res = applyAction(probe, foe, {
+        type: 'DECLARE_ATTACK',
+        source: { kind: 'summon', player: foe, slot: 1 },
+        target: { kind: 'summon', player: side, slot: 0 },
+      });
+      if (res.ok) {
+        // Every flip offer is declined, the attacker's own included: the death
+        // waits behind them, and nobody pays for anything in a measurement.
+        let s = res.state;
+        for (let i = 0; i < 8 && s.flipQueue.length > 0; i++) {
+          const r = applyAction(s, s.flipQueue[0].player, { type: 'DECLINE_FLIP' });
+          if (!r.ok) break;
+          s = r.state;
+        }
+        const after = answerPicks(settle(s, w), w);
+        let backStrength = 0;
+        let backHp = 0;
+        let backLevel = 0;
+        for (const id of after.players[side].hand) {
+          const back = card(id);
+          if (back.type !== 'summon') continue;
+          backStrength += back.strength ?? 0;
+          backHp += back.hp ?? 0;
+          backLevel += back.level ?? 1;
+        }
+        done = {
+          draw: Math.max(0, after.players[side].hand.length),
+          burst: Math.max(0, theirs - leaderHpOf(after, foe)),
+          debt: Math.max(0, after.players[side].debtCount - debt - (def.level ?? 1)),
+          backStrength,
+          backHp,
+          backLevel,
+          lock: livingOpponents(after, side).some((f) => after.players[f].replaceLockedBy === side) ? 1 : 0,
+          // The clash itself took the body's attack off the attacker; the rest is the Deathrattle.
+          front: Math.max(0, front - frontHp(after, side) - clash),
+        };
+      }
+    }
+  } finally {
+    probing = outer;
+    shopPrices.clear();
+    for (const [k, v] of prices) shopPrices.set(k, v);
+    shopDeals.clear();
+    for (const [k, v] of deals) shopDeals.set(k, v);
+  }
+  cache.set(key, done);
+  return done;
+}
+
+/** What a Deathrattle is worth on top of being one: the cards it hands back, the HP it takes, the debt it adds. */
+function deathWorth(state: GameState, side: PlayerIdx, def: CardDef, w: BotWeights): number {
+  const d = deathDoes(state, side, def, w);
+  const back = w.strength * d.backStrength + w.hp * d.backHp + w.level * d.backLevel;
+  return (
+    w.hand * d.draw +
+    w.deathBurst * d.burst -
+    w.deathDebt * d.debt +
+    w.deathReturn * back +
+    w.deathLock * d.lock +
+    w.deathFront * d.front
+  );
 }
 
 /** Cards a seat has shown: everything of theirs in a public zone. */
@@ -1889,6 +2392,11 @@ function dangerOf(state: GameState, side: PlayerIdx, w: BotWeights): number {
     let sum = 0;
     for (const id of shown) sum += cardDoes(state, foe, card(id), w).burst;
     if (shown.length > 0) expected = Math.max(expected, (sum / shown.length) * q.hand.length);
+    // Their unseen cards priced at the worst their leader's pool holds, when asked.
+    if (w.worstCase > 0) {
+      const unseen = unseenIn(q);
+      if (unseen > 0) expected = Math.max(expected, w.worstCase * poolPrior(q.leaderCardId, w).top * unseen);
+    }
   }
   const p = state.players[side];
   let rate = 0;
@@ -1940,8 +2448,9 @@ function probedReach(state: GameState, side: PlayerIdx, def: CardDef, w: BotWeig
 
 /**
  * The board a kit is probed on: the real table's leaders and lists, with the
- * bot's own slots and hand replaced by the kit, three pips of every colour its
- * leader brings and three colourless, the bodies old enough to swing, and the
+ * bot's own slots and hand replaced by the kit, three pips (or the number asked
+ * for) of every colour its leader brings and as many colourless, the bodies
+ * old enough to swing, and the
  * debt asked for. Everything else is reset to the start of a game, every
  * leader at the HP the engine gives it and every opponent behind a wall, so
  * the same card measures the same whenever it is probed and in both engines.
@@ -1954,6 +2463,7 @@ function probeBoard(
   hurt = false,
   inHand = false,
   plain = false,
+  pips = 3,
 ): GameState {
   const s = cloneState(state);
   const p = s.players[me];
@@ -2055,15 +2565,15 @@ function probeBoard(
   }
   const mana = { ...p.mana };
   for (const kind of MANA_KINDS) mana[kind] = 0;
-  mana.C = 3;
-  for (const c of deckIdentity(p.leaderCardId)) mana[c] = 3;
+  mana.C = pips;
+  for (const c of deckIdentity(p.leaderCardId)) mana[c] = pips;
   p.mana = mana;
   return s;
 }
 
 /** Share of the nearer clock a kit takes off the probe board, 1 meaning a kill. */
-function kitReach(state: GameState, me: PlayerIdx, kit: string[], w: BotWeights, debt = 0): number {
-  const probe = probeBoard(state, me, kit, debt);
+function kitReach(state: GameState, me: PlayerIdx, kit: string[], w: BotWeights, debt = 0, pips = 3): number {
+  const probe = probeBoard(state, me, kit, debt, false, false, false, pips);
   // Shop prices are filed by seat and slot and stand for the whole decision,
   // and the probe puts its own bodies in those slots. What its rollout prices
   // there must not stand for the real table.
@@ -2443,6 +2953,7 @@ function burn(
     const reserve = here.cashIn;
     const standing = patient ? here.value : potential(cur, me);
     let best = standing;
+    let bestCash = here.cashIn?.drop ?? 0;
 
     for (const action of candidateActions(cur, me, w, true)) {
       const res = applyAction(cur, me, action);
@@ -2453,18 +2964,22 @@ function burn(
       }
       if (losesIt(after, me)) continue;
       if (reserve && worstDrop(after) <= worstDrop(cur) && !canPay(after.players[me], reserve.cost)) continue;
-      const p = patient ? cashPotential(after, me, w).value : potential(after, me);
-      // On a tie the free step goes first: the paid one is still there after it,
-      // and the free one may be worth more once the paid one has fired.
+      const got = patient ? cashPotential(after, me, w) : null;
+      const p = got ? got.value : potential(after, me);
+      const cash = got?.cashIn?.drop ?? 0;
+      // On a tie the step that grows the best cash-in goes first, and then
+      // the free step: the paid one is still there after it, and the free one
+      // may be worth more once the paid one has fired.
       const ahead =
         p > best + 1e-9 ||
         (patient &&
           pick !== null &&
           Math.abs(p - best) <= 1e-9 &&
-          freeRepeat(cur, me, action) &&
-          !freeRepeat(cur, me, pick));
+          (cash > bestCash + 1e-9 ||
+            (Math.abs(cash - bestCash) <= 1e-9 && freeRepeat(cur, me, action) && !freeRepeat(cur, me, pick))));
       if (ahead) {
         best = p;
+        bestCash = cash;
         pick = action;
         pickState = after;
       } else if (patient && !level && Math.abs(p - standing) <= 1e-9 && freeRepeat(cur, me, action)) {
@@ -2537,13 +3052,60 @@ function burn(
       }
     }
 
+    if (bestGain <= 1e-9 && (!pick || bestBoard <= standingStill)) {
+      // Nothing moves a clock from here. A leader behind bodies is reached by
+      // clearing the bodies, and a rollout greedy on the clocks never took
+      // that step, since an attack on a blocker moves neither. Take whatever
+      // takes the most HP off the front, so the swings after it can land.
+      const breach = w.breach > 0 ? breachStep(cur, me, w) : null;
+      if (!breach) break;
+      pick = breach.action;
+      pickState = breach.state;
+    }
     if (!pick || !pickState) break;
-    if (bestGain <= 1e-9 && bestBoard <= standingStill) break;
     line.push(pick);
     cur = pickState;
   }
 
   return { state: cur, line, damage: worstDrop(cur) };
+}
+
+/** HP on the bodies in front of every enemy leader. */
+function frontHp(state: GameState, me: PlayerIdx): number {
+  let hp = 0;
+  for (const foe of livingOpponents(state, me)) {
+    for (const s of state.players[foe].slots) if (s) hp += remainingHp(s);
+  }
+  return hp;
+}
+
+/**
+ * The attack, Power or spell that takes the most HP off the bodies in front
+ * of an enemy leader, ties on the evaluator, or nothing when no leader has
+ * bodies in front of it.
+ */
+function breachStep(state: GameState, me: PlayerIdx, w: BotWeights): { action: Action; state: GameState } | null {
+  const front = frontHp(state, me);
+  if (front <= 0) return null;
+  let best: { action: Action; state: GameState } | null = null;
+  let bestCut = 0;
+  let bestBoard = Number.NEGATIVE_INFINITY;
+  for (const action of candidateActions(state, me, w, true)) {
+    if (action.type !== 'DECLARE_ATTACK' && action.type !== 'ACTIVATE_POWER' && action.type !== 'CAST_SPELL') continue;
+    const res = applyAction(state, me, action);
+    if (!res.ok) continue;
+    const after = settle(res.state, w, true);
+    if (losesIt(after, me)) continue;
+    const cut = front - frontHp(after, me);
+    if (cut <= 0) continue;
+    const board = evaluate(after, me, w);
+    if (cut > bestCut + 1e-9 || (Math.abs(cut - bestCut) <= 1e-9 && board > bestBoard)) {
+      bestCut = cut;
+      bestBoard = board;
+      best = { action, state: after };
+    }
+  }
+  return best;
 }
 
 /**
@@ -2564,7 +3126,7 @@ function burn(
  * share of a position's score that is read from here rather than from where the
  * position stands, and it is not 1.
  */
-function nextTurn(state: GameState, me: PlayerIdx, w: BotWeights): GameState | null {
+export function nextTurn(state: GameState, me: PlayerIdx, w: BotWeights): GameState | null {
   const from = state.players[me].turnsTaken;
   let s = state;
 
@@ -2591,10 +3153,26 @@ function nextTurn(state: GameState, me: PlayerIdx, w: BotWeights): GameState | n
       if (isOver(s)) return s;
       s = answerMine(s, me, w);
       if (isOver(s)) return s;
+      // A reply can stop on an offer of its own, and the rest of that blow
+      // waits on the answer. It was left there because the paused damage read
+      // better than either answer, so the turn could not end and the position
+      // got no reply at all, which favoured standing still over every line
+      // that traded. Their offers are closed for them, and whatever else is
+      // still queued is passed, before their turn ends.
+      s = answerFlips(s, w, true);
+      if (isOver(s)) return s;
       if (s.active === seat && s.phase === 'main' && !s.pending) {
-        const ended = applyAction(s, seat, { type: 'END_TURN' });
-        if (!ended.ok) return null;
-        s = ended.state;
+        for (let k = 0; k < 8; k++) {
+          const ended = applyAction(s, seat, { type: 'END_TURN' });
+          if (ended.ok) {
+            s = ended.state;
+            break;
+          }
+          const cleared = applyAction(s, currentActor(s), passAction(s));
+          if (!cleared.ok) return null;
+          s = cleared.state;
+          if (isOver(s)) return s;
+        }
       }
       continue;
     }
@@ -2685,13 +3263,25 @@ function answerMine(state: GameState, me: PlayerIdx, w: BotWeights): GameState {
  * holding it does, so the body it keeps decides the comparison, and once the
  * enemy leader drops inside range the kill search takes over.
  */
-function outlook(state: GameState, me: PlayerIdx, w: BotWeights, standing: number): number {
+export function outlook(state: GameState, me: PlayerIdx, w: BotWeights, standing: number): number {
   // Nothing to learn from a turn nobody takes and no threat measured off it, so
   // a profile that asks for neither does not walk one forward.
   if (limits.maxReplySteps <= 0 && limits.maxThreatSteps <= 0) return standing;
   const next = isOver(state) ? state : nextTurn(state, me, w);
   if (!next) return standing;
-  const settled = (1 - w.reply) * standing + w.reply * evaluate(next, me, w);
+  let after = evaluate(next, me, w);
+  // The reply the bot should fear, beside the one it believes in: their turn
+  // again with every unseen card the worst their pool holds.
+  if (w.paranoia > 0 && !isOver(state)) {
+    const feared = withWorstHand(state, me, w);
+    const worst = feared === state ? next : nextTurn(feared, me, w);
+    if (worst) after = (1 - w.paranoia) * after + w.paranoia * evaluate(worst, me, w);
+  }
+  // A body the reply takes is not standing any more. Without this the
+  // standing share of the blend keeps every doomed body at full value, and
+  // spending one for less than that value can never read as the better line.
+  if (w.fallen > 0 && !isOver(state)) standing -= w.fallen * fallenWorth(state, next, me, w);
+  const settled = (1 - w.reply) * standing + w.reply * after;
   if (isOver(next)) return settled;
 
   const foeHp = nearestFoeHp(next, me);
@@ -2725,7 +3315,7 @@ interface Leaf {
  * Positions are deduplicated by digest, so the many orderings of one set of
  * actions cost a single slot in the beam instead of filling it.
  */
-function searchTurn(state: GameState, me: PlayerIdx, w: BotWeights, reads: EnemyRead[]): Leaf[] {
+export function searchTurn(state: GameState, me: PlayerIdx, w: BotWeights, reads: EnemyRead[]): Leaf[] {
   const leaves: Leaf[] = [];
   const seen = new Set<string>();
   let level: { state: GameState; line: Action[]; risk: number }[] = [
@@ -2791,13 +3381,16 @@ function findLethal(
   if (depth <= 0 || budget.left <= 0 || !turnGoesOn(state, me)) return null;
   for (const action of candidateActions(state, me, defaultWeights, true)) {
     // Shops are in because a purchase can be the step that completes a kill:
-    // the piece is bought at the guaranteed price and played.
+    // the piece is bought at the guaranteed price and played. A body from
+    // hand is in for the same reason: a buff repeated into a cash-in starts
+    // with the body it feeds.
     if (
       action.type !== 'ACTIVATE_POWER' &&
       action.type !== 'DECLARE_ATTACK' &&
       action.type !== 'CAST_SPELL' &&
       action.type !== 'USE_STORE' &&
-      action.type !== 'OPEN_STORE'
+      action.type !== 'OPEN_STORE' &&
+      action.type !== 'PLAY_SUMMON'
     ) {
       continue;
     }
@@ -2838,7 +3431,9 @@ export function clearPlan(): void {
   kitCache.clear();
   intelCache.clear();
   reachCache.clear();
+  needCache.clear();
   for (const m of doesCache) m.clear();
+  for (const m of deathCache) m.clear();
   rootSeat = null;
   reachCache.clear();
   reachSeed = Number.NaN;
@@ -2893,6 +3488,7 @@ export function chooseAction(
   // stands for the whole of it, searches included.
   shopPrices.clear();
   shopDeals.clear();
+  needCache.clear();
 
   // Peeks roll on the real table, once a turn. Then the search sees only what
   // the bot is entitled to: from here to the leaves every other hand is the one

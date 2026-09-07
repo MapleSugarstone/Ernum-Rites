@@ -62,6 +62,14 @@ trainer or `scripts/gcp-meta.sh` is touched again:
   skipped when a snapshot is already on the disk, since it once put a round
   39 snapshot over a round 129 one.
 
+- Spot capacity for the big shapes comes and goes by the hour, and a machine
+  pre-empted in a zone that has run dry cannot be started again there. The
+  machine now checkpoints every run folder to the bucket every fifteen
+  minutes, the watcher gives a zone up after three failed restarts (exit
+  code 3), and a launch wrapper that sees that code creates a machine in
+  whichever zone has one; the boot script skips the bucket copy only when a
+  snapshot is already on the disk, so a fresh disk resumes from the
+  checkpoint. Two machines were lost at round 8 the night this was added.
 - A run folder is the tag followed by the seed, so tag `meta2` seed 1 and
   tag `meta` seed 21 are both `runs/meta21`. The script once matched such a
   stale folder with a pattern and offered it as a resume; it now uploads

@@ -268,9 +268,11 @@ describe('combo search', () => {
 
   it('tells a Graft pairing apart by what the graft does', () => {
     // Once every pairing scored the same the instant it resolved, because the
-    // evaluator had no term for what a body's text says. The reach term plays
-    // each minted body out, so the pairing that puts the Deathrattle on the
-    // body that keeps coming back is the one the evaluator prefers.
+    // evaluator had no term for what a body's text says. A graft lends the
+    // whole text side, so either pairing is a body that deals two and comes
+    // back; the death probe reads the one on the bigger body as the one with
+    // more lives at two a death, and that is the pairing the evaluator
+    // prefers.
     const s = board();
     const me = s.players[0];
     const foe = s.players[1];
@@ -294,11 +296,12 @@ describe('combo search', () => {
       scores.add(Math.round(score));
       if (score > best) {
         best = score;
-        bestBody = res.state.players[0].slots[0]?.cardId ?? '';
+        const minted = res.state.players[0].slots.find((b) => b && b.cardId.startsWith('gen-graft-'));
+        bestBody = minted?.cardId ?? '';
       }
     }
     expect(scores.size, 'the pairings score apart').toBeGreaterThan(1);
-    expect(bestBody.startsWith('gen-graft-o1-skeleton+m-rp-falsehumanity'), `the loop is the one it prefers: ${bestBody}`).toBe(true);
+    expect(bestBody.startsWith('gen-graft-m-rp-falsehumanity+o1-skeleton'), `the loop on the bigger body is the one it prefers: ${bestBody}`).toBe(true);
   });
 });
 

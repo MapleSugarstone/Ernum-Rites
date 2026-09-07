@@ -46,7 +46,13 @@ behaviour. One decision:
    width 8, depth 6, 600 applies, one ply deep so it cannot recurse, and
    `answerMine` answers what the reply leaves waiting on the bot (a dead
    body's replacement) instead of discarding the reply. This one change was
-   worth five to eleven points on every pool.
+   worth five to eleven points on every pool. The walker also closes the
+   reply's own costed flip offers before ending their turn; a reply that
+   stopped on one used to fail to end, and the position got no reply at
+   all (worth 8 to 23 games per 600). The standing side of the blend can
+   write off every body the reply takes (`fallen`), so a doomed body is
+   not kept at 40 percent of a value the visible board is about to take;
+   it measured down on candy and random and ships at 0.
 4. `evaluate` prices leader HP, debt, bodies, hand, deck, and the standing
    terms (deathrattle, hooks, effect damage), plus three engine-derived
    terms: `reachOf` (what a card does on a probe board, so a Recomp or a
@@ -156,10 +162,70 @@ results. Facts that matter:
 
 ## Where things stood at the end of the session
 
-- The bot in both engines measures 440-159 on candy seed 22 and 432-167 on
-  random seed 21 against the deployed snapshot, paired, 600 games, after the
-  flip answers and the mana reserve landed (it was 391-208 and 371-228 the
-  same morning). Both suites pass, the corpus agrees 13 of 13.
+- The bot in both engines measures 434-164 on candy seed 22, 437-162 on
+  random seed 21 and 435-162 on a mutated set against the deployed snapshot,
+  paired, 600 games, with the worst case, the breach, the window answers,
+  the climb tie-break and the body plays in the kill search all on (the
+  morning's bot read 440-159 and 432-167; the day started at 391-208 and
+  371-228). Both suites pass, the corpus agrees 13 of 13.
+- Pricing since then: supporters by what the list can spend (`supporterOff`,
+  `supporterExcess`), a card in hand by what it draws (`handDraw`), a
+  Deathrattle by a death probe (`deathBurst`, `deathDebt`); flat on evolved
+  and random, four points up on candy. The deck read is 0.30 three times a
+  turn (free); every heavier hand read measured down. Evolved decks for a
+  head-to-head: `--decks dir:runs/evolved-nb1` (top 48 of the nb run).
+- The death probe (`deathDoes`) kills a body on the probe board and reads
+  what its Deathrattle did: cards back, HP off the leader, debt, the body
+  that returned (`deathReturn`), a seal on the enemy slots (`deathLock`)
+  and HP off their bodies (`deathFront`). All neutral against bots; on for
+  Skeleton, grafts and seals.
+- Still open, named by the maintainer: board filling never charged for the
+  trades an unseen hand makes next turn, and the deck scan blind to control
+  kits it cannot trigger on its probe board.
+- From the first pro meta check: Alchemize fires in half a percent of the
+  games Helemy is on a board, as a finisher only. The pricing behind it is
+  built (`fallen`: the outlook writes off a body the reply takes) and the
+  reply walker bug found beside it (a reply stopping on its own flip offer
+  left the position unjudged) was worth 8 to 23 games per 600. The
+  write-off itself measured even on evolved and one to two and a half
+  points down on candy and random at 0.5 and 1, so it ships at 0 (table
+  in `claude-notes/ai-audit.md`).
+  Still open: deck size 48 to 54 as an evolution trait in the trainer.
+- Six gated mechanisms, measured one at a time: `worstCase`
+  (on), `breach` (on), `windowAnswers` (on), `deepBurst` (off: two points
+  down on random), `paranoia` (off: one to two points down), `fallen`
+  (off: one to two and a half points down on candy and random). Switch any
+  with `versus --set Name=0|1` before believing a claim about it. Their
+  measurement table is in `claude-notes/ai-audit.md`.
+- Head-to-heads run in the cloud: `scripts/gcp-versus.sh <tag> <games>
+  <machines> <zones> "<arm>" ...`, about four minutes an arm on 128 cores;
+  it deletes its machine on exit and the machine has a two-hour cap. A
+  spot machine that goes missing before its logs come back is replaced,
+  and the third machine is on demand: on 2026-09-07 two 128-core spot
+  machines were reclaimed within minutes of starting, in two zones, while
+  the same shape had run a full batch an hour earlier. Use a fresh tag for
+  a relaunch by hand; the bucket folder of a lost run has no ALL_DONE.
+- A hand-built board needs a deck behind the hand: a summon draws its HP
+  from the deck and dies on arrival from an empty one.
+- A TypeScript trace of a decision must run on the redacted root
+  (`redactTable`, exported) and warm the caches by deciding every earlier
+  step of the replay first; `scripts/botexplain.ts` does both. Read on
+  the real table the enemy hand is eight points richer, and cold caches
+  build their probe boards on a different step than the recording did.
+  Both read as engine divergence and neither is.
+- When a replay stops agreeing, `Selatza.Sim explain --replay <file>
+  --step <n>` and `npx tsx scripts/botexplain.ts <file> <n>` print the
+  gathered leaves with score, reply, fallen value and outlook in each
+  engine. `--then '<action json or array>'` walks into a line with the
+  search's own settlement. The one real divergence found this way: C#
+  charged trap-window risk on a Store window, TypeScript never did.
+- Two weights existed at zero before that: `worstCase` (unseen enemy cards priced at the
+  top quarter of a pool prior, the kill rollout of every legal card beside
+  their leader) and `paranoia` (a second reply with the pool's best cards
+  in their hand, blended in). Measured paired: the worst case alone is
+  even with the defaults, worst case plus paranoia 0.5 is one to two
+  points down; paranoia 1 makes the bot pass when the feared kill cannot
+  be stopped. Full write-up in `claude-notes/ai-audit.md`.
 - Heavier peeks (hand 0.25x2, deck 0.3x3) measured two to three points
   under the defaults on both pools. The defaults (hand 0.05x1, deck
   0.15x3) stay; measure any new read level with `versus --hand a x b

@@ -55,6 +55,57 @@ public sealed class BotWeights
     /// entirely on one guess about it.
     /// </summary>
     public double Reply = 0.6;
+    /// <summary>
+    /// Share of a pool's worst case priced into each card the enemy holds
+    /// unseen: the burst of the best cards their leader allows, measured
+    /// beside that leader. Zero reads an unseen card as nothing. Measured
+    /// even with zero against bots, so it is on for what it does against people.
+    /// </summary>
+    public double WorstCase = 1;
+    /// <summary>
+    /// Share of a position's outlook read from their turn played with every
+    /// unseen card replaced by the worst their pool holds, beside the turn
+    /// played on the hand the bot believes in. Zero plays only the believed hand.
+    /// </summary>
+    public double Paranoia = 0;
+    /// <summary>Whether the kill rollout clears the bodies in front of a leader when nothing else moves a clock. Zero leaves it greedy on the clocks alone.</summary>
+    public double Breach = 1;
+    /// <summary>Whether the bot's own response windows during their turn are answered with what it holds. Zero passes them all.</summary>
+    public double WindowAnswers = 1;
+    /// <summary>
+    /// Whether a card's burst is the kill rollout's damage beside its leader
+    /// rather than its best single action. Off: measured two points down on
+    /// random decks with it on, since the danger term then sat at its cap.
+    /// </summary>
+    public double DeepBurst = 0;
+    /// <summary>
+    /// A supporter whose mana the list has no use for: a colourless one, which
+    /// only pays what any supporter pays, or a colour no card or Power asks
+    /// for. Against Supporter for one the list can spend.
+    /// </summary>
+    public double SupporterOff = 1;
+    /// <summary>Share of a supporter's worth kept past what a turn of the list can spend.</summary>
+    public double SupporterExcess = 0.5;
+    /// <summary>Per card a card in hand draws when it is played, on top of its level.</summary>
+    public double HandDraw = 1;
+    /// <summary>Per HP a Deathrattle takes off an enemy leader.</summary>
+    public double DeathBurst = 1;
+    /// <summary>Per debt a Deathrattle costs beyond the body's own funeral.</summary>
+    public double DeathDebt = 0.5;
+    /// <summary>Share of a body's own board value credited when its Deathrattle hands the body back to the hand.</summary>
+    public double DeathReturn = 0.5;
+    /// <summary>A Deathrattle that seals the enemy's slots for the locker's turn, so the bodies it kills stay dead.</summary>
+    public double DeathLock = 2.5;
+    /// <summary>Per HP a Deathrattle takes off the enemy's bodies.</summary>
+    public double DeathFront = 1;
+    /// <summary>
+    /// Share of a body's standing value written off when the opponent's reply
+    /// kills it. The standing side of the blend otherwise keeps pricing a body
+    /// the visible board is about to take, so cashing it in for less than its
+    /// full value never reads as a gain. Off: measured even on evolved decks
+    /// and one to two and a half points down on candy and random at 0.5 and 1.
+    /// </summary>
+    public double Fallen = 0;
     /// <summary>What opening a response window costs when they certainly hold a trap.</summary>
     public double TrapWindow = 12;
     /// <summary>
@@ -274,6 +325,44 @@ public static class Bot
         return Math.Max(0, core) + auras;
     }
 
+    /// <summary>What one body on the board is worth to its own side.</summary>
+    private static double BodyWorth(GameState state, int side, SummonInstance s, BotWeights w)
+    {
+        var def = Registry.Card(s.CardId);
+        return w.Strength * ScoredStrength(state, s)
+            + w.Hp * s.RemainingHp
+            + w.Level * GameState.LevelOf(s, def)
+            - w.Wound * s.Wounds
+            + (def.Triggers?.OnDeath is not null ? w.Deathrattle + DeathWorth(state, side, def, w) : 0)
+            + w.Trigger * StandingHooks(def)
+            + w.Reach * ReachOf(state, side, def, w);
+    }
+
+    /// <summary>
+    /// Standing value of every body, on either side, that is on the board now
+    /// and gone once the reply has been played: positive for the bot's own
+    /// losses, negative for the enemy's. A body the reply bounces to hand
+    /// counts too; the reply side of the blend still credits the card it became.
+    /// </summary>
+    private static double FallenWorth(GameState state, GameState next, int me, BotWeights w)
+    {
+        double lost = 0;
+        var sides = new List<(int side, int sign)> { (me, 1) };
+        foreach (var foe in LivingOpponents(state, me)) sides.Add((foe, -1));
+        foreach (var (side, sign) in sides)
+        {
+            if (side >= next.Players.Length) continue;
+            var after = next.Players[side];
+            foreach (var s in state.Players[side].Slots)
+            {
+                if (s is null) continue;
+                if (after.Slots.Any(b => b is not null && b.Uid == s.Uid)) continue;
+                lost += sign * BodyWorth(state, side, s, w);
+            }
+        }
+        return lost;
+    }
+
     public static double Evaluate(GameState state, int me, BotWeights? w = null)
     {
         w ??= BotWeights.Default;
@@ -304,18 +393,7 @@ public static class Bot
             score -= sign * (DebtCharge(p.DebtCount - eased, w) + cliff);
             score += sign * w.Love * p.Love;
 
-            foreach (var s in p.Slots)
-            {
-                if (s is null) continue;
-                var def = Registry.Card(s.CardId);
-                score += sign * (w.Strength * ScoredStrength(state, s)
-                    + w.Hp * s.RemainingHp
-                    + w.Level * GameState.LevelOf(s, def)
-                    - w.Wound * s.Wounds
-                    + (def.Triggers?.OnDeath is not null ? w.Deathrattle : 0)
-                    + w.Trigger * StandingHooks(def)
-                    + w.Reach * ReachOf(state, side, def, w));
-            }
+            foreach (var s in p.Slots) if (s is not null) score += sign * BodyWorth(state, side, s, w);
             if (p.Leader is not null) score += sign * w.Reach * ReachOf(state, side, Registry.Card(p.Leader.CardId), w);
             foreach (var id in p.Hand) score += sign * w.Reach * HandReachShare * ReachOf(state, side, Registry.Card(id), w);
             score += sign * w.EffectDamage * Effects.EffectDamageOf(state, side);
@@ -323,10 +401,14 @@ public static class Bot
 
             // Cards in hand are not interchangeable, and the game says so with levels.
             double hand = 0;
-            foreach (var id in p.Hand) hand += w.Hand + w.HandLevel * (Registry.Card(id).Level - 1);
+            foreach (var id in p.Hand)
+            {
+                var held = Registry.Card(id);
+                hand += w.Hand + w.HandLevel * (held.Level - 1) + w.HandDraw * CardDoesOf(state, side, held, w).Draw;
+            }
             score += sign * hand;
 
-            score += sign * w.Supporter * p.Supporters.Count;
+            score += sign * SupportWorth(state, side, w);
             score += sign * w.Deck * Math.Min(p.Deck.Count, DeckValueCap);
 
             // The list is read only when it is the bot's own. Anyone else's outs
@@ -388,6 +470,10 @@ public static class Bot
             {
                 s = buyOut ? BuyOut(s, weights) : SettleStore(s, weights);
             }
+            else if (weights.WindowAnswers > 0 && _rootSet && s.Pending.Player == _rootSeat && s.Active != _rootSeat)
+            {
+                s = AnswerWindow(s, weights);
+            }
             else
             {
                 var res = Engine.Apply(s, s.Pending.Player, GameAction.PassResponse());
@@ -395,6 +481,38 @@ public static class Bot
             }
         }
         return AnswerFlips(s, weights);
+    }
+
+    /// <summary>
+    /// A response window that opened on the bot during someone else's turn is
+    /// answered with what the bot holds, greedily on its own evaluation: pass,
+    /// or any trap it can pay for. Before this every window was passed, so a
+    /// trap in hand was worth its card and nothing more, and the bot turned
+    /// traps into supporters freely. Other seats' windows are still passed:
+    /// their hands are believed rather than known, and the trap read prices
+    /// the risk.
+    /// </summary>
+    private static GameState AnswerWindow(GameState state, BotWeights w)
+    {
+        if (state.Pending is null) return state;
+        int me = state.Pending.Player;
+        GameState? pick = null;
+        double best = double.NegativeInfinity;
+        var options = new List<GameAction> { PassAction(state) };
+        options.AddRange(CandidateActions(state, me));
+        foreach (var action in options)
+        {
+            var res = Engine.Apply(state, me, action);
+            if (!res.Ok) continue;
+            var after = AnswerFlips(res.State!, w);
+            double score = Evaluate(after, me, w);
+            if (score > best + 1e-6)
+            {
+                best = score;
+                pick = after;
+            }
+        }
+        return pick ?? state;
     }
 
     /// <summary>Flip offers one settle answers for the side that is not taking the turn.</summary>
@@ -412,14 +530,14 @@ public static class Bot
     /// reply model makes for them. The acting side's own offers stay with the
     /// search, which already holds both answers as candidates.
     /// </summary>
-    private static GameState AnswerFlips(GameState state, BotWeights w)
+    private static GameState AnswerFlips(GameState state, BotWeights w, bool own = false)
     {
         var s = state;
         for (int i = 0; i < FlipAnswerCap; i++)
         {
             if (s.IsOver || s.FlipQueue.Count == 0) break;
             var offer = s.FlipQueue[0];
-            if (offer.Player == s.Active) break;
+            if ((offer.Player == s.Active) != own) break;
             int owner = offer.Player;
             GameState? pick = null;
             double best = double.NegativeInfinity;
@@ -517,6 +635,7 @@ public static class Bot
     private static void ClearShops()
     {
         _shopPrices?.Clear();
+        _need?.Clear();
         _shopDeals?.Clear();
     }
 
@@ -1134,7 +1253,7 @@ public static class Bot
     /// </summary>
     public sealed class ReadConfig
     {
-        public double DeckChance = 0.15;
+        public double DeckChance = 0.3;
         public int DeckRolls = 3;
         public double HandChance = 0.05;
         public int HandRolls = 1;
@@ -1597,9 +1716,9 @@ public static class Bot
     /// shown. Measured once a game per card, on a hurt plain leader with twenty
     /// debt, a little Love and the side's own mana.
     /// </summary>
-    private sealed record CardDoes(double Relief, double Heal, double Burst);
+    private sealed record CardDoes(double Relief, double Heal, double Burst, double Draw = 0);
 
-    private static readonly CardDoes NothingDone = new(0, 0, 0);
+    private static readonly CardDoes NothingDone = new(0, 0, 0, 0);
     [ThreadStatic] private static Dictionary<string, CardDoes>[]? _does;
     [ThreadStatic] private static int _doesSeed;
     [ThreadStatic] private static bool _doesSeeded;
@@ -1621,14 +1740,8 @@ public static class Bot
     private static CardDoes CardDoesOf(GameState state, int side, CardDef def, BotWeights w)
     {
         if (Light || _probing || def.Type == CardType.Trap) return NothingDone;
-        if (_does is null || !_doesSeeded || _doesSeed != state.Seed)
-        {
-            _does = new Dictionary<string, CardDoes>[4];
-            for (int i = 0; i < 4; i++) _does[i] = new Dictionary<string, CardDoes>(StringComparer.Ordinal);
-            _doesSeed = state.Seed;
-            _doesSeeded = true;
-        }
-        var cache = _does[side];
+        SeedDoes(state);
+        var cache = _does![side];
         if (cache.TryGetValue(def.Id, out var hit)) return hit;
         cache[def.Id] = NothingDone;
         var prices = _shopPrices is null ? null : new Dictionary<string, SaleWorth>(_shopPrices, StringComparer.Ordinal);
@@ -1642,20 +1755,25 @@ public static class Bot
             // card adds counts, so an empty probe is the baseline.
             if (!cache.TryGetValue(EmptyProbe, out var empty))
             {
-                empty = MeasureProbe(ProbeBoard(state, side, Array.Empty<string>(), ProbeDebt, true, false, true), side, w);
+                var one = MeasureProbe(ProbeBoard(state, side, Array.Empty<string>(), ProbeDebt, true, false, true), side, w);
+                empty = new CardDoes(one.Relief, one.Heal, w.DeepBurst > 0 ? ProbeDamage(state, side, Array.Empty<string>(), w, ProbeDebt, ProbePips) : one.Burst, one.Draw);
                 cache[EmptyProbe] = empty;
             }
             // A summon is measured from the hand, for its battlecry, and from a
             // slot, for its Powers and its Store.
-            double relief = 0, heal = 0, burst = 0;
+            // Relief and heal are the most one action does. Burst is the kill
+            // rollout's damage, a turn deep and beside the side's own leader:
+            // one action never saw a buff repeated into a cash-in.
+            double relief = 0, heal = 0, burst = 0, draw = 0;
             foreach (bool inHand in def.Type == CardType.Summon ? new[] { true, false } : new[] { true })
             {
                 var m = MeasureProbe(ProbeBoard(state, side, new[] { def.Id }, ProbeDebt, true, inHand, true), side, w);
                 relief = Math.Max(relief, m.Relief);
                 heal = Math.Max(heal, m.Heal);
-                burst = Math.Max(burst, m.Burst);
+                draw = Math.Max(draw, m.Draw);
+                burst = Math.Max(burst, w.DeepBurst > 0 ? ProbeDamage(state, side, new[] { def.Id }, w, ProbeDebt, ProbePips, inHand) : m.Burst);
             }
-            done = new CardDoes(Math.Max(0, relief - empty.Relief), Math.Max(0, heal - empty.Heal), Math.Max(0, burst - empty.Burst));
+            done = new CardDoes(Math.Max(0, relief - empty.Relief), Math.Max(0, heal - empty.Heal), Math.Max(0, burst - empty.Burst), Math.Max(0, draw - empty.Draw));
         }
         finally
         {
@@ -1668,6 +1786,41 @@ public static class Bot
     }
 
     /// <summary>The most one action on a probe board does for each measure, its picks answered.</summary>
+    /// <summary>Pips of each colour a card probe holds: the board's own default.</summary>
+    private const int ProbePips = 3;
+
+    /// <summary>
+    /// The most a kill rollout takes off an enemy leader from a probe board:
+    /// the race and the patient climb, whichever hurts more. The side's own
+    /// leader stands, so a card is measured beside what it will actually be
+    /// played with.
+    /// </summary>
+    private static int ProbeDamage(GameState state, int side, string[] kit, BotWeights w, int debt, int pips, bool inHand = false)
+    {
+        var probe = ProbeBoard(state, side, kit, debt, false, inHand, false, pips);
+        var prices = _shopPrices is null ? null : new Dictionary<string, SaleWorth>(_shopPrices, StringComparer.Ordinal);
+        var deals = _shopDeals is null ? null : new Dictionary<string, int?>(_shopDeals, StringComparer.Ordinal);
+        bool outer = _probing;
+        _probing = true;
+        int best = 0;
+        try
+        {
+            foreach (int setup in new[] { 0, MaxSetupSteps })
+            {
+                var r = Burn(probe, side, MaxBurnSteps, w, setup, true);
+                best = Math.Max(best, r.Damage);
+                if (r.State.Winner == side) break;
+            }
+        }
+        finally
+        {
+            _probing = outer;
+            _shopPrices = prices;
+            _shopDeals = deals;
+        }
+        return best;
+    }
+
     private static CardDoes MeasureProbe(GameState probe, int side, BotWeights w)
     {
         var foes = LivingOpponents(probe, side).ToArray();
@@ -1675,7 +1828,8 @@ public static class Bot
         int hp = LeaderHpOf(probe, side);
         int theirs = 0;
         foreach (int f in foes) theirs += LeaderHpOf(probe, f);
-        double relief = 0, heal = 0, burst = 0;
+        int held = probe.Players[side].Hand.Count;
+        double relief = 0, heal = 0, burst = 0, draw = 0;
         foreach (var action in CandidateActions(probe, side))
         {
             var res = Engine.Apply(probe, side, action);
@@ -1686,8 +1840,243 @@ public static class Bot
             int left = 0;
             foreach (int f in foes) left += LeaderHpOf(after, f);
             burst = Math.Max(burst, theirs - left);
+            int played = action.Type is ActionType.CastSpell or ActionType.PlaySummon or ActionType.PlayStage ? 1 : 0;
+            draw = Math.Max(draw, after.Players[side].Hand.Count - held + played);
         }
-        return new CardDoes(relief, heal, burst);
+        return new CardDoes(relief, heal, burst, draw);
+    }
+
+    /// <summary>Both probe caches belong to one game; a new seed empties them.</summary>
+    private static void SeedDoes(GameState state)
+    {
+        if (_does is not null && _doesSeeded && _doesSeed == state.Seed) return;
+        _does = new Dictionary<string, CardDoes>[4];
+        _death = new Dictionary<string, DeathDoes>[4];
+        for (int i = 0; i < 4; i++)
+        {
+            _does[i] = new Dictionary<string, CardDoes>(StringComparer.Ordinal);
+            _death[i] = new Dictionary<string, DeathDoes>(StringComparer.Ordinal);
+        }
+        _doesSeed = state.Seed;
+        _doesSeeded = true;
+    }
+
+    /// <summary>What a list can spend: the mana kinds any of its costs ask for, and the most pips one item asks for.</summary>
+    private sealed class ManaNeed
+    {
+        public HashSet<int> Kinds = new();
+        public int Most;
+    }
+    [ThreadStatic] private static Dictionary<int, ManaNeed>? _need;
+    /// <summary>Supporters priced in full however small the list's costs are.</summary>
+    private const int SupportFloor = 4;
+    /// <summary>Supporters priced in full beyond the most one item costs, for a turn that fires more than one.</summary>
+    private const int SupportSlack = 2;
+
+    private static void NoteCost(ManaNeed need, Cost cost)
+    {
+        int pips = 0;
+        foreach (var c in Colors.All)
+        {
+            int n = cost[c];
+            if (n <= 0) continue;
+            need.Kinds.Add((int)c);
+            pips += n;
+        }
+        if (cost.C > 0)
+        {
+            need.Kinds.Add(Rules.Colorless);
+            pips += cost.C;
+        }
+        if (pips > need.Most) need.Most = pips;
+    }
+
+    /// <summary>
+    /// The mana a side's list can spend: every cost on its cards, its Powers
+    /// and its paid flips, read from the whole list when it is the bot's own
+    /// and from what the side has shown when it is not. Held for the decision.
+    /// </summary>
+    private static ManaNeed ManaNeedOf(GameState state, int side)
+    {
+        _need ??= new Dictionary<int, ManaNeed>();
+        if (_need.TryGetValue(side, out var hit)) return hit;
+        var p = state.Players[side];
+        var ids = new List<string>();
+        if (!_rootSet || side == _rootSeat)
+        {
+            ids.AddRange(p.Hand);
+            ids.AddRange(p.Deck);
+        }
+        ids.AddRange(ShownIds(p));
+        var need = new ManaNeed();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var id in ids)
+        {
+            if (!seen.Add(id)) continue;
+            var def = Registry.Card(id);
+            NoteCost(need, def.Cost);
+            if (def.Powers is not null) foreach (var power in def.Powers) NoteCost(need, power.Cost);
+            if (def.FlipCost is not null) NoteCost(need, def.FlipCost.Mana);
+        }
+        _need[side] = need;
+        return need;
+    }
+
+    /// <summary>
+    /// What a side's supporters are worth: a supporter the list can spend
+    /// counts in full, a colourless one or one of a colour nothing asks for
+    /// counts as an off supporter, and every supporter past what a turn of
+    /// the list can spend keeps only a share. A flat count priced every
+    /// supporter alike and without end, so a level-one card always became one
+    /// and a neutral one read as a colour.
+    /// </summary>
+    private static double SupportWorth(GameState state, int side, BotWeights w)
+    {
+        var p = state.Players[side];
+        if (p.Supporters.Count == 0) return 0;
+        var need = ManaNeedOf(state, side);
+        int cap = Math.Max(SupportFloor, need.Most + SupportSlack);
+        double worth = 0;
+        for (int i = 0; i < p.Supporters.Count; i++)
+        {
+            int kind = Engine.ManaIndexFor(p, Registry.Card(p.Supporters[i].CardId));
+            bool fits = kind == Rules.Ernum || (kind != Rules.Colorless && need.Kinds.Contains(kind));
+            double each = fits ? w.Supporter : w.SupporterOff;
+            worth += i < cap ? each : each * w.SupporterExcess;
+        }
+        return worth;
+    }
+
+    /// <summary>What a body's Deathrattle did when a probe killed it.</summary>
+    private sealed record DeathDoes(double Draw, double Burst, double Debt, double BackStrength, double BackHp, double BackLevel, double Lock, double Front);
+    private static readonly DeathDoes NoDeath = new(0, 0, 0, 0, 0, 0, 0, 0);
+    /// <summary>HP cards the death probe's attacker carries, so it outlives the clash and what the Deathrattle does to it is read.</summary>
+    private const int DeathAttackerHp = 10;
+    [ThreadStatic] private static Dictionary<string, DeathDoes>[]? _death;
+    private static string? _deathAttacker;
+    private static bool _deathAttackerSet;
+
+    /// <summary>The plainest body that can swing: the first collectible summon by id with an attack, neither stationary nor a Redirection.</summary>
+    private static string? DeathAttacker()
+    {
+        if (_deathAttackerSet) return _deathAttacker;
+        _deathAttacker = Registry.Printed
+            .Where(d => d.Type == CardType.Summon && !d.Uncollectible && !d.Stationary && !d.Redirect && d.Strength >= 1)
+            .Select(d => d.Id)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .FirstOrDefault();
+        _deathAttackerSet = true;
+        return _deathAttacker;
+    }
+
+    /// <summary>
+    /// What a Deathrattle does, measured by killing the body: it stands alone
+    /// on the probe board at one HP, the other side gets the plainest attacker
+    /// there is, and that attacker swings. Read once a game per card and per
+    /// size of the discard pile to two, and once for a minted card the first
+    /// time it is seen, so a grafted Deathrattle is priced by what it does. A
+    /// flat term priced a body that returns to hand the same as one that
+    /// stays down.
+    /// </summary>
+    private static DeathDoes DeathDoesOf(GameState state, int side, CardDef def, BotWeights w)
+    {
+        if (Light || _probing || def.Triggers?.OnDeath is null) return NoDeath;
+        SeedDoes(state);
+        int spells = Math.Min(2, state.Players[side].Discard.Count(id => Registry.Card(id).Type == CardType.Spell));
+        string key = def.Id + ":" + spells;
+        var cache = _death![side];
+        if (cache.TryGetValue(key, out var hit)) return hit;
+        cache[key] = NoDeath;
+        var attacker = DeathAttacker();
+        if (attacker is null || def.Type != CardType.Summon) return NoDeath;
+        var prices = _shopPrices is null ? null : new Dictionary<string, SaleWorth>(_shopPrices, StringComparer.Ordinal);
+        var deals = _shopDeals is null ? null : new Dictionary<string, int?>(_shopDeals, StringComparer.Ordinal);
+        bool outer = _probing;
+        _probing = true;
+        var done = NoDeath;
+        try
+        {
+            // The side's real leader stands: a plain one is a wall with
+            // Redirection, which no attack on the body could get past.
+            var probe = ProbeBoard(state, side, new[] { def.Id }, 0, false, false, false);
+            probe.Players[side].Discard = new List<string>(state.Players[side].Discard);
+            var body = probe.Players[side].Slots[0];
+            var foes = LivingOpponents(probe, side).ToArray();
+            if (body is not null && foes.Length > 0)
+            {
+                int foe = foes[0];
+                for (int i = 0; i < body.Hp.Count - 1; i++) body.Hp[i].Flipped = true;
+                var q = probe.Players[foe];
+                q.Slots[1] = new SummonInstance
+                {
+                    Uid = $"k{probe.NextUid++}",
+                    CardId = attacker,
+                    Owner = foe,
+                    IsLeader = false,
+                    Hp = Enumerable.Range(0, DeathAttackerHp).Select(_ => new HpCard { CardId = attacker }).ToList(),
+                    EnteredTurn = 0,
+                    StoreStock = 1,
+                };
+                q.TurnsTaken = Math.Max(q.TurnsTaken, 3);
+                probe.Active = foe;
+                int theirs = LeaderHpOf(probe, foe);
+                int debt = probe.Players[side].DebtCount;
+                int front = FrontHp(probe, side);
+                int clash = Effects.EffectiveStrength(probe, body);
+                var res = Engine.Apply(probe, foe, GameAction.DeclareAttack(TargetRef.Summon(foe, 1), TargetRef.Summon(side, 0)));
+                if (res.Ok)
+                {
+                    // Every flip offer is declined, the attacker's own included:
+                    // the death waits behind them, and nobody pays for anything
+                    // in a measurement.
+                    var s = res.State!;
+                    for (int i = 0; i < 8 && s.FlipQueue.Count > 0; i++)
+                    {
+                        var r = Engine.Apply(s, s.FlipQueue[0].Player, GameAction.DeclineFlip());
+                        if (!r.Ok) break;
+                        s = r.State!;
+                    }
+                    var after = AnswerPicks(Settle(s, w), w);
+                    double backStrength = 0, backHp = 0, backLevel = 0;
+                    foreach (var id in after.Players[side].Hand)
+                    {
+                        var back = Registry.Card(id);
+                        if (back.Type != CardType.Summon) continue;
+                        backStrength += back.Strength;
+                        backHp += back.Hp;
+                        backLevel += back.Level;
+                    }
+                    bool locked = LivingOpponents(after, side).Any(f => after.Players[f].ReplaceLockedBy == side);
+                    done = new DeathDoes(
+                        Math.Max(0, after.Players[side].Hand.Count),
+                        Math.Max(0, theirs - LeaderHpOf(after, foe)),
+                        Math.Max(0, after.Players[side].DebtCount - debt - def.Level),
+                        backStrength,
+                        backHp,
+                        backLevel,
+                        locked ? 1 : 0,
+                        // The clash itself took the body's attack off the attacker; the rest is the Deathrattle.
+                        Math.Max(0, front - FrontHp(after, side) - clash));
+                }
+            }
+        }
+        finally
+        {
+            _probing = outer;
+            _shopPrices = prices;
+            _shopDeals = deals;
+        }
+        cache[key] = done;
+        return done;
+    }
+
+    /// <summary>What a Deathrattle is worth on top of being one: the cards it hands back, the HP it takes, the debt it adds.</summary>
+    private static double DeathWorth(GameState state, int side, CardDef def, BotWeights w)
+    {
+        var d = DeathDoesOf(state, side, def, w);
+        double back = w.Strength * d.BackStrength + w.Hp * d.BackHp + w.Level * d.BackLevel;
+        return w.Hand * d.Draw + w.DeathBurst * d.Burst - w.DeathDebt * d.Debt
+            + w.DeathReturn * back + w.DeathLock * d.Lock + w.DeathFront * d.Front;
     }
 
     /// <summary>Cards a seat has shown: everything of theirs in a public zone.</summary>
@@ -1744,6 +2133,100 @@ public static class Bot
     /// that leader so far, whichever is larger. A leader that has lost most of a
     /// large base is facing something, whether or not it has been seen yet.
     /// </summary>
+    /// <summary>Pips of each colour a pool is ranked with: enough for a buff repeated into a cash-in.</summary>
+    private const int PriorPips = 6;
+    /// <summary>Debt the probed side carries when a pool is ranked: a mid-game pile, so a body that scales with debt reads at a mid-game size.</summary>
+    private const int PriorDebt = 10;
+    /// <summary>Blank cards behind each leader on the board a pool is ranked on.</summary>
+    private const int PriorDeck = 50;
+
+    /// <summary>A leader's legal pool ranked by what each card does beside that leader.</summary>
+    private sealed class PoolPrior
+    {
+        /// <summary>Card ids, the most dangerous first.</summary>
+        public string[] Ranked = Array.Empty<string>();
+        /// <summary>Mean burst of the top quarter: what one unseen card is priced at.</summary>
+        public double Top;
+    }
+    private static readonly Dictionary<string, PoolPrior> _priors = new(StringComparer.Ordinal);
+    private static readonly PoolPrior NoPrior = new();
+
+    /// <summary>
+    /// The worst a leader's pool holds: every legal card's kill rollout beside
+    /// that leader on a board built from nothing else, with six pips of each
+    /// colour the leader brings, as HP off the enemy leader. A whole turn
+    /// rather than one action, so a buff that repeats into the leader's own
+    /// cash-in reads at what the pair does rather than at nothing. Measured
+    /// once per process per leader. It reads no game state, so it is the same
+    /// table in every game and in both engines whichever thread fills it first.
+    /// </summary>
+    private static PoolPrior PoolPriorOf(string leaderId, BotWeights w)
+    {
+        lock (_priors)
+        {
+            if (_priors.TryGetValue(leaderId, out var hit)) return hit;
+        }
+        if (_probing || Light) return NoPrior;
+        string blank = BlankCard()?.Id ?? leaderId;
+        var deck = Enumerable.Repeat(blank, PriorDeck).ToArray();
+        var board = Engine.CreateGame(
+            new DeckList { Name = "A", LeaderId = leaderId, Cards = deck },
+            new DeckList { Name = "B", LeaderId = leaderId, Cards = deck }, 0, 0);
+        var ids = PoolBehind(leaderId).Legal.Where(id => Registry.Card(id).Type != CardType.Trap)
+            .OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        double empty = ProbeDamage(board, 0, Array.Empty<string>(), w, PriorDebt, PriorPips);
+        var bursts = new Dictionary<string, double>(StringComparer.Ordinal);
+        foreach (var id in ids)
+        {
+            bursts[id] = Math.Max(0, ProbeDamage(board, 0, new[] { id }, w, PriorDebt, PriorPips) - empty);
+        }
+        var ranked = ids.OrderByDescending(id => bursts[id]).ThenBy(id => id, StringComparer.Ordinal).ToArray();
+        int quarter = (ranked.Length + 3) / 4;
+        double sum = 0;
+        for (int i = 0; i < quarter; i++) sum += bursts[ranked[i]];
+        var prior = new PoolPrior { Ranked = ranked, Top = quarter > 0 ? sum / quarter : 0 };
+        lock (_priors)
+        {
+            _priors[leaderId] = prior;
+        }
+        return prior;
+    }
+
+    /// <summary>How many of a seat's hand the bot has not named: the stand-in card, at the root and below it.</summary>
+    private static int UnseenIn(PlayerState p)
+    {
+        string? blank = BlankCard()?.Id;
+        if (blank is null) return 0;
+        int n = 0;
+        foreach (var id in p.Hand) if (id == blank) n++;
+        return n;
+    }
+
+    /// <summary>
+    /// The table with every other seat's unseen cards replaced by the worst
+    /// their leader's pool holds, best first, so a turn played on it is the
+    /// turn the bot should fear rather than the one it believes in. The table
+    /// itself when no seat has an unseen card.
+    /// </summary>
+    private static GameState WithWorstHand(GameState state, int me, BotWeights w)
+    {
+        string? blank = BlankCard()?.Id;
+        if (blank is null) return state;
+        GameState? s = null;
+        foreach (int foe in LivingOpponents(state, me))
+        {
+            var prior = PoolPriorOf(state.Players[foe].LeaderCardId, w);
+            if (prior.Ranked.Length == 0) continue;
+            int k = 0;
+            var hand = new List<string>(state.Players[foe].Hand.Count);
+            foreach (var id in state.Players[foe].Hand) hand.Add(id == blank ? prior.Ranked[k++ % prior.Ranked.Length] : id);
+            if (k == 0) continue;
+            s ??= state.Clone();
+            s.Players[foe].Hand = hand;
+        }
+        return s ?? state;
+    }
+
     private static double DangerOf(GameState state, int side, BotWeights w)
     {
         double expected = 0;
@@ -1754,6 +2237,12 @@ public static class Bot
             double sum = 0;
             foreach (var id in shown) sum += CardDoesOf(state, foe, Registry.Card(id), w).Burst;
             if (shown.Count > 0) expected = Math.Max(expected, (sum / shown.Count) * q.Hand.Count);
+            // Their unseen cards priced at the worst their leader's pool holds, when asked.
+            if (w.WorstCase > 0)
+            {
+                int unseen = UnseenIn(q);
+                if (unseen > 0) expected = Math.Max(expected, w.WorstCase * PoolPriorOf(q.LeaderCardId, w).Top * unseen);
+            }
         }
         var p = state.Players[side];
         double rate = 0;
@@ -1859,7 +2348,7 @@ public static class Bot
     /// a blocker reach.
     /// </summary>
     private static GameState ProbeBoard(GameState state, int me, string[] kit, int debt = 0,
-        bool hurt = false, bool inHand = false, bool plain = false)
+        bool hurt = false, bool inHand = false, bool plain = false, int pips = 3)
     {
         var s = state.Clone();
         var p = s.Players[me];
@@ -1943,15 +2432,15 @@ public static class Bot
             if (wall is not null) q.Slots[0] = BodyOf(wall.Id, side, wall.Hp, false);
         }
         Array.Clear(p.Mana);
-        p.Mana[Rules.Colorless] = 3;
-        foreach (var c in Identity.DeckIdentity(p.LeaderCardId)) p.Mana[(int)c] = 3;
+        p.Mana[Rules.Colorless] = pips;
+        foreach (var c in Identity.DeckIdentity(p.LeaderCardId)) p.Mana[(int)c] = pips;
         return s;
     }
 
     /// <summary>Share of the nearer clock a kit takes off the probe board, 1 meaning a kill.</summary>
-    private static double KitReach(GameState state, int me, string[] kit, BotWeights w, int debt = 0)
+    private static double KitReach(GameState state, int me, string[] kit, BotWeights w, int debt = 0, int pips = 3)
     {
-        var probe = ProbeBoard(state, me, kit, debt);
+        var probe = ProbeBoard(state, me, kit, debt, false, false, false, pips);
         // Shop prices are filed by seat and slot and stand for the whole
         // decision, and the probe puts its own bodies in those slots. What its
         // rollout prices there must not stand for the real table.
@@ -2347,6 +2836,7 @@ public static class Bot
             var reserve = here.CashIn;
             double standing = patient ? here.Value : Potential(cur, me);
             double best = standing;
+            double bestCash = here.CashIn?.Drop ?? 0;
 
             foreach (var action in CandidateActions(cur, me, forKill: true))
             {
@@ -2360,19 +2850,22 @@ public static class Bot
                 }
                 if (LosesIt(after, me)) continue;
                 if (reserve is not null && WorstDrop(after) <= WorstDrop(cur) && !Engine.CanPay(after.Players[me], reserve.Cost)) continue;
-                double pot = patient ? CashPotential(after, me, w).Value : Potential(after, me);
-                // On a tie the free step goes first: the paid one is still there
-                // after it, and the free one may be worth more once the paid one
-                // has fired.
+                var got = patient ? CashPotential(after, me, w) : default;
+                double pot = patient ? got.Value : Potential(after, me);
+                double cash = patient ? (got.CashIn?.Drop ?? 0) : 0;
+                // On a tie the step that grows the best cash-in goes first, and
+                // then the free step: the paid one is still there after it, and
+                // the free one may be worth more once the paid one has fired.
                 bool ahead = pot > best + 1e-9
                     || (patient
                         && built is not null
                         && Math.Abs(pot - best) <= 1e-9
-                        && FreeRepeat(cur, me, action)
-                        && !FreeRepeat(cur, me, built));
+                        && (cash > bestCash + 1e-9
+                            || (Math.Abs(cash - bestCash) <= 1e-9 && FreeRepeat(cur, me, action) && !FreeRepeat(cur, me, built))));
                 if (ahead)
                 {
                     best = pot;
+                    bestCash = cash;
                     built = action;
                     builtState = after;
                 }
@@ -2461,13 +2954,67 @@ public static class Bot
                 }
             }
 
+            if (bestGain <= 1e-9 && (pick is null || bestBoard <= standingStill))
+            {
+                // Nothing moves a clock from here. A leader behind bodies is
+                // reached by clearing the bodies, and a rollout greedy on the
+                // clocks never took that step, since an attack on a blocker
+                // moves neither. Take whatever takes the most HP off the front,
+                // so the swings after it can land.
+                var breach = w.Breach > 0 ? BreachStep(cur, me, w) : null;
+                if (breach is null) break;
+                pick = breach.Value.Action;
+                pickState = breach.Value.State;
+            }
             if (pick is null || pickState is null) break;
-            if (bestGain <= 1e-9 && bestBoard <= standingStill) break;
             line.Add(pick);
             cur = pickState;
         }
 
         return new Rollout { State = cur, Line = line, Damage = WorstDrop(cur) };
+    }
+
+    /// <summary>HP on the bodies in front of every enemy leader.</summary>
+    private static int FrontHp(GameState state, int me)
+    {
+        int hp = 0;
+        foreach (int foe in LivingOpponents(state, me))
+        {
+            foreach (var s in state.Players[foe].Slots) if (s is not null) hp += s.RemainingHp;
+        }
+        return hp;
+    }
+
+    /// <summary>
+    /// The attack, Power or spell that takes the most HP off the bodies in
+    /// front of an enemy leader, ties on the evaluator, or nothing when no
+    /// leader has bodies in front of it.
+    /// </summary>
+    private static (GameAction Action, GameState State)? BreachStep(GameState state, int me, BotWeights w)
+    {
+        int front = FrontHp(state, me);
+        if (front <= 0) return null;
+        (GameAction Action, GameState State)? best = null;
+        int bestCut = 0;
+        double bestBoard = double.NegativeInfinity;
+        foreach (var action in CandidateActions(state, me, forKill: true))
+        {
+            if (action.Type is not (ActionType.DeclareAttack or ActionType.ActivatePower or ActionType.CastSpell)) continue;
+            var res = Engine.Apply(state, me, action);
+            if (!res.Ok) continue;
+            var after = Settle(res.State!, w, buyOut: true);
+            if (LosesIt(after, me)) continue;
+            int cut = front - FrontHp(after, me);
+            if (cut <= 0) continue;
+            double board = Evaluate(after, me, w);
+            if (cut > bestCut || (cut == bestCut && board > bestBoard))
+            {
+                bestCut = cut;
+                bestBoard = board;
+                best = (action, after);
+            }
+        }
+        return best;
     }
 
     /// <summary>
@@ -2514,11 +3061,30 @@ public static class Bot
                 if (s.IsOver) return s;
                 s = AnswerMine(s, me, w);
                 if (s.IsOver) return s;
+                // A reply can stop on an offer of its own, and the rest of that
+                // blow waits on the answer. It was left there because the paused
+                // damage read better than either answer, so the turn could not
+                // end and the position got no reply at all, which favoured
+                // standing still over every line that traded. Their offers are
+                // closed for them, and whatever else is still queued is passed,
+                // before their turn ends.
+                s = AnswerFlips(s, w, true);
+                if (s.IsOver) return s;
                 if (s.Active == seat && s.Phase == Phase.Main && s.Pending is null)
                 {
-                    var ended = Engine.Apply(s, seat, GameAction.EndTurn());
-                    if (!ended.Ok) return null;
-                    s = ended.State!;
+                    for (int k = 0; k < 8; k++)
+                    {
+                        var ended = Engine.Apply(s, seat, GameAction.EndTurn());
+                        if (ended.Ok)
+                        {
+                            s = ended.State!;
+                            break;
+                        }
+                        var cleared = Engine.Apply(s, s.CurrentActor, PassAction(s));
+                        if (!cleared.Ok) return null;
+                        s = cleared.State!;
+                        if (s.IsOver) return s;
+                    }
                 }
                 continue;
             }
@@ -2617,7 +3183,21 @@ public static class Bot
     {
         var next = state.IsOver ? state : NextTurn(state, me, w);
         if (next is null) return standing;
-        double settled = (1 - w.Reply) * standing + w.Reply * Evaluate(next, me, w);
+        double after = Evaluate(next, me, w);
+        // The reply the bot should fear, beside the one it believes in: their
+        // turn again with every unseen card the worst their pool holds.
+        if (w.Paranoia > 0 && !state.IsOver)
+        {
+            var feared = WithWorstHand(state, me, w);
+            var worst = ReferenceEquals(feared, state) ? next : NextTurn(feared, me, w);
+            if (worst is not null) after = (1 - w.Paranoia) * after + w.Paranoia * Evaluate(worst, me, w);
+        }
+        // A body the reply takes is not standing any more. Without this the
+        // standing share of the blend keeps every doomed body at full value,
+        // and spending one for less than that value can never read as the
+        // better line.
+        if (w.Fallen > 0 && !state.IsOver) standing -= w.Fallen * FallenWorth(state, next, me, w);
+        double settled = (1 - w.Reply) * standing + w.Reply * after;
         if (next.IsOver) return settled;
 
         int foeHp = NearestFoeHp(next, me);
@@ -2679,7 +3259,9 @@ public static class Bot
                     }
                     // Settling assumed the trap was not sprung. This is what that
                     // assumption is worth, charged once per window the line opened.
-                    double risk = node.Risk + (res.State!.Pending is not null
+                    // A Store window is not one of them: nothing can be cast into
+                    // a negotiation.
+                    double risk = node.Risk + (res.State!.Pending is { Store: null }
                         ? w.TrapWindow * TrapRisk(res.State!, reads)
                         : 0);
                     var leaf = new Leaf
@@ -2727,8 +3309,11 @@ public static class Bot
         {
             // Shops are in because a purchase can be the step that completes a
             // kill: the piece is bought at the guaranteed price and played.
+            // A body from hand is in too: a buff repeated into a cash-in starts
+            // with the body it feeds.
             if (action.Type is not (ActionType.ActivatePower or ActionType.DeclareAttack
-                or ActionType.CastSpell or ActionType.UseStore or ActionType.OpenStore)) continue;
+                or ActionType.CastSpell or ActionType.UseStore or ActionType.OpenStore
+                or ActionType.PlaySummon)) continue;
             if (budget <= 0) break;
             budget--;
             var res = Engine.Apply(state, me, action);
@@ -2773,6 +3358,8 @@ public static class Bot
         _reach?.Clear();
         _reachSeeded = false;
         _does = null;
+        _death = null;
+        _need = null;
         _doesSeeded = false;
         _rootSet = false;
     }
@@ -2825,6 +3412,99 @@ public static class Bot
         if (line.Count == 0) return null;
         _plan = new Plan { Me = me, Key = key, Line = new List<GameAction>(line) };
         return Follow(state, me, key);
+    }
+
+    /// <summary>
+    /// The ranking behind one main-phase decision, for lining the two engines
+    /// up when a replay stops agreeing (scripts/botexplain.ts prints the same
+    /// for the TypeScript bot): what the bot believes each other seat holds,
+    /// what each held card is priced on, the beam's best leaves, and every
+    /// gathered leaf with its line, beam score, the reply's evaluation, what
+    /// fell in the reply, and the outlook.
+    /// </summary>
+    public static List<string> Explain(GameState state, int me, BotWeights? w = null)
+    {
+        w ??= BotWeights.Default;
+        ClearShops();
+        Peek(state, me);
+        _rootSeat = me;
+        _rootSet = true;
+        state = RedactTable(state, me);
+        EnsureKits(state, me, w);
+        var reads = ReadTable(state, me);
+        var lines = new List<string>();
+        foreach (var foe in LivingOpponents(state, me))
+        {
+            var t = TrackOf(state, me, foe);
+            lines.Add("seat " + foe + " known hand: " + string.Join(",", t.KnownHand.OrderBy(k => k.Key, StringComparer.Ordinal).Select(k => k.Key + "x" + k.Value))
+                + " | known deck: " + string.Join(",", t.KnownDeck.OrderBy(k => k.Key, StringComparer.Ordinal).Select(k => k.Key + "x" + k.Value))
+                + " | believed hand: " + string.Join(",", state.Players[foe].Hand));
+        }
+        for (int side = 0; side < state.Players.Length; side++)
+        {
+            foreach (var id in state.Players[side].Hand.Distinct())
+            {
+                var def = Registry.Card(id);
+                lines.Add(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                    "hand {0} {1} L{2} draw {3:F2} reach {4:F2}", side, id, def.Level, CardDoesOf(state, side, def, w).Draw, ReachOf(state, side, def, w)));
+            }
+        }
+        var stand = new Leaf { State = state, Line = new List<GameAction>(), Score = Evaluate(state, me, w) };
+        var ranked = new List<Leaf> { stand };
+        var seen = new HashSet<string> { Digest.Of(state) };
+        var all = SearchTurn(state, me, w, reads);
+        foreach (var leaf in all)
+        {
+            if (ranked.Count > ThreatLeaves) break;
+            if (!seen.Add(Digest.Of(leaf.State))) continue;
+            ranked.Add(leaf);
+        }
+        ranked = ranked.OrderByDescending(l => l.Score).ToList();
+        lines.Add("leaves " + all.Count);
+        foreach (var leaf in all.Take(14))
+        {
+            lines.Add(string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0:F2} risk {1:F2} {2}", leaf.Score, leaf.Risk, Describe(leaf.Line)));
+        }
+        foreach (var leaf in ranked)
+        {
+            var next = leaf.State.IsOver ? leaf.State : NextTurn(leaf.State, me, w);
+            double after = next is null ? double.NaN : Evaluate(next, me, w);
+            double fallen = next is null || leaf.State.IsOver ? 0 : FallenWorth(leaf.State, next, me, w);
+            double total = Outlook(leaf.State, me, w, leaf.Score);
+            lines.Add(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "{0,9:F2} std | {1,9:F2} after | {2,7:F2} fallen | {3,9:F2} outlook | {4}",
+                leaf.Score, after, fallen, total, Describe(leaf.Line)));
+        }
+        return lines;
+    }
+
+    /// <summary>The table as the search sees it from this seat: every other hand the believed one.</summary>
+    public static GameState Redacted(GameState state, int me) => RedactTable(state, me);
+
+    /// <summary>The search's own window settlement, for replaying a line outside the search.</summary>
+    public static GameState SettleFor(GameState state, BotWeights? w = null) => Settle(state, w ?? BotWeights.Default);
+
+    /// <summary>The candidate actions the search would branch on here, described the way Explain describes a line.</summary>
+    public static List<string> Candidates(GameState state, int me, BotWeights? w = null)
+    {
+        w ??= BotWeights.Default;
+        var s = RedactTable(state, me);
+        return CandidateActions(s, me).Select(a => Describe(new List<GameAction> { a })).ToList();
+    }
+
+    private static string Describe(List<GameAction> line)
+    {
+        if (line.Count == 0) return "stand";
+        static string Ref(TargetRef r) => r.Kind + ":" + r.Player + ":" + r.Index;
+        return string.Join(" ; ", line.Select(a => a.Type switch
+        {
+            ActionType.CastSpell => "CAST h" + a.HandIndex + ">" + string.Join(",", a.Targets.Select(Ref)),
+            ActionType.PlaySummon => "PLAY h" + a.HandIndex + "@" + a.Slot,
+            ActionType.DeclareAttack => "ATK " + Ref(a.Source) + ">" + Ref(a.Target),
+            ActionType.ActivatePower => "POWER " + Ref(a.Source) + "#" + a.PowerIndex + "(" + string.Join(",", a.Targets.Select(Ref)) + ")",
+            ActionType.OpenStore => "STORE " + Ref(a.Source),
+            _ => a.Type.ToString(),
+        }));
     }
 
     public static GameAction ChooseAction(GameState state, int me, BotWeights? w = null)

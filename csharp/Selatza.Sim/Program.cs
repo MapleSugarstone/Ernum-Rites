@@ -53,6 +53,7 @@ public static class Program
                 ArgStr(args, "--only", ""), ArgStr(args, "--decks", "random")),
             "pair" => Pair(a, b, games, verbose: true),
             "record" => Record(games),
+            "explain" => Explain(ArgStr(args, "--replay", "012-sweetshop-store.json"), ArgInt(args, "--step", 0), ArgStr(args, "--set", ""), ArgStr(args, "--then", "")),
             "verify" => Verify(),
             "cards" => DumpCards(),
             _ => Usage(),
@@ -632,6 +633,84 @@ public static class Program
         var path = Path.Combine(dir, "cards.json");
         File.WriteAllText(path, Manifest.Build());
         Console.WriteLine($"wrote {Registry.All.Count(c => c.Art is not null)} card definitions to {path}");
+        return 0;
+    }
+
+    /// <summary>
+    /// The C# bot's ranking at one step of a replay, printed the way
+    /// scripts/botparity.ts can be made to print the TypeScript bot's, so a
+    /// replay the two engines stop agreeing on can be lined up leaf by leaf.
+    /// </summary>
+    private static int Explain(string file, int stop, string set, string then)
+    {
+        var dir = Corpus.Directory();
+        if (dir is null)
+        {
+            Console.WriteLine("no replay corpus found; run `record` first");
+            return 1;
+        }
+        var replay = Replay.Load(Path.Combine(dir, file));
+        var d = replay.Decks;
+        var state = Engine.CreateGame(
+            new DeckList { Name = d[0].Name, LeaderId = d[0].LeaderId, Cards = d[0].Cards },
+            new DeckList { Name = d[1].Name, LeaderId = d[1].LeaderId, Cards = d[1].Cards },
+            replay.Seed,
+            replay.StartingPlayer);
+        for (int i = 0; i < stop && i < replay.Steps.Count; i++)
+        {
+            var step = replay.Steps[i];
+            // The bot decides every earlier step too, so the caches it fills
+            // along the way hold what they held when the replay was recorded.
+            Bot.ChooseAction(state, step.Actor);
+            var res = Engine.Apply(state, step.Actor, Replays.ParseAction(step.Action));
+            if (!res.Ok)
+            {
+                Console.WriteLine($"step {i} refused: {res.Error}");
+                return 1;
+            }
+            state = res.State!;
+        }
+        var w = new BotWeights();
+        foreach (var pair in set.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var parts = pair.Split('=');
+            var field = typeof(BotWeights).GetField(parts[0].Trim(),
+                BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)
+                ?? throw new ArgumentException($"no weight named {parts[0]}");
+            field.SetValue(w, double.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture));
+        }
+        int seat = replay.Steps[stop].Actor;
+        Console.WriteLine($"step {stop} turn {state.Turn} seat {seat}; recorded {replay.Steps[stop].Action}");
+        // --then <action json> plays one more action for the seat first, to
+        // look at the search from inside a line.
+        if (then.Length > 0)
+        {
+            var doc = System.Text.Json.JsonDocument.Parse(then).RootElement;
+            var extras = doc.ValueKind == System.Text.Json.JsonValueKind.Array
+                ? doc.EnumerateArray().Select(Replays.ParseAction).ToList()
+                : new List<GameAction> { Replays.ParseAction(doc) };
+            state = Bot.Redacted(state, seat);
+            int logFrom = state.Log.Count;
+            foreach (var extra in extras)
+            {
+                var res = Engine.Apply(state, seat, extra);
+                if (!res.Ok)
+                {
+                    Console.WriteLine($"then refused at {extra.Type}: {res.Error}");
+                    return 1;
+                }
+                state = Bot.SettleFor(res.State!, w);
+            }
+            foreach (var entry in state.Log.Skip(logFrom)) Console.WriteLine("      log: " + entry.Text);
+            for (int side = 0; side < state.Players.Length; side++)
+            {
+                var p = state.Players[side];
+                Console.WriteLine($"      seat {side}: leader {p.Leader?.RemainingHp ?? 0} debt {p.DebtCount} hand {p.Hand.Count} mana {p.Supporters.Count(x => !x.Sapped)}/{p.Supporters.Count} slots " + string.Join(",", p.Slots.Select(x => x is null ? "-" : x.CardId + ":" + x.RemainingHp + (x.Sapped ? "*" : ""))));
+            }
+            Console.WriteLine($"      evaluate {Bot.Evaluate(state, seat, w):F2} pending {state.Pending?.GetType().Name ?? "-"} queues {state.ChoiceQueue.Count}/{state.FlipQueue.Count}/{state.ReplaceQueue.Count}");
+            Console.WriteLine("      candidates " + string.Join(" | ", Bot.Candidates(state, seat, w)));
+        }
+        foreach (var line in Bot.Explain(state, seat, w)) Console.WriteLine("    " + line);
         return 0;
     }
 

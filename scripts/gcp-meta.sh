@@ -85,6 +85,11 @@ STARTUP="${BUILD}/startup.sh"
   # Progress goes to the bucket every five minutes for the watcher to read.
   echo "( while true; do sleep 300; tail -n 1 runs/${TAG}${SEED0}.log > runs/progress.txt 2>/dev/null; gcloud storage cp runs/progress.txt ${BUCKET}/runs-${TAG}/progress.txt >/dev/null 2>&1; done ) &"
   echo 'PROGRESS=$!'
+  # A checkpoint of every run folder every fifteen minutes, so a machine lost
+  # to a zone that cannot start it again is relaunched elsewhere from the
+  # last checkpoint rather than from the beginning.
+  echo "( while true; do sleep 900; for d in runs/${TAG}[0-9]*/; do [ -d \"\$d\" ] && gcloud storage cp -r \"\$d\" ${BUCKET}/runs-${TAG}/ >/dev/null 2>&1; done; done ) &"
+  echo 'CHECKPOINT=$!'
   echo "THREADS=\$(( \$(nproc) / ${SEEDS} ))"
   echo '[ "$THREADS" -lt 1 ] && THREADS=1'
   # The waits name their jobs: a bare wait would also wait on the progress
@@ -101,6 +106,7 @@ STARTUP="${BUILD}/startup.sh"
   done
   echo 'wait $DBS'
   echo 'kill $PROGRESS 2>/dev/null'
+  echo 'kill $CHECKPOINT 2>/dev/null'
   echo "gcloud storage cp -r runs/${TAG}* ${BUCKET}/runs-${TAG}/ > runs/upload.log 2>&1"
   echo 'touch runs/ALL_DONE'
   echo "gcloud storage cp runs/ALL_DONE ${BUCKET}/runs-${TAG}/ALL_DONE >/dev/null 2>&1"
@@ -128,15 +134,30 @@ if [ -z "${CREATED}" ]; then echo "no capacity for any of ${MACHINE} in ${ZONE}"
 echo "created ${VM} as ${MACHINE} in ${ZONE}"
 
 echo "running; watching ${BUCKET}/runs-${TAG}/ every five minutes"
+# A pre-empted machine is started again in its zone. When the zone has no
+# capacity to start it three polls in a row, the machine is given up: the
+# run's last checkpoint is in the bucket, and a caller that sees exit code 3
+# can create a machine wherever there is one and resume from it.
+FAILED=0
 while true; do
   sleep 300
   if gcloud storage ls "${BUCKET}/runs-${TAG}/ALL_DONE" >/dev/null 2>&1; then break; fi
   STATUS=$(gcloud compute instances describe "${VM}" --zone "${ZONE}" --format="value(status)" 2>/dev/null || echo "GONE")
   if [ "${STATUS}" = "TERMINATED" ] || [ "${STATUS}" = "STOPPED" ]; then
-    echo "pre-empted; starting ${VM} again, it resumes on boot"
-    gcloud compute instances start "${VM}" --zone "${ZONE}" --quiet >/dev/null 2>&1 || true
+    if gcloud compute instances start "${VM}" --zone "${ZONE}" --quiet >/dev/null 2>&1; then
+      echo "pre-empted; started ${VM} again, it resumes on boot"
+      FAILED=0
+    else
+      FAILED=$((FAILED + 1))
+      echo "pre-empted, and ${ZONE} has no capacity to start it again (${FAILED} of 3)"
+      if [ "${FAILED}" -ge 3 ]; then
+        echo "zone exhausted; the last checkpoint is in ${BUCKET}/runs-${TAG}/, relaunch elsewhere"
+        exit 3
+      fi
+    fi
     continue
   fi
+  FAILED=0
   gcloud storage cat "${BUCKET}/runs-${TAG}/progress.txt" 2>/dev/null | cut -c1-100 || true
 done
 

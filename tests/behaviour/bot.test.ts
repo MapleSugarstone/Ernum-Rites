@@ -6,7 +6,7 @@
 // and the two engines agreeing.
 import { describe, expect, it } from 'vitest';
 import { starterDecks } from '../../src/cards';
-import { chooseAction, clearPlan, evaluate, setIntel } from '../../src/ai/bot';
+import { chooseAction, clearPlan, defaultWeights, evaluate, nextTurn, setIntel } from '../../src/ai/bot';
 import { applyAction, createGame } from '../../src/engine/engine';
 import {
   currentActor,
@@ -365,5 +365,49 @@ describe('the read on the opponent', () => {
     } finally {
       setIntel(null);
     }
+  });
+});
+
+describe('the reply', () => {
+  it('plays the opponent out even when their reply stops on an offer of their own', () => {
+    // Helemy's side holds one body and three Pepper; the other side's Acolyte
+    // takes it on its turn, and the clash flips one of the Acolyte's own HP
+    // cards, which carries a cost. The reply's search left that offer open,
+    // because the paused blow read better than either answer, and the turn
+    // could not end: the position got no reply at all, so standing still was
+    // judged without one while every line that traded was judged after one.
+    const ember = starterDecks.find((d) => d.key === 'emberchoir')!;
+    const sweet = starterDecks.find((d) => d.key === 'sweetshop')!;
+    let s = createGame(
+      [
+        { name: 'Bot', leaderId: 'p3-helemy', cards: [...ember.cards] },
+        { name: 'Other', leaderId: 'n3-AcolyteofGrinkle', cards: [...sweet.cards] },
+      ],
+      3,
+      0,
+    );
+    const step = (actor: 0 | 1, action: Parameters<typeof applyAction>[2]) => {
+      const res = applyAction(s, actor, action);
+      if (!res.ok) throw new Error(`${action.type}: ${res.error}`);
+      s = res.state;
+    };
+    s.players[0].hand = ['m-rg-recomp'];
+    s.players[1].hand = [];
+    step(0, { type: 'PLAY_SUMMON', handIndex: 0, slot: 0 });
+    step(0, { type: 'END_TURN' });
+    s.players[1].hand = ['n3-AcolyteofGrinkle'];
+    step(1, { type: 'PLAY_SUMMON', handIndex: 0, slot: 0 });
+    step(1, { type: 'END_TURN' });
+    s.players[0].hand = [];
+    s.players[1].hand = [];
+    for (let i = 0; i < 3; i++) s.players[0].supporters.push({ cardId: 'p2-warmateer', sapped: false });
+
+    setIntel(null);
+    clearPlan();
+    chooseAction(s, 0);
+    const next = nextTurn(s, 0, defaultWeights);
+    expect(next).not.toBeNull();
+    expect(next!.players[1].turnsTaken).toBe(s.players[1].turnsTaken + 1);
+    expect(next!.flipQueue.length).toBe(0);
   });
 });
