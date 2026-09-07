@@ -163,6 +163,11 @@ resulting ladder.
 
 - `--no-net` is required. The evaluator plays and only the decks evolve. With
   networks on, the same wall clock buys a few hundred games instead of 198,000.
+- Decks evolve their size between `--deck-size 48` and `--deck-max 54`
+  (both default): a generated deck draws a size across the range, and a
+  quarter of a loser's swaps are a step in size rather than a card swap.
+  Pass the same number for both to fix the size. The Sim's candy and
+  random pools are not affected and stay at 48.
 - `--every-leader` puts all 220 leaders in, which is what makes the identity
   analysis possible. Without it you get 24 random leaders.
 - 200 rounds is the working default. 900 and 300 were both tried; seed-to-seed

@@ -49,6 +49,49 @@ public sealed class BotWeights
     /// <summary>A kill that is already assembled but not reachable until next turn.</summary>
     public double StandingKill = 60;
     /// <summary>
+    /// Per point of damage the opponent can put on the bot's leader on the
+    /// turn after their reply, when the bot's own threat does not close the
+    /// game first. The reply is one turn; this is the one behind it, which is
+    /// where a combo one mana short today lands, and what a blocker, a held
+    /// trap or a cleared board is measured against.
+    /// </summary>
+    public double Peril = 0;
+    /// <summary>A kill they have assembled for the turn after their reply, if nothing changes.</summary>
+    public double StandingDeath = 0;
+    /// <summary>
+    /// Pips the deck scan hands a kit on its probe board. Three is the opening
+    /// turns; a leader's kill usually wants five to seven, and at three the
+    /// scan read Warmateer beside Helemy as a third of a kill and Bone Known
+    /// as nothing. Six is the mana a game reaches by the time the pieces are
+    /// held.
+    /// </summary>
+    public double KitPips = 6;
+    /// <summary>Debt the scan's probe board starts at, so a piece that scales with debt is probed where it is played.</summary>
+    public double KitDebt = 8;
+    /// <summary>
+    /// Whether one card beside the leader can be a kit. The leader is on every
+    /// board the deck plays, so a card that turns its Power into a kill is the
+    /// kit's only loose piece, and it is worth holding like any other.
+    /// </summary>
+    public double KitSolo = 1;
+    /// <summary>
+    /// Per point of the enemy pool's unseen spell burst a spell trap in hand
+    /// can answer. The reply plays the believed hand, which holds no spells,
+    /// so a counter never springs inside the search and read as a card to
+    /// play face down. A battle trap needs no such term: the reply attacks,
+    /// and the search springs it there.
+    /// </summary>
+    public double TrapHold = 0.5;
+    /// <summary>
+    /// Share of a kit piece's progress it keeps on the board while the kit's
+    /// mana is not there yet. In the pro meta check Warmateer landed on turn
+    /// two with no supporters in 231 of 274 Helemy games and was never
+    /// Rallied or fed to Alchemize in 162 of them: a body on the board is
+    /// traded off, a card in hand waits for the pips. One is the old reading,
+    /// where the board and the hand count the same.
+    /// </summary>
+    public double KitExposed = 0.5;
+    /// <summary>
     /// How much of a position's score is read after the opponent has answered
     /// it rather than where it stands. The rest is read where it stands,
     /// because the reply is a greedy guess and a position should not be judged
@@ -405,6 +448,7 @@ public static class Bot
             {
                 var held = Registry.Card(id);
                 hand += w.Hand + w.HandLevel * (held.Level - 1) + w.HandDraw * CardDoesOf(state, side, held, w).Draw;
+                if (held.SpellTrap && w.TrapHold > 0) hand += w.TrapHold * TrapAnswers(state, side, held, w);
             }
             score += sign * hand;
 
@@ -2147,6 +2191,9 @@ public static class Bot
         public string[] Ranked = Array.Empty<string>();
         /// <summary>Mean burst of the top quarter: what one unseen card is priced at.</summary>
         public double Top;
+        /// <summary>Mean burst of the top quarter of the pool's spells: what one unseen spell is priced at.</summary>
+        public double SpellTop { get; init; }
+
     }
     private static readonly Dictionary<string, PoolPrior> _priors = new(StringComparer.Ordinal);
     private static readonly PoolPrior NoPrior = new();
@@ -2160,6 +2207,26 @@ public static class Bot
     /// once per process per leader. It reads no game state, so it is the same
     /// table in every game and in both engines whichever thread fills it first.
     /// </summary>
+    /// <summary>
+    /// The unseen spell burst a spell trap in hand can answer: the enemy
+    /// pool's worst spells over the cards they hold unseen, for a trap its
+    /// owner could pay for.
+    /// </summary>
+    private static double TrapAnswers(GameState state, int side, CardDef def, BotWeights w)
+    {
+        var p = state.Players[side];
+        if (!def.SpellTrap || !Engine.CanPay(p, Engine.CostFor(p, def))) return 0;
+        double worst = 0;
+        foreach (int foe in LivingOpponents(state, side))
+        {
+            var q = state.Players[foe];
+            int unseen = UnseenIn(q);
+            if (unseen <= 0) continue;
+            worst = Math.Max(worst, Math.Min(DangerCap, PoolPriorOf(q.LeaderCardId, w).SpellTop * unseen));
+        }
+        return worst;
+    }
+
     private static PoolPrior PoolPriorOf(string leaderId, BotWeights w)
     {
         lock (_priors)
@@ -2184,7 +2251,16 @@ public static class Bot
         int quarter = (ranked.Length + 3) / 4;
         double sum = 0;
         for (int i = 0; i < quarter; i++) sum += bursts[ranked[i]];
-        var prior = new PoolPrior { Ranked = ranked, Top = quarter > 0 ? sum / quarter : 0 };
+        var spells = ranked.Where(id => Registry.Card(id).Type == CardType.Spell).ToArray();
+        int spellQuarter = (spells.Length + 3) / 4;
+        double spellSum = 0;
+        for (int i = 0; i < spellQuarter; i++) spellSum += bursts[spells[i]];
+        var prior = new PoolPrior
+        {
+            Ranked = ranked,
+            Top = quarter > 0 ? sum / quarter : 0,
+            SpellTop = spellQuarter > 0 ? spellSum / spellQuarter : 0,
+        };
         lock (_priors)
         {
             _priors[leaderId] = prior;
@@ -2489,18 +2565,38 @@ public static class Bot
             if (b is not null) Note(b.CardId);
         }
 
+        // Every piece is probed on the same board the sets are, at the mana
+        // and debt of the turns a kit is played on, so a part and its set
+        // compare.
+        int pips = Math.Max(1, (int)Math.Round(w.KitPips));
+        int debt = Math.Max(0, (int)Math.Round(w.KitDebt));
         var single = new Dictionary<string, double>(StringComparer.Ordinal);
-        foreach (var id in ids) single[id] = ProbedReach(state, me, Registry.Card(id), w);
+        foreach (var id in ids)
+        {
+            var def = Registry.Card(id);
+            bool bare = def.Type == CardType.Summon && (def.Powers?.Length ?? 0) == 0 && def.Triggers is null && def.EffectDamage == 0;
+            single[id] = bare ? ProbedReach(state, me, def, w) : KitReach(state, me, new[] { id }, w, debt, pips);
+        }
         var pairCards = ids.OrderByDescending(id => single[id]).Take(KitPairCards).ToList();
 
         var kits = new List<Kit>();
+        // One card beside the leader: a kit whose other piece is on every board.
+        if (w.KitSolo > 0)
+        {
+            double alone = KitReach(state, me, Array.Empty<string>(), w, debt, pips);
+            foreach (var id in pairCards)
+            {
+                double reach = single[id];
+                if (reach >= KitMinReach && reach > alone + KitSynergy) kits.Add(new Kit(new[] { id }, reach));
+            }
+        }
         var pairBest = new Dictionary<string, double>(StringComparer.Ordinal);
         for (int i = 0; i < pairCards.Count; i++)
         {
             for (int j = i + 1; j < pairCards.Count; j++)
             {
                 var set = new[] { pairCards[i], pairCards[j] };
-                double reach = KitReach(state, me, set, w);
+                double reach = KitReach(state, me, set, w, debt, pips);
                 // Added, not the larger: two bodies that each reach a third reach
                 // two thirds side by side, and that is a pile rather than a kit.
                 double parts = Math.Min(1, single[set[0]] + single[set[1]]);
@@ -2524,7 +2620,7 @@ public static class Bot
                         var rest = set.FirstOrDefault(id => !kit.Cards.Contains(id));
                         parts = Math.Max(parts, Math.Min(1, kit.Reach + (rest is null ? 0 : single[rest])));
                     }
-                    double reach = KitReach(state, me, set, w);
+                    double reach = KitReach(state, me, set, w, debt, pips);
                     if (reach >= KitMinReach && reach > parts + KitSynergy) kits.Add(new Kit(set, reach));
                 }
             }
@@ -2578,23 +2674,30 @@ public static class Bot
     {
         if (_kits is null || !_kits.TryGetValue(KitKey(state, me), out var kits) || kits.Count == 0) return 0;
         var p = state.Players[me];
-        var held = new HashSet<string>(p.Hand, StringComparer.Ordinal);
+        var safe = new HashSet<string>(p.Hand, StringComparer.Ordinal);
+        if (p.Leader is not null) safe.Add(p.Leader.CardId);
+        var onBoard = new HashSet<string>(StringComparer.Ordinal);
         foreach (var b in p.Slots)
         {
-            if (b is not null) held.Add(b.CardId);
+            if (b is not null) onBoard.Add(b.CardId);
         }
-        if (p.Leader is not null) held.Add(p.Leader.CardId);
         var inDeck = new HashSet<string>(p.Deck, StringComparer.Ordinal);
+        // The pips the next turn brings, against the mana the scan probed the
+        // kit at: short of it, a piece on the board is waiting where it can be
+        // killed.
+        int pips = p.Supporters.Count + (p.SupportersLeft > 0 ? 1 : 0);
+        double boardShare = pips >= (int)Math.Round(w.KitPips) ? 1 : w.KitExposed;
         double best = 0;
         foreach (var kit in kits)
         {
-            int have = 0, outs = 0;
+            double have = 0;
             foreach (var id in kit.Cards)
             {
-                if (held.Contains(id)) have++;
-                else if (inDeck.Contains(id)) outs++;
+                if (safe.Contains(id)) have += 1;
+                else if (onBoard.Contains(id)) have += boardShare;
+                else if (inDeck.Contains(id)) have += KitOutWeight;
             }
-            double progress = (have + KitOutWeight * outs) / kit.Cards.Length;
+            double progress = have / kit.Cards.Length;
             best = Math.Max(best, kit.Reach * progress * progress);
         }
         return w.Combo * best;
@@ -3205,9 +3308,46 @@ public static class Bot
         int reach = Math.Max(
             Burn(next, me, MaxThreatSteps, w).Damage,
             Burn(next, me, MaxThreatSteps, w, MaxThreatSetup).Damage);
-        if (reach <= 0) return settled;
-        return settled + w.Threat * Math.Min(reach, foeHp)
-            + (reach >= foeHp ? w.StandingKill : 0);
+        double total = settled;
+        if (reach > 0) total += w.Threat * Math.Min(reach, foeHp) + (reach >= foeHp ? w.StandingKill : 0);
+        // The turn behind their reply is theirs again. A kill the bot has
+        // standing lands first, so their turn after is charged only when the
+        // bot's does not close the game.
+        if (w.Peril > 0 && reach < foeHp)
+        {
+            int myHp = LeaderHpOf(next, me);
+            int peril = PerilOf(next, me, w);
+            if (peril > 0 && myHp > 0) total -= w.Peril * Math.Min(peril, myHp) + (peril >= myHp ? w.StandingDeath : 0);
+        }
+        return total;
+    }
+
+    /// <summary>
+    /// What they can put on the bot's leader on the turn after their reply, if
+    /// the bot's own next turn changes nothing: the position after the reply
+    /// with the bot's turn passed, then their kill rollout, racing and patient.
+    /// The turn start draws them a card off their real list, the same one card
+    /// the reply itself sees.
+    /// </summary>
+    private static int PerilOf(GameState next, int me, BotWeights w)
+    {
+        if (next.IsOver || next.Active != me || next.Phase != Phase.Main || next.Pending is not null) return 0;
+        var ended = Engine.Apply(next, me, GameAction.EndTurn());
+        if (!ended.Ok) return 0;
+        var s = ended.State!;
+        for (int i = 0; i < 8; i++)
+        {
+            if (s.IsOver) return 0;
+            if (s.Active != me && s.Phase == Phase.Main && s.Pending is null) break;
+            var res = Engine.Apply(s, s.CurrentActor, PassAction(s));
+            if (!res.Ok) return 0;
+            s = res.State!;
+        }
+        if (s.IsOver || s.Active == me || s.Phase != Phase.Main || s.Pending is not null) return 0;
+        int foe = s.Active;
+        return Math.Max(
+            Burn(s, foe, MaxThreatSteps, w).Damage,
+            Burn(s, foe, MaxThreatSteps, w, MaxThreatSetup).Damage);
     }
 
     private sealed class Leaf
@@ -3490,6 +3630,85 @@ public static class Bot
         w ??= BotWeights.Default;
         var s = RedactTable(state, me);
         return CandidateActions(s, me).Select(a => Describe(new List<GameAction> { a })).ToList();
+    }
+
+    /// <summary>One decision re-searched: the best line's outlook, the played action's, and the gap between them.</summary>
+    public sealed record Regret(double Best, double Played, string BestLine, string PlayedAction, bool BestKills, bool PlayedKills)
+    {
+        public double Gap => Best - Played;
+    }
+
+    /// <summary>
+    /// A decision from a logged game, searched again with whatever profile is
+    /// set now, and the action that was played scored against the best line
+    /// found: the played action's value is the best outlook among the lines
+    /// that begin with it, searched on from it when none of the gathered ones
+    /// do. Null when the position is not a main-phase decision for the seat.
+    /// The search sees the redacted table, so the label is on what the seat
+    /// could know, not on hindsight.
+    /// </summary>
+    public static Regret? RegretOf(GameState state, int me, GameAction played, BotWeights? w = null)
+    {
+        w ??= BotWeights.Default;
+        if (state.IsOver || state.Active != me || state.Phase != Phase.Main || state.Pending is not null) return null;
+        if (state.ChoiceQueue.Count > 0 || state.FlipQueue.Count > 0 || state.ReplaceQueue.Count > 0) return null;
+        ClearShops();
+        Peek(state, me);
+        _rootSeat = me;
+        _rootSet = true;
+        state = RedactTable(state, me);
+        EnsureKits(state, me, w);
+        var reads = ReadTable(state, me);
+        var stand = new Leaf { State = state, Line = new List<GameAction>(), Score = Evaluate(state, me, w) };
+        var ranked = new List<Leaf> { stand };
+        var seen = new HashSet<string> { Digest.Of(state) };
+        foreach (var leaf in SearchTurn(state, me, w, reads))
+        {
+            if (ranked.Count > ThreatLeaves) break;
+            if (!seen.Add(Digest.Of(leaf.State))) continue;
+            ranked.Add(leaf);
+        }
+        string playedKey = Describe(new List<GameAction> { played });
+        double best = double.NegativeInfinity;
+        Leaf? bestLeaf = null;
+        double playedTotal = double.NaN;
+        foreach (var leaf in ranked)
+        {
+            double total = leaf.Score >= Win ? Win : Outlook(leaf.State, me, w, leaf.Score);
+            if (total > best)
+            {
+                best = total;
+                bestLeaf = leaf;
+            }
+            bool heads = leaf.Line.Count > 0
+                ? Describe(leaf.Line.Take(1).ToList()) == playedKey
+                : played.Type == ActionType.EndTurn;
+            if (heads && (double.IsNaN(playedTotal) || total > playedTotal)) playedTotal = total;
+        }
+        if (double.IsNaN(playedTotal))
+        {
+            // The played action heads none of the gathered lines: search on
+            // from it and take the best of what follows.
+            var res = Engine.Apply(state, me, played);
+            if (!res.Ok) return null;
+            var after = Settle(res.State!, w);
+            if (after.IsOver) playedTotal = after.Winner == me ? Win : -Win;
+            else if (after.Active != me || after.Phase != Phase.Main || after.Pending is not null)
+            {
+                playedTotal = Outlook(after, me, w, Evaluate(after, me, w));
+            }
+            else
+            {
+                playedTotal = Outlook(after, me, w, Evaluate(after, me, w));
+                foreach (var leaf in SearchTurn(after, me, w, reads).Take(ThreatLeaves))
+                {
+                    double total = leaf.Score >= Win ? Win : Outlook(leaf.State, me, w, leaf.Score);
+                    if (total > playedTotal) playedTotal = total;
+                }
+            }
+        }
+        return new Regret(best, playedTotal, bestLeaf is null || bestLeaf.Line.Count == 0 ? "stand" : Describe(bestLeaf.Line),
+            playedKey, best >= Win, playedTotal >= Win);
     }
 
     private static string Describe(List<GameAction> line)

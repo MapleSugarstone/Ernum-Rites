@@ -132,6 +132,42 @@ public static class Learning
             }
         });
 
+        Harness.Test("a deck evolves its size across the range the shape allows and stays legal", () =>
+        {
+            var rng = new Gauss(31);
+            var shape = new DeckShape { MaxSize = 54 };
+            string leader = "m-bg-machineblue";
+            var sizes = new HashSet<int>();
+            for (int i = 0; i < 12; i++)
+            {
+                var fresh = DeckGen.Random(leader, shape, rng);
+                Harness.True(DeckGen.Validate(leader, fresh, shape.Size, shape.Largest) is null, "generated deck is legal");
+                sizes.Add(fresh.Count);
+            }
+            Harness.True(sizes.Count > 1, "generated decks take more than one size");
+            Harness.True(sizes.Min() >= 48 && sizes.Max() <= 54, "generated sizes stay within 48 to 54");
+
+            var deck = DeckGen.Random(leader, shape, rng);
+            var stats = new CardStats();
+            var seen = new HashSet<int> { deck.Count };
+            for (int i = 0; i < 40; i++)
+            {
+                deck = DeckGen.Mutate(leader, deck, 4, c => stats.Score(c), c => stats.GlobalScore(c, 100), rng, shape.Size, shape.Largest);
+                var bad = DeckGen.Validate(leader, deck, shape.Size, shape.Largest);
+                Harness.True(bad is null, $"after {i + 1} rounds of swaps: {bad}");
+                seen.Add(deck.Count);
+            }
+            Harness.True(seen.Count > 1, "the size moved during evolution");
+
+            var fixedShape = DeckShape.Default;
+            var held = DeckGen.Random(leader, fixedShape, rng);
+            for (int i = 0; i < 12; i++)
+            {
+                held = DeckGen.Mutate(leader, held, 4, c => stats.Score(c), c => stats.GlobalScore(c, 100), rng);
+                Harness.True(held.Count == fixedShape.Size, "a shape without a range keeps the size fixed");
+            }
+        });
+
         Harness.Test("spreading leaders covers every colour pair before repeating one", () =>
         {
             var rng = new Gauss(7);

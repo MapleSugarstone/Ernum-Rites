@@ -54,7 +54,17 @@ public enum LeaderPool
 /// <summary>How a generated deck is shaped before the tournament starts pulling it apart.</summary>
 public sealed class DeckShape
 {
+    /// <summary>Cards in a generated deck, and the fewest a deck may evolve down to.</summary>
     public int Size { get; init; } = 48;
+    /// <summary>
+    /// The most cards a deck may evolve up to. At the default the size is
+    /// fixed; the rules allow 48 to 54, and a tournament that sets this lets
+    /// each deck find its own size, since more or fewer cards is neither good
+    /// nor bad on its own.
+    /// </summary>
+    public int MaxSize { get; init; }
+    /// <summary>The largest size a deck may take under this shape.</summary>
+    public int Largest => Math.Max(Size, MaxSize);
     public int Summons { get; init; } = 24;
     public int Spells { get; init; } = 14;
     public int Traps { get; init; } = 3;
@@ -234,6 +244,8 @@ public static class DeckGen
         if (pool.Count == 0) throw new InvalidOperationException($"{leaderId} has no legal pool");
         var counts = new Dictionary<int, int>();
         int total = 0;
+        // The size is drawn once per deck across the range the shape allows.
+        int size = shape.Size + rng.NextInt(shape.Largest - shape.Size + 1);
 
         void Take(Func<CardDef, bool> want, int howMany, Func<CardDef, double> bias)
         {
@@ -285,16 +297,16 @@ public static class DeckGen
                 if (CardIndex.Def(card).Color == col) have += n;
             }
             int need = shape.MinPerDemandedColor - have;
-            if (need > 0 && total + need <= shape.Size)
+            if (need > 0 && total + need <= size)
             {
                 Take(d => d.Color == col && d.Color2 is null, need, _ => 1);
             }
         }
 
-        int shortfall = shape.Size - total;
+        int shortfall = size - total;
         if (shortfall > 0) Take(_ => true, shortfall, d => d.Type == CardType.Summon ? 1.4 : 1);
 
-        return Expand(counts, shape.Size, pool, rng);
+        return Expand(counts, size, pool, rng);
     }
 
     private static List<string> Expand(Dictionary<int, int> counts, int size, List<int> pool, Gauss rng)
@@ -319,13 +331,19 @@ public static class DeckGen
         return list;
     }
 
+    /// <summary>Share of the swaps that change the deck's size instead, when a range allows it.</summary>
+    private const double SizeStepShare = 0.25;
+
     /// <summary>
     /// Swaps cards out of a deck that just lost. Removals come from the bottom of
     /// whatever the agent learned about its own cards, additions from the pool
-    /// weighted by how the card has done for everyone.
+    /// weighted by how the card has done for everyone. Given a size range, a
+    /// quarter of the swaps are a step in size instead: a drop with no add, or
+    /// an add with no drop, so the deck's size evolves with its cards.
     /// </summary>
     public static List<string> Mutate(string leaderId, IReadOnlyList<string> deck, int swaps,
-        Func<int, double> localScore, Func<int, double> globalScore, Gauss rng)
+        Func<int, double> localScore, Func<int, double> globalScore, Gauss rng,
+        int minSize = 0, int maxSize = 0)
     {
         var counts = new Dictionary<int, int>();
         foreach (var id in deck)
@@ -337,9 +355,21 @@ public static class DeckGen
         var pool = PoolFor(leaderId);
         var poolSet = new HashSet<int>(pool);
         int size = deck.Count;
+        if (minSize <= 0) minSize = size;
+        if (maxSize < minSize) maxSize = minSize;
+        size = Math.Clamp(size, minSize, maxSize);
 
         for (int s = 0; s < swaps; s++)
         {
+            bool drop = true;
+            bool add = true;
+            if (maxSize > minSize && rng.Uniform() < SizeStepShare)
+            {
+                bool up = rng.Uniform() < 0.5;
+                if (up && size < maxSize) { drop = false; size++; }
+                else if (!up && size > minSize) { add = false; size--; }
+            }
+
             // Drop: worst local score, with a nudge so the same card is not
             // always the one that goes.
             int worst = -1;
@@ -354,9 +384,13 @@ public static class DeckGen
                     worst = card;
                 }
             }
-            if (worst < 0) break;
-            counts[worst]--;
-            if (counts[worst] <= 0) counts.Remove(worst);
+            if (drop)
+            {
+                if (worst < 0) break;
+                counts[worst]--;
+                if (counts[worst] <= 0) counts.Remove(worst);
+            }
+            if (!add) continue;
 
             // Add: best of a small random slate, so the population explores
             // rather than everyone converging on the same four cards.
@@ -384,14 +418,17 @@ public static class DeckGen
         return Expand(counts, size, pool, rng);
     }
 
-    /// <summary>Why a deck is illegal, or null when it is fine.</summary>
-    public static string? Validate(string leaderId, IReadOnlyList<string> cards, int expectedSize = 0)
+    /// <summary>Why a deck is illegal, or null when it is fine. A size alone is exact; two are a range.</summary>
+    public static string? Validate(string leaderId, IReadOnlyList<string> cards, int minSize = 0, int maxSize = 0)
     {
         CardIndex.EnsureBuilt();
         if (!Identity.CanBeLeader(leaderId)) return $"{leaderId} cannot stand as a leader";
-        if (expectedSize > 0 && cards.Count != expectedSize)
+        if (maxSize < minSize) maxSize = minSize;
+        if (minSize > 0 && (cards.Count < minSize || cards.Count > maxSize))
         {
-            return $"deck has {cards.Count} cards, wanted {expectedSize}";
+            return minSize == maxSize
+                ? $"deck has {cards.Count} cards, wanted {minSize}"
+                : $"deck has {cards.Count} cards, wanted {minSize} to {maxSize}";
         }
         var (ok, _, off) = Identity.CheckDeckColors(leaderId, cards);
         if (!ok) return $"off-colour: {string.Join(", ", off.Take(4))}";

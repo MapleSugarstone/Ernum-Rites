@@ -113,6 +113,8 @@ import {
   type DraftState,
 } from './ui/draft';
 import { allCards, card, tryCard } from './engine/registry';
+import { actionToWire, type WireAction } from './engine/replay';
+import { cardSetHash } from './engine/cardhash';
 import {
   choiceIsLive,
   allSummons,
@@ -7112,6 +7114,7 @@ function dispatch(action: Action): void {
   } else {
     applyActionFx(ui.state, res.state, action, by);
     ui.state = res.state;
+    recordMatchStep(by, action);
     ui.error = null;
     ui.selection = null;
     ui.targeting = null;
@@ -7203,6 +7206,7 @@ function botStep(): void {
   }
   applyActionFx(state, res.state, action, ui.botSeat);
   ui.state = res.state;
+  recordMatchStep(ui.botSeat, action);
   render();
   playSounds();
   playTrapReveal();
@@ -7688,6 +7692,101 @@ function playOpeningDraw(seat: PlayerIdx): void {
   playHandPlays();
 }
 
+// --- the game log ------------------------------------------------------------
+// A game against the bot is played entirely here, so it is this client that
+// tells the server how it went: the seed, the lists, every action, and which
+// build and card set played it. Nothing that names the player goes with it.
+// A record that cannot be sent waits in local storage for the next visit.
+
+interface MatchLog {
+  seed: number;
+  startingPlayer: number;
+  decks: { leaderId: string; cards: string[] }[];
+  steps: { actor: number; action: WireAction }[];
+  posted: boolean;
+}
+let matchLog: MatchLog | null = null;
+const LOG_QUEUE_KEY = 'ernum-game-log-queue';
+const LOG_QUEUE_MAX = 8;
+
+function beginMatchLog(decks: readonly DeckList[], seed: number): void {
+  matchLog =
+    ui.state && ui.botSeat !== null
+      ? {
+          seed,
+          startingPlayer: ui.state.startingPlayer,
+          decks: decks.map((d) => ({ leaderId: d.leaderId, cards: [...d.cards] })),
+          steps: [],
+          posted: false,
+        }
+      : null;
+}
+
+function recordMatchStep(actor: PlayerIdx, action: Action): void {
+  if (!matchLog || !ui.state || ui.botSeat === null || matchLog.posted) return;
+  matchLog.steps.push({ actor, action: actionToWire(action) });
+  if (isOver(ui.state)) {
+    matchLog.posted = true;
+    void postGameLog({
+      format: 1,
+      kind: 'solo',
+      version: __APP_VERSION__,
+      build: __BUILD__,
+      cards: cardSetHash(),
+      seed: matchLog.seed,
+      startingPlayer: matchLog.startingPlayer,
+      botSeat: ui.botSeat,
+      decks: matchLog.decks,
+      steps: matchLog.steps,
+      winner: ui.state.winner ?? -1,
+      winReason: ui.state.winReason,
+      turns: ui.state.turn,
+    });
+  }
+}
+
+/** Send a finished game to the server, or keep it for the next visit when that fails. */
+async function postGameLog(record: Record<string, unknown>): Promise<void> {
+  if (!onlineAvailable()) return;
+  const queued = readLogQueue();
+  const batch = [...queued, record];
+  const left: Record<string, unknown>[] = [];
+  for (const item of batch) {
+    try {
+      const res = await fetch(`${serverBase()}/api/log`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(item),
+        keepalive: true,
+      });
+      // A record the server refuses is dropped rather than retried forever.
+      if (!res.ok && res.status !== 400 && res.status !== 413) left.push(item);
+    } catch {
+      left.push(item);
+    }
+  }
+  writeLogQueue(left.slice(-LOG_QUEUE_MAX));
+}
+
+function readLogQueue(): Record<string, unknown>[] {
+  try {
+    const raw = localStorage.getItem(LOG_QUEUE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    return Array.isArray(parsed) ? (parsed as Record<string, unknown>[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLogQueue(items: Record<string, unknown>[]): void {
+  try {
+    if (items.length === 0) localStorage.removeItem(LOG_QUEUE_KEY);
+    else localStorage.setItem(LOG_QUEUE_KEY, JSON.stringify(items));
+  } catch {
+    // Storage full or blocked: the record is lost, and the game is not.
+  }
+}
+
 function startMatch(decks: [DeckList, DeckList]): void {
   // A new match owns the story from here, so the last one cannot be offered as
   // though it were this one.
@@ -7698,6 +7797,7 @@ function startMatch(decks: [DeckList, DeckList]): void {
   ui.state = createGame(decks, seed, (seed & 1) as PlayerIdx);
   ui.screen = 'game';
   ui.botSeat = ui.setupMode === 'ai' ? 1 : null;
+  beginMatchLog(decks, seed);
   ui.botBusy = false;
   ui.selection = null;
   ui.targeting = null;

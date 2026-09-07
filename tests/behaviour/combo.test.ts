@@ -16,7 +16,7 @@ import { applyAction, createGame } from '../../src/engine/engine';
 import { allCards, card } from '../../src/engine/registry';
 import { fusedRecomp, graftedCopy } from '../../src/engine/generated';
 import { deckIdentity, isLegalUnder } from '../../src/engine/identity';
-import { DEBT_LIMIT, type GameState, type SummonInstance } from '../../src/engine/state';
+import { currentActor, DEBT_LIMIT, isOver, type GameState, type SummonInstance } from '../../src/engine/state';
 import type { Action } from '../../src/engine/actions';
 import type { PlayerIdx } from '../../src/engine/types';
 
@@ -341,11 +341,11 @@ describe('reading the opponent', () => {
 describe('the deck scan', () => {
   it('finds the Scientist kit in a list that carries it, and nothing in a list of vanillas', () => {
     // The probe puts a wall in front of the enemy leader, so three bodies that
-    // could swing at an open leader are a pile rather than a kit. Experiments
-    // into Dark Knowledge are the engine: Bone Known clears the wall or feeds
-    // Alchemize, and the third piece is whichever body the scan finds reaches
-    // least on its own. The engine has to be in the best kit, and the vanilla
-    // Beast may ride along as that third piece.
+    // could swing at an open leader are a pile rather than a kit. Dark
+    // Knowledge is the engine: Bone Known clears the wall or feeds Alchemize,
+    // and probed at the debt of the turns a kit is played on, Helemy and Bone
+    // Known alone are the kill. The engine has to be in the best kit, and the
+    // Scientist line that draws into it has to be a kit of its own.
     const kit = [
       ...Array(38).fill(FILLER),
       'p3-helemy', 'p3-helemy', 'o2-boneknown', 'o2-boneknown', 'o2-scientist', 'o2-scientist',
@@ -365,12 +365,62 @@ describe('the deck scan', () => {
     expect(found.length, 'one kit').toBeGreaterThan(0);
     const best = found[0];
     expect(best.reach).toBeGreaterThanOrEqual(0.9);
-    for (const id of ['o2-scientist', 'o2-boneknown']) {
-      expect(best.cards, `${id} is in the best kit`).toContain(id);
-    }
+    expect(best.cards, 'the engine is in the best kit').toContain('o2-boneknown');
+    expect(found.some((k) => k.cards.includes('o2-scientist') && k.reach >= 0.9), 'the Scientist line is a kit').toBe(true);
 
     chooseAction(s, 1);
     expect(kitsFor(s, 1), 'a list of vanillas holds no kit').toHaveLength(0);
+  });
+
+  it('keeps one card beside the leader as a kit, probed at the mana the kill wants', () => {
+    // Helemy leads and the list holds Warmateer: three Rallies and Alchemize
+    // is a kill at six pips, and the leader is on every board, so Warmateer
+    // is the kit's one loose piece. At three pips it read as a third of a
+    // kill and the scan kept nothing, so a Helemy deck never held it.
+    const list = [...Array(46).fill(FILLER), 'p2-warmateer', 'p2-warmateer'];
+    const other = { name: 'B', leaderId: LEADER, cards: Array(48).fill(FILLER) };
+    const s = createGame([{ name: 'A', leaderId: 'p3-helemy', cards: list }, other], 2, 0);
+    clearPlan();
+    chooseAction(s, 0);
+    const found = kitsFor(s, 0);
+    expect(found.length, 'a kit').toBeGreaterThan(0);
+    expect(found[0].cards).toEqual(['p2-warmateer']);
+    expect(found[0].reach).toBeGreaterThanOrEqual(0.9);
+
+    const solo = createGame([{ name: 'A', leaderId: 'p3-helemy', cards: list }, other], 3, 0);
+    clearPlan();
+    chooseAction(solo, 0, { ...defaultWeights, kitSolo: 0 });
+    expect(kitsFor(solo, 0).every((k) => k.cards.length > 1), 'no single card kit with the solo kit off').toBe(true);
+  });
+
+  it('holds the kit piece while the pips are short, and plays it once they are there', () => {
+    // In the pro meta check Warmateer landed on turn two with no supporters
+    // in 231 of 274 Helemy games and was never Rallied or fed to Alchemize
+    // in 162 of them. A piece on the board counts for less than one in hand
+    // while the kit's mana is not there yet, so the win condition waits.
+    const list = [...Array(46).fill(FILLER), 'p2-warmateer', 'p2-warmateer'];
+    const other = { name: 'B', leaderId: LEADER, cards: Array(48).fill(FILLER) };
+    const turn = (sups: number, at: number) => {
+      const s = createGame([{ name: 'A', leaderId: 'p3-helemy', cards: list }, other], 4, 0);
+      s.players[0].hand = ['p2-warmateer', 'n1-lizard', 'n1-mammal', 'n1-BeautifulBug'];
+      s.players[0].deck = s.players[0].deck.filter((id) => id !== 'p2-warmateer');
+      for (let i = 0; i < sups; i++) s.players[0].supporters.push({ cardId: 'p1-beast', sapped: false });
+      (s.players[0].mana as Record<string, number>).P = sups;
+      s.players[0].turnsTaken = at - 1;
+      s.turn = at;
+      clearPlan();
+      let st: GameState = s;
+      for (let i = 0; i < 12 && !isOver(st) && currentActor(st) === 0; i++) {
+        const a = chooseAction(st, 0);
+        const res = applyAction(st, 0, a);
+        if (!res.ok) throw new Error(res.error);
+        st = res.state;
+        if (a.type === 'END_TURN') break;
+      }
+      return st.players[0].hand.includes('p2-warmateer');
+    };
+    expect(turn(0, 1), 'held on turn one with no supporters').toBe(true);
+    expect(turn(5, 5), 'played on turn five with five Pepper').toBe(false);
   });
 });
 

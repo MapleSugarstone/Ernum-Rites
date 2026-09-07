@@ -88,6 +88,36 @@ and the corpus, one of them a missing `_rootSet = true` in C# alone.
   real bug every time it happened: a tie broken by registry order, a client
   stand-in card in the pool, a missing root flag.
 
+### Beyond the snapshot: the panel, the human log, the analyzer
+
+A head-to-head against one opponent rewards whatever exploits that
+opponent's habits, and the blunt bot never holds a piece, never bluffs a
+trap and never races a combo. Three checks sit beside it (2026-09-07):
+
+- `Selatza.Sim panel --games N --decks <pool> [--set ...]` plays the
+  candidate against the snapshot and against four styles of the current
+  bot with other weights in the other seat (blunt, holder, defensive,
+  racer). A candidate that loses to any arm by more than noise is not to
+  ship on that alone.
+- The worker keeps a game log (`worker/gamelog.ts`): every finished solo
+  game the client played against the bot, and every match between people,
+  as a replay (seed, lists, actions) stamped with the app version, the
+  build and a card-set hash, with nothing that names a person. Reading it
+  needs the `LOG_TOKEN` secret; `LOG_TOKEN=... npx tsx scripts/pull-logs.ts
+  https://<worker>` pulls new games into `replays/human/`. Those games are
+  the validation set: never trained on, only measured.
+- `Selatza.Sim analyze --replay <file or folder> [--seat n] [--deep]`
+  re-searches every decision of a replay and scores the played action
+  against the best line found, on the redacted table, so the label is
+  what the seat could know. The report is regret per seat (bot and
+  person), kills on the table not taken, the played-against-best pairs
+  behind the large gaps, and the largest gaps with their lines. On the
+  bot's own replay at its table profile every gap is zero.
+
+The tournament log (`.szgl`) cannot feed the analyzer: it stores a played
+card by index, not the action. A log format that carries the raw action
+and the lists as played is the step before training on regret.
+
 ## Traps, each of which cost real time
 
 - `npm run cs:release` builds Train and Sim only. Build `Selatza.Tests`
@@ -190,7 +220,9 @@ results. Facts that matter:
   write-off itself measured even on evolved and one to two and a half
   points down on candy and random at 0.5 and 1, so it ships at 0 (table
   in `claude-notes/ai-audit.md`).
-  Still open: deck size 48 to 54 as an evolution trait in the trainer.
+  Deck size 48 to 54 is an evolution trait in the trainer since
+  2026-09-07 (`--deck-size 48 --deck-max 54`, on by default for `train`;
+  the Sim's pools stay at 48 so head-to-heads stay comparable).
 - Six gated mechanisms, measured one at a time: `worstCase`
   (on), `breach` (on), `windowAnswers` (on), `deepBurst` (off: two points
   down on random), `paranoia` (off: one to two points down), `fallen`
@@ -205,6 +237,17 @@ results. Facts that matter:
   machines were reclaimed within minutes of starting, in two zones, while
   the same shape had run a full batch an hour earlier. Use a fresh tag for
   a relaunch by hand; the bucket folder of a lost run has no ALL_DONE.
+  Watch every batch yourself: arm a Monitor on its log for created, reads
+  GONE, before the logs came back, arm results and deleting, with a
+  heartbeat, and report each event as it lands. The maintainer asked not
+  to have to prompt for status to learn a machine was lost.
+- When us-central1 has no capacity for any shape, on demand included (it
+  happened for a whole afternoon on 2026-09-07), run the batch locally
+  with the staged `Selatza.Sim.exe versus --threads 16`, one arm after
+  another, about eight minutes an arm of 600 games. For the next cloud
+  run, us-east1, us-east4, europe-west1 and europe-west4 each carry a
+  200-CPU N2 quota (C3 is quota'd only in us-central1), so pass their
+  zones in the zone list; the bucket is readable from any region.
 - A hand-built board needs a deck behind the hand: a summon draws its HP
   from the deck and dies on arrival from an empty one.
 - A TypeScript trace of a decision must run on the redacted root

@@ -27,6 +27,17 @@ class_name = "Lobby"
 tag = "v1"
 new_sqlite_classes = ["MatchRoom"]
 
+# Finished games, one instance for the deployment: what the bot's play against
+# people is measured on. Reading it back needs the LOG_TOKEN secret
+# (`wrangler secret put LOG_TOKEN`); writing needs an allowed origin.
+[[durable_objects.bindings]]
+name = "GAME_LOG"
+class_name = "GameLogStore"
+
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["Lobby"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["GameLogStore"]

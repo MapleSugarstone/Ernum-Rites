@@ -4,9 +4,9 @@
 // run when the bot changes, with `npm run test:behaviour`, and are not part of
 // the deploy gate, which keeps only general legal play: legality, termination,
 // and the two engines agreeing.
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { starterDecks } from '../../src/cards';
-import { chooseAction, clearPlan, defaultWeights, evaluate, nextTurn, setIntel } from '../../src/ai/bot';
+import { chooseAction, clearPlan, defaultWeights, evaluate, fullSearch, nextTurn, outlook, quickSearch, redactTable, setIntel, setSearchLimits } from '../../src/ai/bot';
 import { applyAction, createGame } from '../../src/engine/engine';
 import {
   currentActor,
@@ -409,5 +409,105 @@ describe('the reply', () => {
     expect(next).not.toBeNull();
     expect(next!.players[1].turnsTaken).toBe(s.players[1].turnsTaken + 1);
     expect(next!.flipQueue.length).toBe(0);
+  });
+});
+
+describe('the turn after the reply', () => {
+  beforeAll(() => setSearchLimits(fullSearch));
+  afterAll(() => setSearchLimits(quickSearch));
+  it('charges what they can do the turn after, unless the bot kills first', () => {
+    // The bot leads Acolyte at 4 HP with two bodies in front and one slot
+    // free; they lead Helemy with Warmateer out and two Pepper. Their reply
+    // reaches nothing, and one more pip the turn after is Alchemize for four
+    // to the face. Filling the slot with a Redirection body leaves the bot
+    // without a kill of its own next turn, so their turn after is charged;
+    // filling it with a 4/6 gives the bot a standing kill, which lands first,
+    // so it is not.
+    const ember = starterDecks.find((d) => d.key === 'emberchoir')!;
+    const sweet = starterDecks.find((d) => d.key === 'sweetshop')!;
+    let s = createGame(
+      [
+        { name: 'Bot', leaderId: 'n3-AcolyteofGrinkle', cards: [...sweet.cards] },
+        { name: 'Other', leaderId: 'p3-helemy', cards: [...ember.cards] },
+      ],
+      3,
+      0,
+    );
+    const step = (actor: 0 | 1, action: Parameters<typeof applyAction>[2]) => {
+      const res = applyAction(s, actor, action);
+      if (!res.ok) throw new Error(`${action.type}: ${res.error}`);
+      s = res.state;
+    };
+    s.players[0].hand = ['m-rg-recomp', 'n1-lizard'];
+    s.players[1].hand = [];
+    step(0, { type: 'PLAY_SUMMON', handIndex: 0, slot: 0 });
+    step(0, { type: 'PLAY_SUMMON', handIndex: 0, slot: 1 });
+    step(0, { type: 'END_TURN' });
+    s.players[1].hand = ['p2-warmateer'];
+    step(1, { type: 'PLAY_SUMMON', handIndex: 0, slot: 0 });
+    step(1, { type: 'END_TURN' });
+    s.players[0].hand = ['r3-strangestation', 'n3-AcolyteofGrinkle'];
+    s.players[1].hand = [];
+    for (let i = 0; i < 2; i++) s.players[1].supporters.push({ cardId: 'p2-warmateer', sapped: false });
+    const leader = s.players[0].leader!;
+    let left = leader.hp.filter((c) => !c.flipped).length;
+    for (const c of leader.hp) {
+      if (left <= 4) break;
+      if (!c.flipped) {
+        c.flipped = true;
+        left--;
+      }
+    }
+
+    setIntel(null);
+    clearPlan();
+    chooseAction(s, 0);
+    const judge = (handIndex: number, peril: number) => {
+      const w = { ...defaultWeights, peril };
+      const res = applyAction(s, 0, { type: 'PLAY_SUMMON', handIndex, slot: 2 });
+      if (!res.ok) throw new Error(res.error);
+      const root = redactTable(res.state, 0);
+      return outlook(root, 0, w, evaluate(root, 0, w));
+    };
+    const blocker = [judge(0, 4), judge(0, 0)];
+    const vanilla = [judge(1, 4), judge(1, 0)];
+    expect(blocker[0]).toBeLessThan(blocker[1] - 30);
+    expect(Math.abs(vanilla[0] - vanilla[1])).toBeLessThan(1e-6);
+  });
+});
+
+describe('holding a spell trap', () => {
+  beforeAll(() => setSearchLimits(fullSearch));
+  afterAll(() => setSearchLimits(quickSearch));
+
+  it('prices a payable spell trap in hand by the spells the enemy pool can hold, and a battle trap by nothing', () => {
+    // The reply plays the believed hand, which holds no spells, so a counter
+    // never springs inside the search and a spell trap read as a card to play
+    // face down. The pool prior knows what their spells can do, and that is
+    // what holding the counter is worth. A battle trap springs in the reply
+    // already, so the term leaves it alone.
+    const sweet = starterDecks.find((d) => d.key === 'sweetshop')!;
+    const price = (leader: string, filler: string, trap: string, color: string) => {
+      const s = createGame(
+        [
+          { name: 'Bot', leaderId: leader, cards: Array(48).fill(filler) },
+          { name: 'Other', leaderId: 'r3-cybersiren', cards: [...sweet.cards] },
+        ],
+        7,
+        0,
+      );
+      s.players[0].hand = ['n1-lizard'];
+      s.players[0].supporters.push({ cardId: filler, sapped: false });
+      (s.players[0].mana as Record<string, number>)[color] = 1;
+      s.players[1].hand = ['n1-lizard', 'n1-lizard', 'n1-lizard', 'n1-lizard'];
+      setIntel(null);
+      clearPlan();
+      chooseAction(s, 0);
+      const root = redactTable(s, 0);
+      const held: GameState = { ...root, players: root.players.map((p, i) => (i === 0 ? { ...p, hand: [...p.hand, trap] } : p)) };
+      return evaluate(held, 0, defaultWeights) - evaluate(held, 0, { ...defaultWeights, trapHold: 0 });
+    };
+    expect(price('r3-cybersiren', 'r1-slicebot', 'rx-siphon', 'R')).toBeGreaterThan(1);
+    expect(price('kh-PinkDeus', 'k1-apprentice', 'kx-trapExpensiveSecurity', 'K')).toBe(0);
   });
 });

@@ -461,7 +461,7 @@ public sealed class Tournament
             a.Deck = DeckGen.Mutate(a.LeaderId, a.Deck, swaps,
                 card => a.Stats.Score(card),
                 card => _global.GlobalScore(card, totalPlays),
-                _rng);
+                _rng, _cfg.Deck.Size, _cfg.Deck.Largest);
             a.Mutations += swaps;
         }
     }

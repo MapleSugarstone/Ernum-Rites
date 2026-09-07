@@ -13,6 +13,16 @@ import {
 import type { Action } from '../src/engine/actions';
 import { applyAction, createGame } from '../src/engine/engine';
 import { digestShort } from '../src/engine/digest';
+import { actionToWire, type WireAction } from '../src/engine/replay';
+import { cardSetHash } from '../src/engine/cardhash';
+import type { GameLogRecord } from './gamelog';
+import pkg from '../package.json';
+
+/** What the room needs of the game log's namespace binding: an id by name and a stub that answers fetch. */
+interface GameLogNamespace {
+  idFromName(name: string): unknown;
+  get(id: unknown): { fetch(request: Request): Promise<Response> };
+}
 import { publicView, redactFor } from '../src/engine/redact';
 import { currentActor, isOver, type GameState } from '../src/engine/state';
 import { timeoutAction } from '../src/engine/timeout';
@@ -77,6 +87,14 @@ export class MatchRoom extends DurableObject {
     () => null,
   );
   private state: GameState | null = null;
+  /** The match as the game log will want it: seed, lists and every action, logged once when it ends. */
+  private match: {
+    seed: number;
+    startingPlayer: number;
+    decks: { leaderId: string; cards: string[] }[];
+    steps: { actor: number; action: WireAction }[];
+    logged: boolean;
+  } | null = null;
   private clock: Clock | null = null;
   /**
    * What the active player's main phase still has left. Banked whenever a
@@ -748,8 +766,55 @@ export class MatchRoom extends DurableObject {
     // Who opens is a die roll, taken off the seed rather than a second roll so
     // the seed on its own still reproduces the whole match.
     this.state = createGame(decks, seed, (seed % this.seats.length) as PlayerIdx);
+    this.match = {
+      seed,
+      startingPlayer: this.state.startingPlayer,
+      decks: decks.map((d) => ({ leaderId: d.leaderId, cards: [...d.cards] })),
+      steps: [],
+      logged: false,
+    };
     await this.restartClock();
     this.pushState();
+  }
+
+  /**
+   * Hand the finished match to the game log: what a replay needs and which
+   * build and card set played it, with no name from any seat. Best effort;
+   * a store that is missing or refuses does not touch the match.
+   */
+  private async logMatch(): Promise<void> {
+    if (!this.state || !this.match) return;
+    // Typed by shape rather than by the runtime's own type, so the room still
+    // compiles under the test suite's stub of the runtime.
+    const env = this.env as { GAME_LOG?: GameLogNamespace } | undefined;
+    const store = env?.GAME_LOG;
+    if (!store) return;
+    const record: GameLogRecord = {
+      format: 1,
+      kind: 'multi',
+      version: pkg.version,
+      build: 'worker',
+      cards: cardSetHash(),
+      seed: this.match.seed,
+      startingPlayer: this.match.startingPlayer,
+      botSeat: -1,
+      decks: this.match.decks,
+      steps: this.match.steps,
+      winner: this.state.winner ?? -1,
+      winReason: this.state.winReason,
+      turns: this.state.turn,
+    };
+    try {
+      await store.get(store.idFromName('game-log')).fetch(
+        new Request('https://game-log/api/log', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(record),
+        }),
+      );
+    } catch (err) {
+      console.log('game log failed', err instanceof Error ? err.message : String(err));
+    }
   }
 
   /** When a held seat is given up on, or null while nobody is away. */
@@ -954,6 +1019,13 @@ export class MatchRoom extends DurableObject {
 
   private pushState(move?: { action: Action; actor: PlayerIdx }): void {
     if (!this.state) return;
+    if (move && this.match && !this.match.logged) {
+      this.match.steps.push({ actor: move.actor, action: actionToWire(move.action) });
+    }
+    if (this.match && !this.match.logged && isOver(this.state)) {
+      this.match.logged = true;
+      void this.logMatch();
+    }
     // One digest of what both sides can see, so each client can check the push
     // against the state it computed itself without learning anything private.
     const digest = digestShort(publicView(this.state));

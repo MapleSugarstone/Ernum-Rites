@@ -115,7 +115,7 @@ public static class Program
         Console.WriteLine("train    --rounds 60 --agents 16 --brains 4 --anchors 2 --games 2");
         Console.WriteLine("         --no-net (no networks: the evaluator plays and only decks evolve,");
         Console.WriteLine("           which is the setting to use when you are balancing cards)");
-        Console.WriteLine("         --leader-pool all|printed|sturdy|dual|nonflip --deck-size 48 --topk 12");
+        Console.WriteLine("         --leader-pool all|printed|sturdy|dual|nonflip --deck-size 48 --deck-max 54 --topk 12");
         Console.WriteLine("         --leaders id1,id2,...  fixed roster, dealt round robin across --agents");
         Console.WriteLine("         --every-leader (one agent per card in the pool, in order, which sets");
         Console.WriteLine("           --agents for you and gives every one of them its own rating)");
@@ -187,6 +187,9 @@ public static class Program
 
         var shape = Str(args, "--net", "default") == "small" ? NetShape.Small : NetShape.Default;
         int size = Int(args, "--deck-size", 48);
+        // Decks evolve their size between --deck-size and --deck-max; the same
+        // number for both fixes it.
+        int maxSize = Math.Max(size, Int(args, "--deck-max", 54));
         // Balance work wants games, not gradients. With no networks a round is
         // five to ten times faster and the card numbers are correspondingly
         // less noisy for the same wall clock.
@@ -242,6 +245,7 @@ public static class Program
             Deck = new DeckShape
             {
                 Size = size,
+                MaxSize = maxSize,
                 Summons = (int)Math.Round(size * 0.5),
                 Spells = (int)Math.Round(size * 0.29),
                 Traps = (int)Math.Round(size * 0.06),
@@ -775,7 +779,7 @@ public static class Program
             string leader = Str(args, "--leader", "");
             if (leader.Length == 0) leader = DeckGen.RandomLeader(cfg.LeaderPool, rng);
             var deck = DeckGen.Random(leader, cfg.Deck, rng);
-            string? bad = DeckGen.Validate(leader, deck, cfg.Deck.Size);
+            string? bad = DeckGen.Validate(leader, deck, cfg.Deck.Size, cfg.Deck.Largest);
             var agent = new Agent { Name = $"deck{i}", LeaderId = leader, Deck = deck };
             Console.WriteLine(Tournament.DeckText(agent));
             Console.WriteLine(bad is null ? "  legal" : $"  ILLEGAL: {bad}");

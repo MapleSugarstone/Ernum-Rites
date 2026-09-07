@@ -121,6 +121,48 @@ export interface BotWeights {
   /** A kill that is already assembled but not reachable until next turn. */
   standingKill: number;
   /**
+   * Per point of damage the opponent can put on the bot's leader on the turn
+   * after their reply, when the bot's own threat does not close the game
+   * first. The reply is one turn; this is the one behind it, which is where a
+   * combo one mana short today lands, and what a blocker, a held trap or a
+   * cleared board is measured against.
+   */
+  peril: number;
+  /** A kill they have assembled for the turn after their reply, if nothing changes. */
+  standingDeath: number;
+  /**
+   * Pips the deck scan hands a kit on its probe board. Three is the opening
+   * turns; a leader's kill usually wants five to seven, and at three the scan
+   * read Warmateer beside Helemy as a third of a kill and Bone Known as
+   * nothing. Six is the mana a game reaches by the time the pieces are held.
+   */
+  kitPips: number;
+  /** Debt the scan's probe board starts at, so a piece that scales with debt is probed where it is played. */
+  kitDebt: number;
+  /**
+   * Whether one card beside the leader can be a kit. The leader is on every
+   * board the deck plays, so a card that turns its Power into a kill is the
+   * kit's only loose piece, and it is worth holding like any other.
+   */
+  kitSolo: number;
+  /**
+   * Per point of the enemy pool's unseen spell burst a spell trap in hand
+   * can answer. The reply plays the believed hand, which holds no spells, so
+   * a counter never springs inside the search and read as a card to play
+   * face down. A battle trap needs no such term: the reply attacks, and the
+   * search springs it there.
+   */
+  trapHold: number;
+  /**
+   * Share of a kit piece's progress it keeps on the board while the kit's
+   * mana is not there yet. In the pro meta check Warmateer landed on turn
+   * two with no supporters in 231 of 274 Helemy games and was never Rallied
+   * or fed to Alchemize in 162 of them: a body on the board is traded off,
+   * a card in hand waits for the pips. One is the old reading, where the
+   * board and the hand count the same.
+   */
+  kitExposed: number;
+  /**
    * How much of a position's score is read after the opponent has answered it
    * rather than where it stands. The rest is read where it stands, because the
    * reply is a greedy guess and a position should not be judged entirely on
@@ -252,6 +294,13 @@ export const defaultWeights: BotWeights = {
   stage: 3,
   threat: 4,
   standingKill: 60,
+  peril: 0,
+  standingDeath: 0,
+  kitPips: 6,
+  kitDebt: 8,
+  kitSolo: 1,
+  trapHold: 0.5,
+  kitExposed: 0.5,
   reply: 0.6,
   worstCase: 1,
   paranoia: 0,
@@ -446,6 +495,7 @@ export function evaluate(state: GameState, me: PlayerIdx, w = defaultWeights): n
     for (const id of p.hand) {
       const def = card(id);
       hand += w.hand + w.handLevel * ((def.level ?? 1) - 1) + w.handDraw * cardDoes(state, side, def, w).draw;
+      if (def.spellTrap && w.trapHold > 0) hand += w.trapHold * trapAnswers(state, side, def, w);
     }
     score += sign * hand;
 
@@ -2029,9 +2079,11 @@ interface PoolPrior {
   ranked: string[];
   /** Mean burst of the top quarter: what one unseen card is priced at. */
   top: number;
+  /** Mean burst of the top quarter of the pool's spells: what one unseen spell is priced at. */
+  spellTop: number;
 }
 const priorCache = new Map<string, PoolPrior>();
-const NO_PRIOR: PoolPrior = { ranked: [], top: 0 };
+const NO_PRIOR: PoolPrior = { ranked: [], top: 0, spellTop: 0 };
 
 /**
  * The worst a leader's pool holds: every legal card's kill rollout beside that
@@ -2042,7 +2094,7 @@ const NO_PRIOR: PoolPrior = { ranked: [], top: 0 };
  * leader. It reads no game state, so it is the same table in every game and
  * in both engines whichever thread fills it first.
  */
-function poolPrior(leaderId: string, w: BotWeights): PoolPrior {
+export function poolPrior(leaderId: string, w: BotWeights): PoolPrior {
   const hit = priorCache.get(leaderId);
   if (hit) return hit;
   if (probing || !limits.scan) return NO_PRIOR;
@@ -2068,7 +2120,15 @@ function poolPrior(leaderId: string, w: BotWeights): PoolPrior {
   const quarter = Math.ceil(ranked.length / 4);
   let sum = 0;
   for (let i = 0; i < quarter; i++) sum += bursts.get(ranked[i])!;
-  const prior: PoolPrior = { ranked, top: quarter > 0 ? sum / quarter : 0 };
+  const spells = ranked.filter((id) => card(id).type === 'spell');
+  const spellQuarter = Math.ceil(spells.length / 4);
+  let spellSum = 0;
+  for (let i = 0; i < spellQuarter; i++) spellSum += bursts.get(spells[i])!;
+  const prior: PoolPrior = {
+    ranked,
+    top: quarter > 0 ? sum / quarter : 0,
+    spellTop: spellQuarter > 0 ? spellSum / spellQuarter : 0,
+  };
   priorCache.set(leaderId, prior);
   return prior;
 }
@@ -2408,6 +2468,24 @@ function dangerOf(state: GameState, side: PlayerIdx, w: BotWeights): number {
 }
 
 /**
+ * The unseen spell burst a spell trap in hand can answer: the enemy pool's
+ * worst spells over the cards they hold unseen, for a trap its owner could
+ * pay for.
+ */
+export function trapAnswers(state: GameState, side: PlayerIdx, def: CardDef, w: BotWeights): number {
+  const p = state.players[side];
+  if (!def.spellTrap || !canPay(p, costFor(p, def))) return 0;
+  let worst = 0;
+  for (const foe of livingOpponents(state, side)) {
+    const q = state.players[foe];
+    const unseen = unseenIn(q);
+    if (unseen <= 0) continue;
+    worst = Math.max(worst, Math.min(DANGER_CAP, poolPrior(q.leaderCardId, w).spellTop * unseen));
+  }
+  return worst;
+}
+
+/**
  * What a card does on its own: the share of the opponent's nearer clock it
  * takes off the probe board with its side's mana, at its side's debt. Cards
  * that are only a stat line skip the probe, because nothing on it swings past
@@ -2572,7 +2650,7 @@ function probeBoard(
 }
 
 /** Share of the nearer clock a kit takes off the probe board, 1 meaning a kill. */
-function kitReach(state: GameState, me: PlayerIdx, kit: string[], w: BotWeights, debt = 0, pips = 3): number {
+export function kitReach(state: GameState, me: PlayerIdx, kit: string[], w: BotWeights, debt = 0, pips = 3): number {
   const probe = probeBoard(state, me, kit, debt, false, false, false, pips);
   // Shop prices are filed by seat and slot and stand for the whole decision,
   // and the probe puts its own bodies in those slots. What its rollout prices
@@ -2618,17 +2696,33 @@ function scanKits(state: GameState, me: PlayerIdx, w: BotWeights): Kit[] {
   for (const id of p.hand) note(id);
   for (const s of p.slots) if (s) note(s.cardId);
 
+  // Every piece is probed on the same board the sets are, at the mana and
+  // debt of the turns a kit is played on, so a part and its set compare.
+  const pips = Math.max(1, Math.round(w.kitPips));
+  const debt = Math.max(0, Math.round(w.kitDebt));
   const single = new Map<string, number>();
-  for (const id of ids) single.set(id, probedReach(state, me, card(id), w));
+  for (const id of ids) {
+    const def = card(id);
+    const bare = def.type === 'summon' && !def.powers?.length && !def.triggers && !def.effectDamage;
+    single.set(id, bare ? probedReach(state, me, def, w) : kitReach(state, me, [id], w, debt, pips));
+  }
   const byReach = (a: string, b: string) => (single.get(b) ?? 0) - (single.get(a) ?? 0);
   const pairCards = [...ids].sort(byReach).slice(0, KIT_PAIR_CARDS);
 
   const kits: Kit[] = [];
+  // One card beside the leader: a kit whose other piece is on every board.
+  if (w.kitSolo > 0) {
+    const alone = kitReach(state, me, [], w, debt, pips);
+    for (const id of pairCards) {
+      const reach = single.get(id) ?? 0;
+      if (reach >= KIT_MIN_REACH && reach > alone + KIT_SYNERGY) kits.push({ cards: [id], reach });
+    }
+  }
   const pairBest = new Map<string, number>();
   for (let i = 0; i < pairCards.length; i++) {
     for (let j = i + 1; j < pairCards.length; j++) {
       const set = [pairCards[i], pairCards[j]];
-      const reach = kitReach(state, me, set, w);
+      const reach = kitReach(state, me, set, w, debt, pips);
       // Added, not the larger: two bodies that each reach a third reach two
       // thirds side by side, and that is a pile rather than a kit.
       const parts = Math.min(1, (single.get(set[0]) ?? 0) + (single.get(set[1]) ?? 0));
@@ -2651,7 +2745,7 @@ function scanKits(state: GameState, me: PlayerIdx, w: BotWeights): Kit[] {
           const rest = set.find((id) => !kit.cards.includes(id));
           parts = Math.max(parts, Math.min(1, kit.reach + (rest ? single.get(rest) ?? 0 : 0)));
         }
-        const reach = kitReach(state, me, set, w);
+        const reach = kitReach(state, me, set, w, debt, pips);
         if (reach >= KIT_MIN_REACH && reach > parts + KIT_SYNERGY) kits.push({ cards: set, reach });
       }
     }
@@ -2695,19 +2789,24 @@ function kitBonus(state: GameState, me: PlayerIdx, w: BotWeights): number {
   const kits = kitCache.get(kitKey(state, me));
   if (!kits || kits.length === 0) return 0;
   const p = state.players[me];
-  const held = new Set<string>(p.hand);
-  for (const s of p.slots) if (s) held.add(s.cardId);
-  if (p.leader) held.add(p.leader.cardId);
+  const safe = new Set<string>(p.hand);
+  if (p.leader) safe.add(p.leader.cardId);
+  const onBoard = new Set<string>();
+  for (const s of p.slots) if (s) onBoard.add(s.cardId);
   const inDeck = new Set<string>(p.deck);
+  // The pips the next turn brings, against the mana the scan probed the kit
+  // at: short of it, a piece on the board is waiting where it can be killed.
+  const pips = p.supporters.length + (p.supportersLeft > 0 ? 1 : 0);
+  const boardShare = pips >= Math.round(w.kitPips) ? 1 : w.kitExposed;
   let best = 0;
   for (const kit of kits) {
     let have = 0;
-    let outs = 0;
     for (const id of kit.cards) {
-      if (held.has(id)) have++;
-      else if (inDeck.has(id)) outs++;
+      if (safe.has(id)) have += 1;
+      else if (onBoard.has(id)) have += boardShare;
+      else if (inDeck.has(id)) have += KIT_OUT_WEIGHT;
     }
-    const progress = (have + KIT_OUT_WEIGHT * outs) / kit.cards.length;
+    const progress = have / kit.cards.length;
     best = Math.max(best, kit.reach * progress * progress);
   }
   return w.combo * best;
@@ -3290,8 +3389,44 @@ export function outlook(state: GameState, me: PlayerIdx, w: BotWeights, standing
     burn(next, me, limits.maxThreatSteps, w).damage,
     burn(next, me, limits.maxThreatSteps, w, limits.maxThreatSetup).damage,
   );
-  if (reach <= 0) return settled;
-  return settled + w.threat * Math.min(reach, foeHp) + (reach >= foeHp ? w.standingKill : 0);
+  let total = settled;
+  if (reach > 0) total += w.threat * Math.min(reach, foeHp) + (reach >= foeHp ? w.standingKill : 0);
+  // The turn behind their reply is theirs again. A kill the bot has standing
+  // lands first, so their turn after is charged only when the bot's does not
+  // close the game.
+  if (w.peril > 0 && reach < foeHp) {
+    const myHp = leaderHpOf(next, me);
+    const peril = perilOf(next, me, w);
+    if (peril > 0 && myHp > 0) total -= w.peril * Math.min(peril, myHp) + (peril >= myHp ? w.standingDeath : 0);
+  }
+  return total;
+}
+
+/**
+ * What they can put on the bot's leader on the turn after their reply, if the
+ * bot's own next turn changes nothing: the position after the reply with the
+ * bot's turn passed, then their kill rollout, racing and patient. The turn
+ * start draws them a card off their real list, the same one card the reply
+ * itself sees.
+ */
+function perilOf(next: GameState, me: PlayerIdx, w: BotWeights): number {
+  if (isOver(next) || next.active !== me || next.phase !== 'main' || next.pending) return 0;
+  const ended = applyAction(next, me, { type: 'END_TURN' });
+  if (!ended.ok) return 0;
+  let s = ended.state;
+  for (let i = 0; i < 8; i++) {
+    if (isOver(s)) return 0;
+    if (s.active !== me && s.phase === 'main' && !s.pending) break;
+    const res = applyAction(s, currentActor(s), passAction(s));
+    if (!res.ok) return 0;
+    s = res.state;
+  }
+  if (isOver(s) || s.active === me || s.phase !== 'main' || s.pending) return 0;
+  const foe = s.active;
+  return Math.max(
+    burn(s, foe, limits.maxThreatSteps, w).damage,
+    burn(s, foe, limits.maxThreatSteps, w, limits.maxThreatSetup).damage,
+  );
 }
 
 interface Leaf {

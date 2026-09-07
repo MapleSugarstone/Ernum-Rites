@@ -1,14 +1,31 @@
 import { Lobby } from './lobby';
 import { MatchRoom } from './room';
+import { GameLogStore } from './gamelog';
 import type { QueueReply } from './protocol';
 
-export { Lobby, MatchRoom };
+export { Lobby, MatchRoom, GameLogStore };
 
 export interface Env {
   MATCH_ROOM: DurableObjectNamespace<MatchRoom>;
   LOBBY: DurableObjectNamespace<Lobby>;
+  /** Finished games, kept for measuring the bot against people. */
+  GAME_LOG: DurableObjectNamespace<GameLogStore>;
   /** Comma separated list of origins allowed to open a socket. */
   ALLOWED_ORIGINS?: string;
+  /** Bearer token that reads the game log back out. Unset, nothing reads it. */
+  LOG_TOKEN?: string;
+}
+
+/** The one game log for the deployment. */
+export function gameLog(env: Env): DurableObjectStub<GameLogStore> {
+  return env.GAME_LOG.get(env.GAME_LOG.idFromName('game-log'));
+}
+
+/** Whether a request may read the game log: the deployment's token, in the Authorization header. */
+function mayReadLog(env: Env, request: Request): boolean {
+  const token = env.LOG_TOKEN ?? '';
+  if (token.length < 16) return false;
+  return request.headers.get('Authorization') === `Bearer ${token}`;
 }
 
 /**
@@ -88,6 +105,22 @@ export default {
       if (code) await lobby(env).cancel(code);
       if (roomId) await lobby(env).leavePublic(roomId);
       return reply({ ok: true, roomId: roomId ?? '', kind: 'public' });
+    }
+
+    // --- the game log --------------------------------------------------------
+    // A finished solo game comes in from the client that played it; a match
+    // the room played logs itself. Reading it back needs the token.
+    if (url.pathname === '/api/log' && request.method === 'POST') {
+      if (!isAllowedOrigin(env, origin)) {
+        return new Response('forbidden origin', { status: 403, headers: cors });
+      }
+      const res = await gameLog(env).fetch(request);
+      return new Response(res.body, { status: res.status, headers: { ...cors, 'content-type': 'application/json' } });
+    }
+    if ((url.pathname === '/api/logs' || url.pathname === '/api/logs/stats') && request.method === 'GET') {
+      if (!mayReadLog(env, request)) return new Response('forbidden', { status: 403, headers: cors });
+      const res = await gameLog(env).fetch(request);
+      return new Response(res.body, { status: res.status, headers: { ...cors, 'content-type': 'application/json' } });
     }
 
     // /api/room/<roomId> upgrades to the websocket for that match. A socket

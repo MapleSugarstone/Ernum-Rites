@@ -541,3 +541,31 @@ The client learns that URL from `VITE_SERVER_URL`.
 `.github/workflows/deploy.yml` fills it from a repository variable named
 `SERVER_URL`. Left unset, the build ships with online play disabled rather than
 pointing at a host that does not answer.
+
+### The game log
+
+The worker keeps every finished game: a solo game the client played against
+the bot is posted to `/api/log` when it ends, and a match between people logs
+itself from the room. A record is the replay (seed, opening seat, both lists,
+every action) plus the app version, the build and a hash of the card set that
+played it, so games from different updates stay comparable. Nothing that names
+a person is stored: no player names, no addresses, no exact time, only the UTC
+day. The store is a SQLite-backed Durable Object on the free plan, keeping the
+newest 20,000 games.
+
+Reading the log back needs a bearer token. Set one once with:
+
+```bash
+npx wrangler secret put LOG_TOKEN
+```
+
+Then pull new games into `replays/human/` as replay files with:
+
+```bash
+LOG_TOKEN=<the token> npx tsx scripts/pull-logs.ts https://ernum-rites-server.maplesugarstone.workers.dev
+```
+
+Those files are what `Selatza.Sim analyze --replay replays/human` reads to
+score every decision people and the bot made against a deeper search. A client
+that cannot reach the worker when a game ends keeps the record in local storage
+and sends it on its next visit.

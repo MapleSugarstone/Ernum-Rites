@@ -1,9 +1,26 @@
+import { execSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
+
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
+/** The commit a build came from, so a logged game names the code that played it. */
+function buildStamp(): string {
+  try {
+    return execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  } catch {
+    return 'local';
+  }
+}
 
 // GitHub Pages serves project sites from /<repo>/, so assets need that prefix.
 // Override with BASE_PATH=/ when serving from a custom domain via Cloudflare.
 export default defineConfig({
   base: process.env.BASE_PATH ?? '/Ernum-Rites/',
+  // Stamped into every logged game, so games from different updates stay comparable.
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+    __BUILD__: JSON.stringify(buildStamp()),
+  },
   // Card art ships verbatim: assets/Cardgame/... is served at /Cardgame/...
   publicDir: 'assets',
   build: { outDir: 'dist', sourcemap: true },

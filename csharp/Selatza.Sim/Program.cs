@@ -54,6 +54,10 @@ public static class Program
             "pair" => Pair(a, b, games, verbose: true),
             "record" => Record(games),
             "explain" => Explain(ArgStr(args, "--replay", "012-sweetshop-store.json"), ArgInt(args, "--step", 0), ArgStr(args, "--set", ""), ArgStr(args, "--then", "")),
+            "analyze" => Analyze(ArgStr(args, "--replay", "replays/human"), ArgInt(args, "--seat", -1), ArgStr(args, "--set", ""),
+                Flag2(args, "--deep"), ArgInt(args, "--top", 12)),
+            "panel" => Panel(games, ArgInt(args, "--threads", Environment.ProcessorCount),
+                ArgStr(args, "--decks", "random"), ArgStr(args, "--set", ""), ArgInt(args, "--seed", 1)),
             "verify" => Verify(),
             "cards" => DumpCards(),
             _ => Usage(),
@@ -712,6 +716,199 @@ public static class Program
         }
         foreach (var line in Bot.Explain(state, seat, w)) Console.WriteLine("    " + line);
         return 0;
+    }
+
+    /// <summary>
+    /// The styles a candidate is measured against, beside the snapshot. A bot
+    /// tuned against one opponent learns that opponent's habits; a candidate
+    /// ships only when it loses to none of these by more than noise.
+    /// </summary>
+    private static readonly (string Name, string Set)[] PanelArms =
+    {
+        ("blunt: the old reading, no held pieces, no counter, no turn-after", "KitPips=3,KitDebt=0,KitSolo=0,KitExposed=1,TrapHold=0,Peril=0,StandingDeath=0"),
+        ("holder: pieces held for the kit, combo weighed double", "KitExposed=0.25,Combo=24"),
+        ("defensive: the turn after the reply charged in full", "Peril=4,StandingDeath=60"),
+        ("racer: threat and standing kill weighed double", "Threat=8,StandingKill=120"),
+    };
+
+    private static BotWeights WeightsFrom(string set)
+    {
+        var w = new BotWeights();
+        foreach (var pair in set.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var parts = pair.Split('=');
+            var field = typeof(BotWeights).GetField(parts[0].Trim(),
+                BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)
+                ?? throw new ArgumentException($"no weight named {parts[0]}");
+            field.SetValue(w, double.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture));
+        }
+        return w;
+    }
+
+    /// <summary>
+    /// The candidate (the defaults, plus --set) against a panel of styles and
+    /// the snapshot, each over the same decks. The snapshot arm is the paired
+    /// measurement <see cref="Versus"/> makes; the style arms are the current
+    /// bot with other weights in the other seat.
+    /// </summary>
+    private static int Panel(int games, int threads, string pool, string set, int seed)
+    {
+        var mine = WeightsFrom(set);
+        Console.WriteLine($"panel: the candidate{(set.Length > 0 ? $" with {set}" : "")} over {pool} decks, {games} games an arm");
+        var rows = new List<string>();
+        bool shipped = true;
+        var arms = new List<(string Name, BotWeights? Theirs)> { ("snapshot: the deployed bot", null) };
+        foreach (var (name, armSet) in PanelArms) arms.Add((name, WeightsFrom(armSet)));
+        foreach (var (name, theirs) in arms)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var r = PanelArm(games, threads, pool, seed, mine, theirs);
+            // Losing by more than the interval's half width is a loss; anything
+            // inside it is noise.
+            bool loses = r.WinsA + r.WinsB > 0 && r.RateA < 0.5 && r.Decisive;
+            if (loses) shipped = false;
+            rows.Add($"  {name,-64} {r.WinsA,4} - {r.WinsB,-4} drawn {r.Draws,-3} {r.RateA,6:P1} {r.Confidence95}{(loses ? "  LOSES" : "")}  {sw.Elapsed.TotalSeconds:0}s");
+            Console.WriteLine(rows[^1]);
+        }
+        Console.WriteLine(shipped ? "  the candidate loses to no arm by more than noise" : "  the candidate loses to at least one arm: do not ship it on this alone");
+        return shipped ? 0 : 1;
+    }
+
+    private static MatchupResult PanelArm(int games, int threads, string pool, int seed, BotWeights mine, BotWeights? theirs)
+    {
+        var decks = new DeckList[games];
+        for (int g = 0; g < games; g++) decks[g] = DeckFor(pool, g);
+        var result = new MatchupResult();
+        var gate = new object();
+        var opts = new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, threads) };
+        Parallel.For(0, games, opts, g =>
+        {
+            var d = decks[g / 2];
+            int seatNow = g % 2;
+            Bot.ClearPlan();
+            PreviousBot.ClearPlan();
+            var other = new DeckList { Name = "B", LeaderId = d.LeaderId, Cards = d.Cards };
+            var s = Engine.CreateGame(d, other, 4_000_037 + seed * 104_729 + (g / 2) * 7919);
+            int actions = 0;
+            while (!s.IsOver && actions < 8000 && s.Turn < 400)
+            {
+                int actor = s.CurrentActor;
+                var action = actor == seatNow
+                    ? Bot.ChooseAction(s, actor, mine)
+                    : theirs is null ? PreviousBot.ChooseAction(s, actor) : Bot.ChooseAction(s, actor, theirs);
+                var res = Engine.Apply(s, actor, action);
+                if (!res.Ok) break;
+                s = res.State!;
+                actions++;
+            }
+            lock (gate)
+            {
+                if (s.Winner == seatNow) result.WinsA++;
+                else if (s.Winner >= 0) result.WinsB++;
+                else result.Draws++;
+            }
+        });
+        return result;
+    }
+
+    /// <summary>
+    /// Post-game analysis: every decision of a replay searched again and the
+    /// played action scored against the best line found, over one replay file
+    /// or a folder of them (the human game log pulls into replays/human).
+    /// --seat picks one seat, or every seat when -1; a replay that names its
+    /// bot seat labels the seats bot and person. --deep widens the reply beam
+    /// and turns the turn-after charge on, so the label sees further than the
+    /// bot did at the table. The report is regret per seat, the decisions
+    /// where a kill was on the table and not taken, the played-against-best
+    /// pairs behind the large gaps, and the largest gaps with their lines.
+    /// </summary>
+    private static int Analyze(string path, int seat, string set, bool deep, int top)
+    {
+        var files = Directory.Exists(path)
+            ? Directory.GetFiles(path, "*.json").OrderBy(f => f, StringComparer.Ordinal).ToArray()
+            : new[] { path };
+        if (files.Length == 0)
+        {
+            Console.WriteLine($"no replays under {path}");
+            return 1;
+        }
+        var w = WeightsFrom(set.Length > 0 ? set : deep ? "Peril=2,StandingDeath=60" : "");
+        if (deep)
+        {
+            Bot.ReplyBeamWidth = 12;
+            Bot.ReplyDepth = 8;
+            Bot.ReplyBudget = 1500;
+        }
+        var rows = new List<(string File, int Step, int Turn, int Seat, string Who, Bot.Regret R)>();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        foreach (var file in files)
+        {
+            var replay = Replay.Load(file);
+            int botSeat = -1;
+            using (var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(file)))
+            {
+                if (doc.RootElement.TryGetProperty("log", out var log) && log.TryGetProperty("botSeat", out var bs)) botSeat = bs.GetInt32();
+            }
+            var d = replay.Decks;
+            if (d.Count != 2) continue;
+            var state = Engine.CreateGame(
+                new DeckList { Name = d[0].Name, LeaderId = d[0].LeaderId, Cards = d[0].Cards },
+                new DeckList { Name = d[1].Name, LeaderId = d[1].LeaderId, Cards = d[1].Cards },
+                replay.Seed, replay.StartingPlayer);
+            for (int i = 0; i < replay.Steps.Count; i++)
+            {
+                var step = replay.Steps[i];
+                var action = Replays.ParseAction(step.Action);
+                if (seat < 0 || step.Actor == seat)
+                {
+                    Bot.ClearPlan();
+                    var r = Bot.RegretOf(state, step.Actor, action, w);
+                    if (r is not null)
+                    {
+                        string who = botSeat < 0 ? $"seat {step.Actor}" : step.Actor == botSeat ? "bot" : "person";
+                        rows.Add((Path.GetFileName(file), i, state.Turn, step.Actor, who, r));
+                    }
+                }
+                var res = Engine.Apply(state, step.Actor, action);
+                if (!res.Ok)
+                {
+                    Console.WriteLine($"  {Path.GetFileName(file)} step {i} refused: {res.Error}; the rest of the game is skipped");
+                    break;
+                }
+                state = res.State!;
+            }
+        }
+        Console.WriteLine($"analyzed {files.Length} replay(s), {rows.Count} decisions in {sw.Elapsed.TotalSeconds:0}s{(deep ? " (deep)" : "")}");
+        foreach (var group in rows.GroupBy(r => r.Who).OrderBy(g => g.Key, StringComparer.Ordinal))
+        {
+            var gaps = group.Select(r => r.R.Gap).ToList();
+            int big = gaps.Count(g => g >= 20);
+            int huge = gaps.Count(g => g >= 60);
+            int missed = group.Count(r => r.R.BestKills && !r.R.PlayedKills);
+            Console.WriteLine($"  {group.Key,-8} {gaps.Count,5} decisions, mean gap {gaps.Average():F1}, {big} at 20 or more, {huge} at 60 or more, {missed} with a kill on the table not taken");
+        }
+        var pairs = rows.Where(r => r.R.Gap >= 20)
+            .GroupBy(r => $"played {Head(r.R.PlayedAction)}, best {Head(r.R.BestLine)}")
+            .OrderByDescending(g => g.Count()).Take(10);
+        Console.WriteLine("  behind the gaps of 20 or more:");
+        foreach (var g in pairs) Console.WriteLine($"    {g.Count(),4}  {g.Key}");
+        Console.WriteLine($"  the {top} largest gaps:");
+        foreach (var r in rows.OrderByDescending(r => r.R.Gap).Take(top))
+        {
+            Console.WriteLine($"    {r.R.Gap,7:F1}  {r.File} step {r.Step} turn {r.Turn} {r.Who}: played {r.R.PlayedAction}; best {r.R.BestLine}");
+        }
+        return 0;
+    }
+
+    /// <summary>The first action of a described line, or the whole of a one-action line.</summary>
+    private static string Head(string line)
+    {
+        int cut = line.IndexOf(" ; ", StringComparison.Ordinal);
+        string head = cut < 0 ? line : line[..cut];
+        int paren = head.IndexOf('(');
+        int space = head.IndexOf(' ');
+        int end = paren < 0 ? space : space < 0 ? paren : Math.Min(paren, space);
+        return end < 0 ? head : head[..end];
     }
 
     private static int Verify()
