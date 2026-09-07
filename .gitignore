@@ -47,3 +47,6 @@ obj/
 
 # bwp theme snapshots
 src/.bwp/
+
+# Games people played, pulled from the worker: data for analysis, not for the public repo.
+replays/human/

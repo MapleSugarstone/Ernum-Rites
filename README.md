@@ -553,16 +553,18 @@ a person is stored: no player names, no addresses, no exact time, only the UTC
 day. The store is a SQLite-backed Durable Object on the free plan, keeping the
 newest 20,000 games.
 
-Reading the log back needs a bearer token. Set one once with:
+Reading the log back needs a bearer token: the `LOG_TOKEN` secret on the
+worker, which is set, and the same value in the gitignored `.env.local` at the
+repo root as `LOG_TOKEN=...`. To rotate it, put a new value in both places:
 
 ```bash
 npx wrangler secret put LOG_TOKEN
 ```
 
-Then pull new games into `replays/human/` as replay files with:
+Pull new games into `replays/human/` as replay files with:
 
 ```bash
-LOG_TOKEN=<the token> npx tsx scripts/pull-logs.ts https://ernum-rites-server.maplesugarstone.workers.dev
+npm run logs:pull
 ```
 
 Those files are what `Selatza.Sim analyze --replay replays/human` reads to

@@ -3,17 +3,33 @@
 // re-run over positions people actually reached (scripts/botexplain.ts and
 // `Selatza.Sim analyze` both read that shape).
 //
-//   LOG_TOKEN=<the deployment's token> npx tsx scripts/pull-logs.ts https://<worker>
+//   npm run logs:pull
 //
-// Only games newer than the highest id already on disk are fetched, so this
-// can run as often as wanted.
-import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+// The token is read from LOG_TOKEN in the environment, else from the
+// gitignored .env.local at the repo root (`LOG_TOKEN=...`), which is where the
+// deployment's token lives on the maintainer's machine. The worker is the
+// deployed one unless a URL is given as the first argument. Only games newer
+// than the highest id already on disk are fetched, so this can run as often
+// as wanted.
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const base = (process.argv[2] ?? process.env.WORKER_URL ?? '').replace(/\/$/, '');
-const token = process.env.LOG_TOKEN ?? '';
+const DEPLOYED = 'https://ernum-rites-server.maplesugarstone.workers.dev';
+
+function localToken(): string {
+  const path = join(process.cwd(), '.env.local');
+  if (!existsSync(path)) return '';
+  for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
+    const m = /^LOG_TOKEN=(.+)$/.exec(line.trim());
+    if (m) return m[1].trim();
+  }
+  return '';
+}
+
+const base = (process.argv[2] ?? process.env.WORKER_URL ?? DEPLOYED).replace(/\/$/, '');
+const token = process.env.LOG_TOKEN || localToken();
 if (!base || !token) {
-  console.error('usage: LOG_TOKEN=... npx tsx scripts/pull-logs.ts https://<worker>');
+  console.error('no token: set LOG_TOKEN or put LOG_TOKEN=... in .env.local');
   process.exit(1);
 }
 const dir = join(process.cwd(), 'replays', 'human');
