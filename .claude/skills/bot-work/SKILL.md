@@ -102,6 +102,18 @@ and the corpus, one of them a missing `_rootSet = true` in C# alone.
 - A card registered only in TypeScript (`hidden`, the face-down stand-in)
   put the two read pools one card apart. Anything walking `allCards()` for a
   collectible set is exposed to this.
+- Damage lands one HP card at a time and a card with a flip cost holds the
+  rest until its owner answers. `settle` answers the other side's offers
+  now; before that every damaging line was scored on the first card of the
+  blow, in the kill search, the threat measure and the reply alike.
+- The patient climb keeps back the mana its best cash-in needs
+  (`cashPotential(...).cashIn`). Without it a repeatable buff ate every pip
+  and the Power that was to fire the buffed body was never affordable.
+- When you build a board by hand to test a line, check the defending side
+  for a Redirection body (Strange Station is one) before reading a missing
+  leader target as a search bug. And a hand-built turn has to decline the
+  other side's flip offers itself, or damage stays pending and no kill
+  shows; `playTurnAnswered` in the combo tests does.
 
 ## The learning line
 
@@ -144,9 +156,14 @@ results. Facts that matter:
 
 ## Where things stood at the end of the session
 
-- The bot in both engines is the one measured at 391-208 on candy, 371-228
-  on random and 360-239 on a mutated set against the deployed snapshot, all
-  paired, 600 games. Both suites pass, the corpus agrees 13 of 13.
+- The bot in both engines measures 440-159 on candy seed 22 and 432-167 on
+  random seed 21 against the deployed snapshot, paired, 600 games, after the
+  flip answers and the mana reserve landed (it was 391-208 and 371-228 the
+  same morning). Both suites pass, the corpus agrees 13 of 13.
+- Heavier peeks (hand 0.25x2, deck 0.3x3) measured two to three points
+  under the defaults on both pools. The defaults (hand 0.05x1, deck
+  0.15x3) stay; measure any new read level with `versus --hand a x b
+  --deck c x d` before changing them.
 - A meta check, seed 1 of the `meta` pool to 300 rounds on a 128-core N2, was
   in flight; its results land in `runs/meta1` with `games.db`. Rerunning
   `scripts/gcp-meta.sh meta 1 400 n2-standard-128 ...` resumes it to 400.

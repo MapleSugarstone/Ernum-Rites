@@ -58,10 +58,15 @@ echo "staging the build in ${BUCKET}"
 gcloud storage rm -r "${BUCKET}/train-${TAG}" >/dev/null 2>&1 || true
 gcloud storage rm "${BUCKET}/runs-${TAG}/ALL_DONE" >/dev/null 2>&1 || true
 gcloud storage cp -r "${BUILD}/train" "${BUCKET}/train-${TAG}/" >/dev/null
-if ls runs/${TAG}[0-9]* >/dev/null 2>&1; then
-  echo "uploading runs/${TAG}* for a resume"
-  gcloud storage cp -r runs/${TAG}[0-9]* "${BUCKET}/runs-${TAG}/" >/dev/null
-fi
+# Only the seed folders this run names. A pattern once matched a stale
+# folder from another tag whose name happened to fit (tag meta2 seed 1 and
+# tag meta seed 21 are both runs/meta21) and offered it as a resume.
+for s in $(seq "${SEED0}" "${SEED1}"); do
+  if [ -f "runs/${TAG}${s}/snapshot.bin" ]; then
+    echo "uploading runs/${TAG}${s} for a resume"
+    gcloud storage cp -r "runs/${TAG}${s}" "${BUCKET}/runs-${TAG}/" >/dev/null
+  fi
+done
 
 # The whole run, as the machine's startup script. It runs at every boot, so a
 # pre-empted machine that is started again resumes on its own.
@@ -73,21 +78,28 @@ STARTUP="${BUILD}/startup.sh"
   echo 'mkdir -p runs'
   echo "gcloud storage cp -r ${BUCKET}/train-${TAG}/train /root/ >/dev/null 2>&1"
   echo 'chmod +x /root/train/Selatza.Train'
-  echo "gcloud storage cp -r ${BUCKET}/runs-${TAG}/* /root/runs/ >/dev/null 2>&1 || true"
+  # Only onto a fresh disk. After a pre-emption the disk holds a newer
+  # snapshot than the bucket, and copying over it once cost ninety rounds.
+  echo "[ -f runs/${TAG}${SEED0}/snapshot.bin ] || gcloud storage cp -r ${BUCKET}/runs-${TAG}/* /root/runs/ >/dev/null 2>&1 || true"
   echo 'rm -f runs/ALL_DONE'
   # Progress goes to the bucket every five minutes for the watcher to read.
   echo "( while true; do sleep 300; tail -n 1 runs/${TAG}${SEED0}.log > runs/progress.txt 2>/dev/null; gcloud storage cp runs/progress.txt ${BUCKET}/runs-${TAG}/progress.txt >/dev/null 2>&1; done ) &"
   echo 'PROGRESS=$!'
   echo "THREADS=\$(( \$(nproc) / ${SEEDS} ))"
   echo '[ "$THREADS" -lt 1 ] && THREADS=1'
+  # The waits name their jobs: a bare wait would also wait on the progress
+  # loop above and never reach the databases. A trainer that resumes writes
+  # a fresh log beside the earlier one, so the db command takes a pattern.
+  echo 'PIDS=""'
   for s in $(seq "${SEED0}" "${SEED1}"); do
-    echo "./train/Selatza.Train train --no-net --every-leader --leader-pool meta --rounds ${ROUNDS} --games 6 --seed ${s} --threads \$THREADS --out runs/${TAG}${s} --log-games runs/${TAG}${s}/games.szgl > runs/${TAG}${s}.log 2>&1 &"
+    echo "./train/Selatza.Train train --no-net --every-leader --leader-pool meta --rounds ${ROUNDS} --games 6 --seed ${s} --threads \$THREADS --out runs/${TAG}${s} --log-games runs/${TAG}${s}/games.szgl >> runs/${TAG}${s}.log 2>&1 & PIDS=\"\$PIDS \$!\""
   done
-  echo 'wait'
+  echo 'wait $PIDS'
+  echo 'DBS=""'
   for s in $(seq "${SEED0}" "${SEED1}"); do
-    echo "./train/Selatza.Train db --log runs/${TAG}${s}/games.szgl --db runs/${TAG}${s}/games.db > runs/${TAG}${s}.db.log 2>&1 &"
+    echo "./train/Selatza.Train db --log \"runs/${TAG}${s}/games*.szgl\" --db runs/${TAG}${s}/games.db > runs/${TAG}${s}.db.log 2>&1 & DBS=\"\$DBS \$!\""
   done
-  echo 'wait'
+  echo 'wait $DBS'
   echo 'kill $PROGRESS 2>/dev/null'
   echo "gcloud storage cp -r runs/${TAG}* ${BUCKET}/runs-${TAG}/ > runs/upload.log 2>&1"
   echo 'touch runs/ALL_DONE'

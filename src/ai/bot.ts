@@ -44,6 +44,7 @@ import {
   MANA_KINDS,
   costColored,
   type CardDef,
+  type Cost,
   type PlayerIdx,
   type TargetRef,
   type TargetSpec,
@@ -773,10 +774,67 @@ function settleStore(state: GameState, w: BotWeights): GameState {
  * valued by the deal it settles at.
  */
 function settle(state: GameState, w: BotWeights = defaultWeights, buyOut = false): GameState {
-  if (!state.pending) return state;
-  if (state.pending.kind === 'store') return buyOut ? buyOutStore(state, w) : settleStore(state, w);
-  const res = applyAction(state, state.pending.player, { type: 'PASS_RESPONSE' });
-  return res.ok ? res.state : state;
+  let s = state;
+  if (s.pending) {
+    if (s.pending.kind === 'store') {
+      s = buyOut ? buyOutStore(s, w) : settleStore(s, w);
+    } else {
+      const res = applyAction(s, s.pending.player, { type: 'PASS_RESPONSE' });
+      s = res.ok ? res.state : s;
+    }
+  }
+  return answerFlips(s, w);
+}
+
+/** Flip offers one settle answers for the side that is not taking the turn. */
+const FLIP_ANSWERS = 8;
+
+/**
+ * Answer the flip offers waiting on whoever is not taking the turn. Damage
+ * lands one HP card at a time, and a card with a flip cost holds the rest of
+ * the blow until its owner pays or declines, so a position left with the
+ * offer open has taken the first card of a blow and none of the rest. Nothing
+ * in the search answered for the other side, and every damaging line was read
+ * short at the first such card: a fifteen-point Alchemize read as two, in the
+ * kill search and in the reply alike. Their answer is the greedy one on their
+ * own reading of the board, the same guess the reply model makes for them.
+ * The acting side's own offers stay with the search, which already holds
+ * both answers as candidates.
+ */
+function answerFlips(state: GameState, w: BotWeights): GameState {
+  let s = state;
+  for (let i = 0; i < FLIP_ANSWERS; i++) {
+    if (isOver(s) || s.flipQueue.length === 0) break;
+    const offer = s.flipQueue[0];
+    if (offer.player === s.active) break;
+    const owner = offer.player;
+    let pick: GameState | null = null;
+    let best = Number.NEGATIVE_INFINITY;
+    for (const action of flipAnswers(s, owner)) {
+      const res = applyAction(s, owner, action);
+      if (!res.ok) continue;
+      const score = evaluate(res.state, owner, w);
+      if (score > best + 1e-6) {
+        best = score;
+        pick = res.state;
+      }
+    }
+    if (!pick) break;
+    s = pick;
+  }
+  return s;
+}
+
+/** Declining, and paying in each way the cost allows. */
+function flipAnswers(state: GameState, owner: PlayerIdx): Action[] {
+  const acts: Action[] = [{ type: 'DECLINE_FLIP' }];
+  const cost = card(state.flipQueue[0].cardId).flipCost;
+  if (cost?.discard) {
+    state.players[owner].hand.forEach((_, handIndex) => acts.push({ type: 'PAY_FLIP', handIndex }));
+  } else {
+    acts.push({ type: 'PAY_FLIP' });
+  }
+  return acts;
 }
 
 /**
@@ -2200,37 +2258,89 @@ function potential(state: GameState, me: PlayerIdx): number {
 /** Paid Powers a patient climb fires once it has built everything it can. */
 const CASH_STEPS = 4;
 
+/** A paid action that takes HP off an enemy leader, and the mana it needs. */
+interface CashIn {
+  cost: Cost;
+  drop: number;
+}
+
 /**
- * Potential with the best paid Power still to fire. A Power that sets a body's
- * attack from something the free steps build, debt say, gains nothing until it
- * fires, and fired early it fixes the attack at what the pile was then. A climb
- * greedy on the plain measure took it first, for the largest step on offer,
- * and every free step after that built toward nothing. Counting the follow-up
- * without taking it lets the climb build first and cash in last.
+ * Potential with the best paid Power still to fire, and the paid action from
+ * here that takes the most off an enemy leader.
+ *
+ * The value: a Power that sets a body's attack from something the free steps
+ * build, debt say, gains nothing until it fires, and fired early it fixes the
+ * attack at what the pile was then. A climb greedy on the plain measure took
+ * it first, for the largest step on offer, and every free step after that
+ * built toward nothing. Counting the follow-up without taking it lets the
+ * climb build first and cash in last.
+ *
+ * The cash-in is what the climb keeps mana back for. On the plain measure it
+ * reads as a loss: the body it feeds in and the mana it costs leave the
+ * measure, and the damage they became never enters it. So a climb greedy on
+ * potential spent every pip on the buff that fed it and left the cash-in
+ * unpayable, and a Rally three times into Alchemize was never found with
+ * every piece on the board. Its damage is not added to the value: measured
+ * one action deep it reads flat under a cash-in that needs a Power fired
+ * first, and that stopped the debt climb two steps short of its kill.
  */
 function cashPotential(
   state: GameState,
   me: PlayerIdx,
   w: BotWeights,
-): { value: number; cash: Action | null; cashState: GameState | null } {
+): { value: number; cash: Action | null; cashState: GameState | null; cashIn: CashIn | null } {
   const standing = potential(state, me);
   let value = standing;
   let cash: Action | null = null;
   let cashState: GameState | null = null;
+  let cashIn: CashIn | null = null;
+  const was = new Map<PlayerIdx, number>();
+  for (const foe of livingOpponents(state, me)) was.set(foe, leaderHpOf(state, foe));
   for (const action of candidateActions(state, me, w, true)) {
-    if (action.type !== 'ACTIVATE_POWER' || freeRepeat(state, me, action)) continue;
+    const paidPower = action.type === 'ACTIVATE_POWER' && !freeRepeat(state, me, action);
+    const cost = paidCost(state, me, action);
+    if (!paidPower && !cost) continue;
     const res = applyAction(state, me, action);
     if (!res.ok) continue;
     const after = settle(res.state, w, true);
     if (losesIt(after, me)) continue;
-    const p = potential(after, me);
-    if (p > value + 1e-9) {
-      value = p;
-      cash = action;
-      cashState = after;
+    if (paidPower) {
+      const p = potential(after, me);
+      if (p > value + 1e-9) {
+        value = p;
+        cash = action;
+        cashState = after;
+      }
+    }
+    if (cost) {
+      let drop = 0;
+      for (const [foe, hp] of was) drop = Math.max(drop, hp - leaderHpOf(after, foe));
+      if (drop > (cashIn?.drop ?? 0) + 1e-9) cashIn = { cost, drop };
     }
   }
-  return { value, cash, cashState };
+  return { value, cash, cashState, cashIn };
+}
+
+/**
+ * The mana an action spends, or null when it spends none: a Power with a cost,
+ * or a spell with one that is aimed at a leader or at nothing in particular.
+ */
+function paidCost(state: GameState, me: PlayerIdx, action: Action): Cost | null {
+  const p = state.players[me];
+  let cost: Cost | undefined;
+  if (action.type === 'ACTIVATE_POWER') {
+    const src = action.source;
+    const summon = src.kind === 'leader' ? p.leader : src.kind === 'summon' ? p.slots[src.slot] : null;
+    if (!summon) return null;
+    cost = powersOf(summon, card(summon.cardId))[action.powerIndex]?.cost;
+  } else if (action.type === 'CAST_SPELL') {
+    if (action.targets.length > 0 && !action.targets.some((t) => t.kind === 'leader')) return null;
+    cost = costFor(p, card(p.hand[action.handIndex]));
+  } else {
+    return null;
+  }
+  if (!cost || !Object.values(cost).some((n) => (n ?? 0) > 0)) return null;
+  return cost;
 }
 
 /**
@@ -2327,7 +2437,11 @@ function burn(
     let pickState: GameState | null = null;
     let level: Action | null = null;
     let levelState: GameState | null = null;
-    const standing = patient ? cashPotential(cur, me, w).value : potential(cur, me);
+    // The mana the best cash-in from here needs stays out of the build. A
+    // step that spent it built toward nothing the swing could fire.
+    const here = cashPotential(cur, me, w);
+    const reserve = here.cashIn;
+    const standing = patient ? here.value : potential(cur, me);
     let best = standing;
 
     for (const action of candidateActions(cur, me, w, true)) {
@@ -2338,6 +2452,7 @@ function burn(
         return { state: after, line: [...line, action], damage: worstDrop(after) };
       }
       if (losesIt(after, me)) continue;
+      if (reserve && worstDrop(after) <= worstDrop(cur) && !canPay(after.players[me], reserve.cost)) continue;
       const p = patient ? cashPotential(after, me, w).value : potential(after, me);
       // On a tie the free step goes first: the paid one is still there after it,
       // and the free one may be worth more once the paid one has fired.
@@ -2384,8 +2499,11 @@ function burn(
   // gains, it fires: the attack it sets is read off everything built above.
   for (let cashed = 0; patient && cashed < CASH_STEPS; cashed++) {
     if (!turnGoesOn(cur, me)) break;
-    const { cash, cashState } = cashPotential(cur, me, w);
+    const { cash, cashState, cashIn } = cashPotential(cur, me, w);
     if (!cash || !cashState) break;
+    // The reserve the climb kept holds here too: a cash that leaves the
+    // cash-in unpayable is the buff that fed it, fired one time too many.
+    if (cashIn && worstDrop(cashState) <= worstDrop(cur) && !canPay(cashState.players[me], cashIn.cost)) break;
     if (cashState.winner === me) {
       return { state: cashState, line: [...line, cash], damage: worstDrop(cashState) };
     }

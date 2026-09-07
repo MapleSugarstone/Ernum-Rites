@@ -33,9 +33,16 @@ public static class Program
         string logPath = Str(args, "--log-games", "");
         if (logPath.Length > 0)
         {
+            // A compressed log cannot be appended to, so a run that resumes
+            // beside an earlier one writes the next free name, and the db
+            // command reads them all with a pattern.
+            logPath = FreeLogName(logPath);
             GameLog.Open(logPath, Int(args, "--log-every", 1));
             Console.WriteLine($"logging games to {logPath}"
                 + (Int(args, "--log-every", 1) > 1 ? $", 1 in {Int(args, "--log-every", 1)}" : ""));
+            // A spot machine is stopped with a signal. Closing here finishes
+            // the compressed stream, so the log reads to its last game.
+            AppDomain.CurrentDomain.ProcessExit += (_, _) => GameLog.Close();
         }
         try
         {
@@ -51,6 +58,20 @@ public static class Program
                 Console.WriteLine($"wrote {n:N0} games to {logPath} "
                     + $"({size / 1024.0 / 1024.0:F1} MB, {(n > 0 ? size / (double)n : 0):F0} bytes a game)");
             }
+        }
+    }
+
+    /// <summary>The path itself when nothing is there yet, else the first free numbered name beside it.</summary>
+    private static string FreeLogName(string path)
+    {
+        if (!File.Exists(path) || new FileInfo(path).Length == 0) return path;
+        string dir = Path.GetDirectoryName(path) ?? "";
+        string stem = Path.GetFileNameWithoutExtension(path);
+        string ext = Path.GetExtension(path);
+        for (int i = 1; ; i++)
+        {
+            string next = Path.Combine(dir, $"{stem}.{i}{ext}");
+            if (!File.Exists(next)) return next;
         }
     }
 

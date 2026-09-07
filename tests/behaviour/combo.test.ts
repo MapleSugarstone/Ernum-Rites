@@ -460,3 +460,69 @@ describe('what a card can do', () => {
     expect(evaluate(looped, 0)).toBeGreaterThan(evaluate(plain, 0) + defaultWeights.deathrattle);
   });
 });
+
+/**
+ * A turn played out with the other side answering its own flip offers, since a
+ * costed HP card holds the rest of a blow until its owner pays or declines.
+ */
+function playTurnAnswered(state: GameState, me: PlayerIdx): { state: GameState; line: Action[] } {
+  const line: Action[] = [];
+  let s = state;
+  for (let i = 0; i < 80; i++) {
+    if (s.winner !== null || s.drawn) break;
+    const action = chooseAction(s, me);
+    if (action.type === 'END_TURN') break;
+    const res = applyAction(s, me, action);
+    if (!res.ok) throw new Error(`illegal ${action.type}: ${res.error}`);
+    line.push(action);
+    s = res.state;
+    for (let j = 0; j < 20 && s.flipQueue.length > 0 && s.flipQueue[0].player !== me; j++) {
+      const declined = applyAction(s, s.flipQueue[0].player, { type: 'DECLINE_FLIP' });
+      if (!declined.ok) break;
+      s = declined.state;
+    }
+    if (s.active !== me) break;
+  }
+  return { state: s, line };
+}
+
+describe('cash-ins', () => {
+  it('keeps the mana a cash-in needs while it builds toward it', () => {
+    // Rally is +4 attack for one pip and repeats; Alchemize spends a body for
+    // its attack to the face and costs three. Six pips hold three Rallies and
+    // the Alchemize, which is 15 on a 12 HP leader behind a wall. A climb that
+    // counted only attack and mana spent every pip on Rally and had nothing
+    // left to fire it with.
+    const s = board();
+    const me = s.players[0];
+    const foe = s.players[1];
+    me.leader = body(s, 'p3-helemy', 0, 12, true);
+    foe.leader = body(s, LEADER, 1, 12, true);
+    me.slots[0] = body(s, 'p3-Pod', 0, 7);
+    me.slots[1] = body(s, 'p2-warmateer', 0, 3);
+    me.mana.P = 6;
+    foe.slots[0] = body(s, FILLER, 1, 20);
+
+    const { state, line } = playTurnAnswered(s, 0);
+    expect(state.winner, `line: ${line.map((a) => a.type).join(' ')}`).toBe(0);
+  });
+
+  it('reads a blow past a costed flip on the other side', () => {
+    // Every HP card on the enemy leader asks its owner to pay or decline
+    // before the rest of the blow lands. Alchemize on a six-attack body is
+    // exactly lethal, and a search that left the first offer open read it as
+    // one point of damage.
+    const s = board();
+    const me = s.players[0];
+    const foe = s.players[1];
+    me.leader = body(s, 'p3-helemy', 0, 12, true);
+    foe.leader = body(s, LEADER, 1, 6, true);
+    for (const h of foe.leader.hp) h.cardId = 'r2-securitybot';
+    me.slots[0] = body(s, 'p3-stareater', 0, 5);
+    me.mana.P = 3;
+    foe.slots[0] = body(s, FILLER, 1, 20);
+
+    const { state, line } = playTurnAnswered(s, 0);
+    expect(state.winner, `line: ${line.map((a) => a.type).join(' ')}`).toBe(0);
+  });
+});

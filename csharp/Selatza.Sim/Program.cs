@@ -47,7 +47,7 @@ public static class Program
             "duel" => Duel(games),
             "versus" => Versus(games, ArgInt(args, "--threads", Environment.ProcessorCount),
                 ArgStr(args, "--decks", "random"), ArgStr(args, "--set", ""), ArgInt(args, "--seed", 1), Flag2(args, "--self"),
-                Flag2(args, "--perfect"), ArgStr(args, "--read", ""), ArgStr(args, "--hand", ""), ArgStr(args, "--reply", "")),
+                Flag2(args, "--perfect"), ArgStr(args, "--read", ""), ArgStr(args, "--hand", ""), ArgStr(args, "--deck", ""), ArgStr(args, "--reply", "")),
             "tune" => Tune(games, ArgInt(args, "--rounds", 3),
                 ArgInt(args, "--threads", Environment.ProcessorCount),
                 ArgStr(args, "--only", ""), ArgStr(args, "--decks", "random")),
@@ -362,7 +362,7 @@ public static class Program
     /// answer to "is the new bot better", measured rather than argued.
     /// </summary>
     private static int Versus(int games, int threads, string pool, string set, int seed, bool self, bool perfect = false,
-        string read = "", string hand = "", string reply = "")
+        string read = "", string hand = "", string deck = "", string reply = "")
     {
         // --reply <width>,<depth>,<budget> sets the opponent model's beam for
         // the current bot, so its profile can be tuned against the snapshot.
@@ -387,6 +387,13 @@ public static class Program
             var parts = hand.Split('x');
             Bot.Intel.HandChance = double.Parse(parts[0], System.Globalization.CultureInfo.InvariantCulture);
             Bot.Intel.HandRolls = int.Parse(parts[1]);
+        }
+        // --deck <chance>x<rolls> sets the deck peeks the same way.
+        if (deck.Length > 0)
+        {
+            var parts = deck.Split('x');
+            Bot.Intel.DeckChance = double.Parse(parts[0], System.Globalization.CultureInfo.InvariantCulture);
+            Bot.Intel.DeckRolls = int.Parse(parts[1]);
         }
         // --set Name=value,... overrides weights on the current side only, so a
         // new term can be measured with and without the search change it came

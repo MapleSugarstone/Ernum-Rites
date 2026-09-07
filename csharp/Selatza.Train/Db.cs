@@ -1,4 +1,5 @@
 using System.Data;
+using System.Linq;
 using Microsoft.Data.Sqlite;
 using Selatza;
 using Selatza.Learn;
@@ -26,12 +27,13 @@ public static class Db
         bool noEvents = Array.IndexOf(args, "--no-events") >= 0;
         bool noBoards = Array.IndexOf(args, "--no-boards") >= 0;
 
-        if (!File.Exists(log))
+        var logs = LogFiles(log);
+        if (logs.Count == 0)
         {
-            Console.Error.WriteLine("db needs --log <file written by --log-games>");
+            Console.Error.WriteLine("db needs --log <file written by --log-games>, several separated by commas, or a pattern with *");
             return 2;
         }
-        if (dbPath.Length == 0) dbPath = Path.ChangeExtension(log, ".db");
+        if (dbPath.Length == 0) dbPath = Path.ChangeExtension(logs[0], ".db");
         if (File.Exists(dbPath)) File.Delete(dbPath);
 
         using var con = new SqliteConnection($"Data Source={dbPath}");
@@ -39,9 +41,9 @@ public static class Db
         Exec(con, "PRAGMA journal_mode=OFF; PRAGMA synchronous=OFF; PRAGMA cache_size=-200000;");
         Exec(con, Schema);
 
-        using var r = new GameLogReader(log);
-        string CardName(int i) => i >= 0 && i < r.Cards.Length
-            ? Registry.TryCard(r.Cards[i])?.Name ?? r.Cards[i] : "";
+        using var r0 = new GameLogReader(logs[0]);
+        string CardName(int i) => i >= 0 && i < r0.Cards.Length
+            ? Registry.TryCard(r0.Cards[i])?.Name ?? r0.Cards[i] : "";
 
         // Cards are stored once and referenced by index everywhere else, which
         // keeps eleven million event rows to a size that still queries quickly.
@@ -50,12 +52,12 @@ public static class Db
             using var ins = con.CreateCommand();
             ins.CommandText = "insert into card (id, cid, name, colour, level, type, neutral) "
                 + "values ($i, $cid, $n, $c, $l, $t, $u)";
-            for (int i = 0; i < r.Cards.Length; i++)
+            for (int i = 0; i < r0.Cards.Length; i++)
             {
-                var def = Registry.TryCard(r.Cards[i]);
+                var def = Registry.TryCard(r0.Cards[i]);
                 ins.Parameters.Clear();
                 ins.Parameters.AddWithValue("$i", i);
-                ins.Parameters.AddWithValue("$cid", r.Cards[i]);
+                ins.Parameters.AddWithValue("$cid", r0.Cards[i]);
                 ins.Parameters.AddWithValue("$n", CardName(i));
                 ins.Parameters.AddWithValue("$c", ColourOf(def));
                 ins.Parameters.AddWithValue("$l", def?.Level ?? 0);
@@ -83,97 +85,121 @@ public static class Db
             int DeckOuts, int Bodies, int Sup, int LeaderHp, int Slot, int Card, int Hp,
             int Love, int Stock)>();
 
-        while (r.NextGame(out var head))
+        int cut = 0;
+        foreach (var path in logs)
         {
-            seen++;
-            bool keep = seen % sample == 0;
-            pendEv.Clear();
-            pendBoard.Clear();
-            int actions = 0;
-
-            LogItem item;
-            LogEvent le;
-            while ((item = r.Next(out le)) != LogItem.End)
+            var r = ReferenceEquals(path, logs[0]) ? r0 : new GameLogReader(path);
+            if (!r.Cards.SequenceEqual(r0.Cards))
             {
-                if (item == LogItem.Snapshot)
+                Console.Error.WriteLine($"{path} was written by a different build: its card table differs from {logs[0]}");
+                return 2;
+            }
+            try
+            {
+                while (r.NextGame(out var head))
                 {
-                    if (!keep || noBoards) continue;
-                    for (int seat = 0; seat < 2; seat++)
+                    seen++;
+                    bool keep = seen % sample == 0;
+                    pendEv.Clear();
+                    pendBoard.Clear();
+                    int actions = 0;
+
+                    LogItem item;
+                    LogEvent le;
+                    while ((item = r.Next(out le)) != LogItem.End)
                     {
-                        var s = r.Snap[seat];
-                        for (int slot = 0; slot < s.Slots.Length; slot++)
+                        if (item == LogItem.Snapshot)
                         {
-                            pendBoard.Add((seat, r.SnapTurn, s.Debt, s.Hand, s.Deck, s.Discard,
-                                s.DeckOuts, s.Bodies, s.SupporterCount, s.LeaderHp,
-                                slot, s.Slots[slot], s.SlotHp[slot], s.Love, s.SlotStock[slot]));
+                            if (!keep || noBoards) continue;
+                            for (int seat = 0; seat < 2; seat++)
+                            {
+                                var s = r.Snap[seat];
+                                for (int slot = 0; slot < s.Slots.Length; slot++)
+                                {
+                                    pendBoard.Add((seat, r.SnapTurn, s.Debt, s.Hand, s.Deck, s.Discard,
+                                        s.DeckOuts, s.Bodies, s.SupporterCount, s.LeaderHp,
+                                        slot, s.Slots[slot], s.SlotHp[slot], s.Love, s.SlotStock[slot]));
+                                }
+                            }
+                            continue;
+                        }
+                        actions++;
+                        if (!keep || noEvents) continue;
+                        string power = le.PowerSlot >= 0
+                            && r.Powers.TryGetValue((le.Card, le.PowerSlot), out var pn) ? pn : "";
+                        if (le.TargetCount == 0)
+                        {
+                            pendEv.Add((le.Actor, ((ActionType)le.Type).ToString(), le.Turn, le.Card,
+                                power, -1, "", ""));
+                        }
+                        else
+                        {
+                            for (int i = 0; i < le.TargetCount; i++)
+                            {
+                                pendEv.Add((le.Actor, ((ActionType)le.Type).ToString(), le.Turn, le.Card,
+                                    power, r.Targets[i].Card, ((TargetKind)r.Targets[i].Kind).ToString(),
+                                    r.Targets[i].Player == le.Actor ? "self" : "enemy"));
+                            }
                         }
                     }
-                    continue;
-                }
-                actions++;
-                if (!keep || noEvents) continue;
-                string power = le.PowerSlot >= 0
-                    && r.Powers.TryGetValue((le.Card, le.PowerSlot), out var pn) ? pn : "";
-                if (le.TargetCount == 0)
-                {
-                    pendEv.Add((le.Actor, ((ActionType)le.Type).ToString(), le.Turn, le.Card,
-                        power, -1, "", ""));
-                }
-                else
-                {
-                    for (int i = 0; i < le.TargetCount; i++)
+
+                    var tail = r.EndGame();
+                    if (!keep) continue;
+                    games++;
+                    string reason = tail.Reason switch
+                    { 1 => "debt", 2 => "leader", 3 => "other", _ => "unfinished" };
+
+                    Set(g, "$id", games); Set(g, "$sd", head.Seed);
+                    Set(g, "$na", head.NameA); Set(g, "$nb", head.NameB);
+                    Set(g, "$la", CardName(head.LeaderA)); Set(g, "$lb", CardName(head.LeaderB));
+                    Set(g, "$ca", ColourOf(Registry.TryCard(r.Cards[Math.Max(0, head.LeaderA)])));
+                    Set(g, "$cb", ColourOf(Registry.TryCard(r.Cards[Math.Max(0, head.LeaderB)])));
+                    Set(g, "$st", head.StartingPlayer); Set(g, "$w", tail.Winner);
+                    Set(g, "$r", reason); Set(g, "$t", tail.Turns); Set(g, "$ac", actions);
+                    g.ExecuteNonQuery();
+
+                    foreach (var row in pendEv)
                     {
-                        pendEv.Add((le.Actor, ((ActionType)le.Type).ToString(), le.Turn, le.Card,
-                            power, r.Targets[i].Card, ((TargetKind)r.Targets[i].Kind).ToString(),
-                            r.Targets[i].Player == le.Actor ? "self" : "enemy"));
+                        Set(e, "$g", games); Set(e, "$s", row.Seat); Set(e, "$ty", row.Type);
+                        Set(e, "$tu", row.Turn); Set(e, "$c", row.Card); Set(e, "$p", row.Power);
+                        Set(e, "$tg", row.Target); Set(e, "$tk", row.Kind); Set(e, "$ts", row.Side);
+                        Set(e, "$w", tail.Winner == row.Seat ? 1 : 0);
+                        e.ExecuteNonQuery();
+                        evRows++;
+                    }
+                    foreach (var row in pendBoard)
+                    {
+                        Set(b, "$g", games); Set(b, "$s", row.Seat); Set(b, "$tu", row.Turn);
+                        Set(b, "$d", row.Debt); Set(b, "$h", row.Hand); Set(b, "$dk", row.Deck);
+                        Set(b, "$di", row.Discard); Set(b, "$do", row.DeckOuts); Set(b, "$bo", row.Bodies);
+                        Set(b, "$su", row.Sup); Set(b, "$lh", row.LeaderHp); Set(b, "$sl", row.Slot);
+                        Set(b, "$c", row.Card); Set(b, "$hp", row.Hp);
+                        Set(b, "$lv", row.Love); Set(b, "$sk", row.Stock);
+                        Set(b, "$w", tail.Winner == row.Seat ? 1 : 0);
+                        b.ExecuteNonQuery();
+                        boardRows++;
+                    }
+
+                    if (games % 20000 == 0)
+                    {
+                        tx2.Commit();
+                        tx2.Dispose();
+                        Console.WriteLine($"  {games:N0} games, {evRows:N0} events, {boardRows:N0} board rows");
+                        tx2 = con.BeginTransaction();
+                        g.Transaction = tx2; e.Transaction = tx2; b.Transaction = tx2;
                     }
                 }
             }
-
-            var tail = r.EndGame();
-            if (!keep) continue;
-            games++;
-            string reason = tail.Reason switch
-            { 1 => "debt", 2 => "leader", 3 => "other", _ => "unfinished" };
-
-            Set(g, "$id", games); Set(g, "$sd", head.Seed);
-            Set(g, "$na", head.NameA); Set(g, "$nb", head.NameB);
-            Set(g, "$la", CardName(head.LeaderA)); Set(g, "$lb", CardName(head.LeaderB));
-            Set(g, "$ca", ColourOf(Registry.TryCard(r.Cards[Math.Max(0, head.LeaderA)])));
-            Set(g, "$cb", ColourOf(Registry.TryCard(r.Cards[Math.Max(0, head.LeaderB)])));
-            Set(g, "$st", head.StartingPlayer); Set(g, "$w", tail.Winner);
-            Set(g, "$r", reason); Set(g, "$t", tail.Turns); Set(g, "$ac", actions);
-            g.ExecuteNonQuery();
-
-            foreach (var row in pendEv)
+            catch (EndOfStreamException)
             {
-                Set(e, "$g", games); Set(e, "$s", row.Seat); Set(e, "$ty", row.Type);
-                Set(e, "$tu", row.Turn); Set(e, "$c", row.Card); Set(e, "$p", row.Power);
-                Set(e, "$tg", row.Target); Set(e, "$tk", row.Kind); Set(e, "$ts", row.Side);
-                Set(e, "$w", tail.Winner == row.Seat ? 1 : 0);
-                e.ExecuteNonQuery();
-                evRows++;
+                // A writer taken away before it closed the log. Every game
+                // before the cut is whole; the one it was inside goes with it.
+                cut++;
+                Console.WriteLine($"  {Path.GetFileName(path)} ends inside a game; kept the {games:N0} before the cut");
             }
-            foreach (var row in pendBoard)
+            finally
             {
-                Set(b, "$g", games); Set(b, "$s", row.Seat); Set(b, "$tu", row.Turn);
-                Set(b, "$d", row.Debt); Set(b, "$h", row.Hand); Set(b, "$dk", row.Deck);
-                Set(b, "$di", row.Discard); Set(b, "$do", row.DeckOuts); Set(b, "$bo", row.Bodies);
-                Set(b, "$su", row.Sup); Set(b, "$lh", row.LeaderHp); Set(b, "$sl", row.Slot);
-                Set(b, "$c", row.Card); Set(b, "$hp", row.Hp);
-                Set(b, "$lv", row.Love); Set(b, "$sk", row.Stock);
-                Set(b, "$w", tail.Winner == row.Seat ? 1 : 0);
-                b.ExecuteNonQuery();
-                boardRows++;
-            }
-
-            if (games % 20000 == 0)
-            {
-                tx2.Commit();
-                tx2.Dispose();
-                Console.WriteLine($"  {games:N0} games, {evRows:N0} events, {boardRows:N0} board rows");
-                tx2 = con.BeginTransaction();
-                g.Transaction = tx2; e.Transaction = tx2; b.Transaction = tx2;
+                if (!ReferenceEquals(r, r0)) r.Dispose();
             }
         }
         tx2.Commit();
@@ -186,10 +212,36 @@ public static class Db
         SqliteConnection.ClearAllPools();
 
         double mb = new FileInfo(dbPath).Length / 1024.0 / 1024.0;
+        if (cut > 0) Console.WriteLine($"{cut} log(s) ended inside a game, as a log does when its machine is taken away");
         Console.WriteLine($"{games:N0} games, {evRows:N0} events, {boardRows:N0} board rows "
             + $"-> {dbPath} ({mb:F0} MB)");
         Console.WriteLine("\nviews: ev (events with card names), bd (boards with card names), game");
         return 0;
+    }
+
+    /// <summary>
+    /// The logs a db command names: paths separated by commas, any of them a
+    /// pattern with *, in name order. A run that resumes after its machine was
+    /// taken away writes a fresh log beside the one it cannot append to.
+    /// </summary>
+    private static List<string> LogFiles(string spec)
+    {
+        var files = new List<string>();
+        foreach (var part in spec.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (part.Contains('*'))
+            {
+                var dir = Path.GetDirectoryName(part);
+                if (string.IsNullOrEmpty(dir)) dir = ".";
+                if (Directory.Exists(dir)) files.AddRange(Directory.GetFiles(dir, Path.GetFileName(part)));
+            }
+            else if (File.Exists(part))
+            {
+                files.Add(part);
+            }
+        }
+        files.Sort(StringComparer.Ordinal);
+        return files.Distinct().ToList();
     }
 
     public static int Sql(string[] args)

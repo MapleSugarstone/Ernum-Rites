@@ -41,6 +41,37 @@ than filling the gap with a reading of the card.
 
 A card's text tells you what it *can* do. Only the log tells you what it *did*.
 
+## What a pre-emption does to a cloud run, and what the pipeline does about it
+
+A spot machine can be taken away at any round. Three things were found the
+first time it happened, all fixed on 2026-09-06 and worth knowing if the
+trainer or `scripts/gcp-meta.sh` is touched again:
+
+- The trainer opened its game log with create, so a resume truncated the log
+  and only the games since the last boot were in it. A resumed run now writes
+  the next free name beside it (`games.1.szgl`, `games.2.szgl`) and the
+  db command takes a pattern: `db --log "runs/<tag>1/games*.szgl"`. It also
+  accepts several paths separated by commas.
+- A killed trainer never closed its compressed log, and the db command died
+  on the cut with an end-of-stream error. The trainer now flushes the log at
+  the end of every round and closes it on a termination signal, and the db
+  command keeps every whole game before a cut and says so.
+- The startup script's bare `wait` also waited on the progress loop, so it
+  would never have reached the database step even after the last round. The
+  waits name their jobs now. And the boot-time copy from the bucket is
+  skipped when a snapshot is already on the disk, since it once put a round
+  39 snapshot over a round 129 one.
+
+- A run folder is the tag followed by the seed, so tag `meta2` seed 1 and
+  tag `meta` seed 21 are both `runs/meta21`. The script once matched such a
+  stale folder with a pattern and offered it as a resume; it now uploads
+  only the exact seed folders that hold a snapshot. Pick a tag whose
+  folders do not exist yet, and check `ls runs/<tag>*` before launching.
+
+The cumulative files (`ladder.json`, `cards.csv`, `decks.txt`,
+`meta.csv`, `report.txt`) come from the snapshot and survive all of this;
+only the game log, and so the database, was ever at risk.
+
 ## Before the run
 
 Card changes must land in **both** engines. `conformance/cards.json` is generated

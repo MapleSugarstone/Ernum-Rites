@@ -591,6 +591,7 @@ public sealed class Tournament
                     Checkpoint();
                 }
                 if (_cfg.SnapshotEvery > 0 && _round % _cfg.SnapshotEvery == 0) SaveSnapshot();
+                GameLog.Flush();
             }
         }
         finally

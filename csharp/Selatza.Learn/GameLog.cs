@@ -58,6 +58,20 @@ public static class GameLog
         }
     }
 
+    /// <summary>
+    /// Pushes everything written so far through to the disk and leaves the log
+    /// open. Called at the end of every round, so a machine that is taken away
+    /// mid-run keeps every game up to the last round it finished.
+    /// </summary>
+    public static void Flush()
+    {
+        lock (Gate)
+        {
+            _gz?.Flush();
+            _file?.Flush(true);
+        }
+    }
+
     private static void WriteHeader(Stream s)
     {
         s.Write("SZGL"u8);

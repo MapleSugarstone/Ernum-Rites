@@ -380,13 +380,79 @@ public static class Bot
     /// </summary>
     public static GameState Settle(GameState state, BotWeights? w = null, bool buyOut = false)
     {
-        if (state.Pending is null) return state;
-        if (state.Pending.Store is not null)
+        var weights = w ?? BotWeights.Default;
+        var s = state;
+        if (s.Pending is not null)
         {
-            return buyOut ? BuyOut(state, w ?? BotWeights.Default) : SettleStore(state, w ?? BotWeights.Default);
+            if (s.Pending.Store is not null)
+            {
+                s = buyOut ? BuyOut(s, weights) : SettleStore(s, weights);
+            }
+            else
+            {
+                var res = Engine.Apply(s, s.Pending.Player, GameAction.PassResponse());
+                s = res.Ok ? res.State! : s;
+            }
         }
-        var res = Engine.Apply(state, state.Pending.Player, GameAction.PassResponse());
-        return res.Ok ? res.State! : state;
+        return AnswerFlips(s, weights);
+    }
+
+    /// <summary>Flip offers one settle answers for the side that is not taking the turn.</summary>
+    private const int FlipAnswerCap = 8;
+
+    /// <summary>
+    /// Answer the flip offers waiting on whoever is not taking the turn. Damage
+    /// lands one HP card at a time, and a card with a flip cost holds the rest
+    /// of the blow until its owner pays or declines, so a position left with
+    /// the offer open has taken the first card of a blow and none of the rest.
+    /// Nothing in the search answered for the other side, and every damaging
+    /// line was read short at the first such card: a fifteen-point Alchemize
+    /// read as two, in the kill search and in the reply alike. Their answer is
+    /// the greedy one on their own reading of the board, the same guess the
+    /// reply model makes for them. The acting side's own offers stay with the
+    /// search, which already holds both answers as candidates.
+    /// </summary>
+    private static GameState AnswerFlips(GameState state, BotWeights w)
+    {
+        var s = state;
+        for (int i = 0; i < FlipAnswerCap; i++)
+        {
+            if (s.IsOver || s.FlipQueue.Count == 0) break;
+            var offer = s.FlipQueue[0];
+            if (offer.Player == s.Active) break;
+            int owner = offer.Player;
+            GameState? pick = null;
+            double best = double.NegativeInfinity;
+            foreach (var action in FlipAnswersFor(s, owner))
+            {
+                var res = Engine.Apply(s, owner, action);
+                if (!res.Ok) continue;
+                double score = Evaluate(res.State!, owner, w);
+                if (score > best + 1e-6)
+                {
+                    best = score;
+                    pick = res.State;
+                }
+            }
+            if (pick is null) break;
+            s = pick;
+        }
+        return s;
+    }
+
+    /// <summary>Declining, and paying in each way the cost allows.</summary>
+    private static IEnumerable<GameAction> FlipAnswersFor(GameState state, int owner)
+    {
+        yield return GameAction.DeclineFlip();
+        var cost = Registry.Card(state.FlipQueue[0].CardId).FlipCost;
+        if (cost is { Discard: > 0 })
+        {
+            for (int i = 0; i < state.Players[owner].Hand.Count; i++) yield return GameAction.PayFlip(i);
+        }
+        else
+        {
+            yield return GameAction.PayFlip();
+        }
     }
 
     /// <summary>
@@ -2095,36 +2161,94 @@ public static class Bot
     /// <summary>Paid Powers a patient climb fires once it has built everything it can.</summary>
     private const int CashSteps = 4;
 
+    /// <summary>A paid action that takes HP off an enemy leader, and the mana it needs.</summary>
+    private sealed record CashIn(Cost Cost, int Drop);
+
     /// <summary>
-    /// Potential with the best paid Power still to fire. A Power that sets a
-    /// body's attack from something the free steps build, debt say, gains
-    /// nothing until it fires, and fired early it fixes the attack at what the
-    /// pile was then. A climb greedy on the plain measure took it first, for
-    /// the largest step on offer, and every free step after that built toward
-    /// nothing. Counting the follow-up without taking it lets the climb build
-    /// first and cash in last.
+    /// Potential with the best paid Power still to fire, and the paid action
+    /// from here that takes the most off an enemy leader.
+    ///
+    /// The value: a Power that sets a body's attack from something the free
+    /// steps build, debt say, gains nothing until it fires, and fired early it
+    /// fixes the attack at what the pile was then. A climb greedy on the plain
+    /// measure took it first, for the largest step on offer, and every free
+    /// step after that built toward nothing. Counting the follow-up without
+    /// taking it lets the climb build first and cash in last.
+    ///
+    /// The cash-in is what the climb keeps mana back for. On the plain measure
+    /// it reads as a loss: the body it feeds in and the mana it costs leave the
+    /// measure, and the damage they became never enters it. So a climb greedy
+    /// on potential spent every pip on the buff that fed it and left the
+    /// cash-in unpayable, and a Rally three times into Alchemize was never
+    /// found with every piece on the board. Its damage is not added to the
+    /// value: measured one action deep it reads flat under a cash-in that
+    /// needs a Power fired first, and that stopped the debt climb two steps
+    /// short of its kill.
     /// </summary>
-    private static (double Value, GameAction? Cash, GameState? CashState) CashPotential(GameState state, int me, BotWeights w)
+    private static (double Value, GameAction? Cash, GameState? CashState, CashIn? CashIn) CashPotential(GameState state, int me, BotWeights w)
     {
         double value = Potential(state, me);
         GameAction? cash = null;
         GameState? cashState = null;
+        CashIn? cashIn = null;
+        var was = new Dictionary<int, int>();
+        foreach (int foe in LivingOpponents(state, me)) was[foe] = LeaderHpOf(state, foe);
         foreach (var action in CandidateActions(state, me, forKill: true))
         {
-            if (action.Type != ActionType.ActivatePower || FreeRepeat(state, me, action)) continue;
+            bool paidPower = action.Type == ActionType.ActivatePower && !FreeRepeat(state, me, action);
+            var cost = PaidCost(state, me, action);
+            if (!paidPower && cost is null) continue;
             var res = Engine.Apply(state, me, action);
             if (!res.Ok) continue;
             var after = Settle(res.State!, w, buyOut: true);
             if (LosesIt(after, me)) continue;
-            double pot = Potential(after, me);
-            if (pot > value + 1e-9)
+            if (paidPower)
             {
-                value = pot;
-                cash = action;
-                cashState = after;
+                double pot = Potential(after, me);
+                if (pot > value + 1e-9)
+                {
+                    value = pot;
+                    cash = action;
+                    cashState = after;
+                }
+            }
+            if (cost is not null)
+            {
+                int drop = 0;
+                foreach (var (foe, hp) in was) drop = Math.Max(drop, hp - LeaderHpOf(after, foe));
+                if (drop > (cashIn?.Drop ?? 0)) cashIn = new CashIn(cost.Value, drop);
             }
         }
-        return (value, cash, cashState);
+        return (value, cash, cashState, cashIn);
+    }
+
+    /// <summary>
+    /// The mana an action spends, or null when it spends none: a Power with a
+    /// cost, or a spell with one that is aimed at a leader or at nothing in
+    /// particular.
+    /// </summary>
+    private static Cost? PaidCost(GameState state, int me, GameAction action)
+    {
+        var p = state.Players[me];
+        Cost cost;
+        if (action.Type == ActionType.ActivatePower)
+        {
+            var summon = state.Find(action.Source);
+            if (summon is null) return null;
+            var powers = GameState.PowersOf(summon, Registry.Card(summon.CardId));
+            if (action.PowerIndex < 0 || action.PowerIndex >= powers.Length) return null;
+            cost = powers[action.PowerIndex].Cost;
+        }
+        else if (action.Type == ActionType.CastSpell)
+        {
+            if (action.Targets.Length > 0 && !action.Targets.Any(t => t.Kind == TargetKind.Leader)) return null;
+            cost = Engine.CostFor(p, Registry.Card(p.Hand[action.HandIndex]));
+        }
+        else
+        {
+            return null;
+        }
+        return cost.Total == 0 ? null : cost;
     }
 
     /// <summary>
@@ -2217,7 +2341,11 @@ public static class Bot
             GameState? builtState = null;
             GameAction? level = null;
             GameState? levelState = null;
-            double standing = patient ? CashPotential(cur, me, w).Value : Potential(cur, me);
+            // The mana the best cash-in from here needs stays out of the build.
+            // A step that spent it built toward nothing the swing could fire.
+            var here = CashPotential(cur, me, w);
+            var reserve = here.CashIn;
+            double standing = patient ? here.Value : Potential(cur, me);
             double best = standing;
 
             foreach (var action in CandidateActions(cur, me, forKill: true))
@@ -2231,6 +2359,7 @@ public static class Bot
                     return new Rollout { State = after, Line = line, Damage = WorstDrop(after) };
                 }
                 if (LosesIt(after, me)) continue;
+                if (reserve is not null && WorstDrop(after) <= WorstDrop(cur) && !Engine.CanPay(after.Players[me], reserve.Cost)) continue;
                 double pot = patient ? CashPotential(after, me, w).Value : Potential(after, me);
                 // On a tie the free step goes first: the paid one is still there
                 // after it, and the free one may be worth more once the paid one
@@ -2287,8 +2416,11 @@ public static class Bot
         for (int cashed = 0; patient && cashed < CashSteps; cashed++)
         {
             if (!TurnGoesOn(cur, me)) break;
-            var (_, cash, cashState) = CashPotential(cur, me, w);
+            var (_, cash, cashState, cashIn) = CashPotential(cur, me, w);
             if (cash is null || cashState is null) break;
+            // The reserve the climb kept holds here too: a cash that leaves the
+            // cash-in unpayable is the buff that fed it, fired one time too many.
+            if (cashIn is not null && WorstDrop(cashState) <= WorstDrop(cur) && !Engine.CanPay(cashState.Players[me], cashIn.Cost)) break;
             if (cashState.Winner == me)
             {
                 line.Add(cash);
