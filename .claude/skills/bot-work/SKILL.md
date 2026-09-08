@@ -25,6 +25,24 @@ every pool. The long-form record is in `claude-notes/ai-audit.md` and
 - The maintainer wants a bot that reads cards as what they do and never needs
   retraining after a balance change. The arithmetic bot is that; the network
   is at weight 0 and stays there until a run clears the bar.
+- Playstyle may change (holding a piece, a bluff, a race), but the paired
+  measurement against the snapshot stays the arbiter: a change ships when it
+  is inside noise against bots and does what it claims against people. The
+  maintainer's words: if the bot cannot deal with the direct bluntness of a
+  bot, a human could do that too.
+- The human game log is the validation set: never trained on, only
+  measured. Training on misplays uses the bot's own games and is judged on
+  the logged ones, so a bot tuned to beat default bots cannot hide there.
+- Cloud work is watched, not polled on request. Arm a Monitor on every run
+  and report each machine event unprompted; a meta check gets a check every
+  thirty minutes. The maintainer should never have to ask whether a machine
+  was lost.
+- A run and its notes must let another session, on another model, pick up
+  where this one left off: the run state goes to memory with the exact
+  commands, and anything long-lived runs detached from the session.
+- The Bash tool strips one level of backslashes and mangles heredocs. Write
+  files with Write or Edit, use the PowerShell tool for shell work that needs
+  backslashes, and point a command at a file rather than inlining content.
 
 ## The bot, in one page
 
@@ -244,9 +262,28 @@ results. Facts that matter:
   `bash -lc` from PowerShell died silently on quoting.
 - Read the results with the meta-check skill as usual; the databases arrive
   with the run.
+- A run must not depend on the session that launched it. `scripts/gcp-keeper.sh`,
+  started detached through `scripts/gcp-keeper.cmd` with `Start-Process`,
+  attaches to the run's machine, starts it again when it stops, deletes and
+  relaunches it elsewhere from the bucket checkpoint after three failed
+  starts or when it is gone, pulls the results on the done marker, writes an
+  `alive:` heartbeat with the round every thirty minutes to
+  `runs/<tag>-keeper.log`, and exits at its hours cap. Arm a Monitor on that
+  log in whatever session is current. The maintainer asked for a check every
+  thirty minutes because the first online meta check needed constant upkeep.
+- `gcp-meta.sh` deletes its machine from an EXIT trap, which also runs on a
+  normal kill. Retire an in-session watcher with `kill -9` (no trap) once the
+  keeper is up, or the run is deleted from under it.
+- Spot capacity on 2026-09-07 evening: every us-central1 zone refused the
+  176-core C3 and two refused the 88; us-central1-c took the 88, which ran
+  about 85 seconds a round with 186 leaders, 558 games a round.
 
 ## Where things stood at the end of the session
 
+- The map of the 2026-09-07 round (every change with its verdict, the
+  human game program and its tools, the client thread, the cloud keeper,
+  the open items) is `claude-notes/bot-round-2026-09-07.md`; the detail
+  behind each item stays in `claude-notes/ai-audit.md`.
 - The bot in both engines measures 434-164 on candy seed 22, 437-162 on
   random seed 21 and 435-162 on a mutated set against the deployed snapshot,
   paired, 600 games, with the worst case, the breach, the window answers,
