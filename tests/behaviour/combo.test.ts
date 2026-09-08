@@ -396,8 +396,11 @@ describe('the deck scan', () => {
   it('holds the kit piece while the pips are short, and plays it once they are there', () => {
     // In the pro meta check Warmateer landed on turn two with no supporters
     // in 231 of 274 Helemy games and was never Rallied or fed to Alchemize
-    // in 162 of them. A piece on the board counts for less than one in hand
-    // while the kit's mana is not there yet, so the win condition waits.
+    // in 162 of them. With the exposed share on, a piece on the board counts
+    // for less than one in hand while the kit's mana is not there yet, so the
+    // win condition waits. The share ships off (it measured down against
+    // bots), so the test turns it on itself.
+    const held = { ...defaultWeights, kitExposed: 0.5 };
     const list = [...Array(46).fill(FILLER), 'p2-warmateer', 'p2-warmateer'];
     const other = { name: 'B', leaderId: LEADER, cards: Array(48).fill(FILLER) };
     const turn = (sups: number, at: number) => {
@@ -411,7 +414,7 @@ describe('the deck scan', () => {
       clearPlan();
       let st: GameState = s;
       for (let i = 0; i < 12 && !isOver(st) && currentActor(st) === 0; i++) {
-        const a = chooseAction(st, 0);
+        const a = chooseAction(st, 0, held);
         const res = applyAction(st, 0, a);
         if (!res.ok) throw new Error(res.error);
         st = res.state;

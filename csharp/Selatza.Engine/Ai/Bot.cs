@@ -90,7 +90,7 @@ public sealed class BotWeights
     /// traded off, a card in hand waits for the pips. One is the old reading,
     /// where the board and the hand count the same.
     /// </summary>
-    public double KitExposed = 0.5;
+    public double KitExposed = 1;
     /// <summary>
     /// How much of a position's score is read after the opponent has answered
     /// it rather than where it stands. The rest is read where it stands,
@@ -3672,6 +3672,21 @@ public static class Bot
         double best = double.NegativeInfinity;
         Leaf? bestLeaf = null;
         double playedTotal = double.NaN;
+        // The kill checks the bot runs at the table come before its beam, so
+        // a kill that is on the table is the root's value whatever the beam
+        // gathered.
+        string killLine = "";
+        {
+            var race = Burn(state, me, MaxBurnSteps, w);
+            var built = race.State.Winner == me ? race : Burn(state, me, MaxBurnSteps, w, MaxSetupSteps, true);
+            if (race.State.Winner == me) killLine = Describe(race.Line);
+            else if (built.State.Winner == me) killLine = Describe(built.Line);
+            else if (Math.Max(race.Damage, built.Damage) + LethalSlack >= NearestFoeHp(state, me))
+            {
+                int budget = LethalBudget;
+                if (FindLethal(state, me, LethalDepth, ref budget) is { } kill) killLine = Describe(new List<GameAction> { kill }) + " ; ... (a kill the exhaustive search found)";
+            }
+        }
         foreach (var leaf in ranked)
         {
             double total = leaf.Score >= Win ? Win : Outlook(leaf.State, me, w, leaf.Score);
@@ -3707,8 +3722,15 @@ public static class Bot
                 }
             }
         }
-        return new Regret(best, playedTotal, bestLeaf is null || bestLeaf.Line.Count == 0 ? "stand" : Describe(bestLeaf.Line),
-            playedKey, best >= Win, playedTotal >= Win);
+        string bestLine = bestLeaf is null || bestLeaf.Line.Count == 0 ? "stand" : Describe(bestLeaf.Line);
+        if (killLine.Length > 0 && best < Win)
+        {
+            best = Win;
+            bestLine = killLine;
+        }
+        // A kill the played action leads to is on the table too.
+        if (playedTotal > best) best = playedTotal;
+        return new Regret(best, playedTotal, bestLine, playedKey, best >= Win, playedTotal >= Win);
     }
 
     private static string Describe(List<GameAction> line)

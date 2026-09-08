@@ -462,8 +462,10 @@ describe('the turn after the reply', () => {
     setIntel(null);
     clearPlan();
     chooseAction(s, 0);
+    // The charge ships off (it measured a point down on every pool), so the
+    // test turns it on itself, lump included.
     const judge = (handIndex: number, peril: number) => {
-      const w = { ...defaultWeights, peril };
+      const w = { ...defaultWeights, peril, standingDeath: peril > 0 ? 60 : 0 };
       const res = applyAction(s, 0, { type: 'PLAY_SUMMON', handIndex, slot: 2 });
       if (!res.ok) throw new Error(res.error);
       const root = redactTable(res.state, 0);

@@ -879,23 +879,29 @@ public static class Program
             }
         }
         Console.WriteLine($"analyzed {files.Length} replay(s), {rows.Count} decisions in {sw.Elapsed.TotalSeconds:0}s{(deep ? " (deep)" : "")}");
+        // A kill on the table is a category rather than a number: its gap is
+        // the win constant, which would swamp every mean it sat in, so the
+        // statistics read it as a kill's worth and the listing names it.
+        const double KillWorth = 200;
+        static double Gap(Bot.Regret r) => Math.Max(-KillWorth, Math.Min(r.Gap, KillWorth));
         foreach (var group in rows.GroupBy(r => r.Who).OrderBy(g => g.Key, StringComparer.Ordinal))
         {
-            var gaps = group.Select(r => r.R.Gap).ToList();
+            var gaps = group.Select(r => Gap(r.R)).ToList();
             int big = gaps.Count(g => g >= 20);
             int huge = gaps.Count(g => g >= 60);
             int missed = group.Count(r => r.R.BestKills && !r.R.PlayedKills);
             Console.WriteLine($"  {group.Key,-8} {gaps.Count,5} decisions, mean gap {gaps.Average():F1}, {big} at 20 or more, {huge} at 60 or more, {missed} with a kill on the table not taken");
         }
-        var pairs = rows.Where(r => r.R.Gap >= 20)
+        var pairs = rows.Where(r => Gap(r.R) >= 20)
             .GroupBy(r => $"played {Head(r.R.PlayedAction)}, best {Head(r.R.BestLine)}")
             .OrderByDescending(g => g.Count()).Take(10);
         Console.WriteLine("  behind the gaps of 20 or more:");
         foreach (var g in pairs) Console.WriteLine($"    {g.Count(),4}  {g.Key}");
         Console.WriteLine($"  the {top} largest gaps:");
-        foreach (var r in rows.OrderByDescending(r => r.R.Gap).Take(top))
+        foreach (var r in rows.OrderByDescending(r => Gap(r.R)).ThenByDescending(r => r.R.Gap).Take(top))
         {
-            Console.WriteLine($"    {r.R.Gap,7:F1}  {r.File} step {r.Step} turn {r.Turn} {r.Who}: played {r.R.PlayedAction}; best {r.R.BestLine}");
+            string size = r.R.BestKills && !r.R.PlayedKills ? "a kill" : $"{Gap(r.R):F1}";
+            Console.WriteLine($"    {size,7}  {r.File} step {r.Step} turn {r.Turn} {r.Who}: played {r.R.PlayedAction}; best {r.R.BestLine}");
         }
         return 0;
     }

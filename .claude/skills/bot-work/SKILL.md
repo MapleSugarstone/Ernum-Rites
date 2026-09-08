@@ -52,12 +52,24 @@ behaviour. One decision:
    all (worth 8 to 23 games per 600). The standing side of the blend can
    write off every body the reply takes (`fallen`), so a doomed body is
    not kept at 40 percent of a value the visible board is about to take;
-   it measured down on candy and random and ships at 0.
+   it measured down on candy and random and ships at 0. The outlook can
+   also charge what they do on the turn after their reply (`peril`,
+   `standingDeath`), the place a combo one mana short lands; it measured
+   a point down on every pool and ships at 0.
 4. `evaluate` prices leader HP, debt, bodies, hand, deck, and the standing
    terms (deathrattle, hooks, effect damage), plus three engine-derived
    terms: `reachOf` (what a card does on a probe board, so a Recomp or a
    grafted body is worth what it inherited), `cardDoes` (relief, heal and
    burst a card produces in one use), and the kit bonus from the deck scan.
+   The scan probes every piece and set at six pips and eight debt
+   (`kitPips`, `kitDebt`) and keeps one card beside the leader as a kit
+   (`kitSolo`): at three pips it read Warmateer beside Helemy as a third of
+   a kill and kept nothing. A spell trap in hand is priced by the enemy
+   pool's spell burst (`trapHold`), since the believed hand holds no spells
+   for it to spring on in the search. A kit piece on the board can count
+   for less while the kit's mana is short (`kitExposed`), which is what
+   holds Warmateer on turn one; it measured down against bots and ships
+   at 1, off, for the human game log to judge.
    Debt is charged on a half-convex curve (`debtCurve` 0.5) less half the
    relief the list can still produce; the leader cliff rises with the
    enemy's measured burn or damage rate and falls with heals in hand.
@@ -223,10 +235,20 @@ results. Facts that matter:
   Deck size 48 to 54 is an evolution trait in the trainer since
   2026-09-07 (`--deck-size 48 --deck-max 54`, on by default for `train`;
   the Sim's pools stay at 48 so head-to-heads stay comparable).
-- Six gated mechanisms, measured one at a time: `worstCase`
+- Why Helemy decks were not built toward, from the pro1 database: in 274
+  Helemy-led games Warmateer landed on turn 1.8 with no supporters 231
+  times and was never Rallied or fed to Alchemize in 162 of them. The scan
+  at six pips now sees the kit; holding the piece (`kitExposed`) is the
+  behaviour a bot cannot judge and the human log can. The next meta check
+  is the test of whether the evolution converges on those pairs.
+- Nine gated mechanisms, measured one at a time: `worstCase`
   (on), `breach` (on), `windowAnswers` (on), `deepBurst` (off: two points
   down on random), `paranoia` (off: one to two points down), `fallen`
-  (off: one to two and a half points down on candy and random). Switch any
+  (off: one to two and a half points down on candy and random), `peril`
+  with `standingDeath` (off: a point down on every pool), `kitExposed`
+  (off at 1: down on two pools of three), `trapHold` (on: neutral). The
+  scan's `kitPips`, `kitDebt` and `kitSolo` ship at 6, 8 and 1, inside
+  noise against bots. Switch any
   with `versus --set Name=0|1` before believing a claim about it. Their
   measurement table is in `claude-notes/ai-audit.md`.
 - Head-to-heads run in the cloud: `scripts/gcp-versus.sh <tag> <games>

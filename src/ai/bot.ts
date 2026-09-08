@@ -300,7 +300,7 @@ export const defaultWeights: BotWeights = {
   kitDebt: 8,
   kitSolo: 1,
   trapHold: 0.5,
-  kitExposed: 0.5,
+  kitExposed: 1,
   reply: 0.6,
   worstCase: 1,
   paranoia: 0,
