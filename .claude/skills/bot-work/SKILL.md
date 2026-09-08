@@ -189,6 +189,12 @@ and the lists as played is the step before training on regret.
 
 - `npm run cs:release` builds Train and Sim only. Build `Selatza.Tests`
   explicitly before a `--no-build` test run or you test a stale binary.
+- `npm run replays:record` changes `replays/012-sweetshop-store.json`, and
+  `conformance/net-parity.json` holds the trainer's encoding of positions
+  from that file. Run `npm run net:refresh` after every re-record and run
+  `npx vitest run tests/netparity.test.ts`, or the deploy gate fails on
+  the next push (it did on 2026-09-08, twice, and the site stayed on the
+  build before the reply change).
 - The Bash tool's working directory drifts into `csharp/` after a `cd`;
   use absolute paths or `cd` back at the start of a command.
 - Files under `csharp/Selatza.Train` and `Selatza.Tests` are CRLF; a
