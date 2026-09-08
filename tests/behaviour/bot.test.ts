@@ -8,11 +8,12 @@ import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { starterDecks } from '../../src/cards';
 import { actionFromWire, type Replay } from '../../src/engine/replay';
-import { chooseAction, clearPlan, defaultWeights, evaluate, fullSearch, nextTurn, outlook, quickSearch, redactTable, setIntel, setSearchLimits } from '../../src/ai/bot';
+import { chooseAction, clearPlan, defaultWeights, evaluate, fullSearch, nextTurn, outlook, quickSearch, redactTable, setIntel, setReplaceStance, setSearchLimits, warm } from '../../src/ai/bot';
 import { applyAction, createGame } from '../../src/engine/engine';
 import {
   currentActor,
   isOver,
+  remainingHp,
   type GameState,
   type SummonInstance,
 } from '../../src/engine/state';
@@ -618,5 +619,56 @@ describe('the reply looks a turn ahead', () => {
       expect(pick.source).toEqual({ kind: 'summon', player: 1, slot: demon });
       expect(pick.target.kind).toBe('leader');
     }
+  });
+});
+
+describe('a hole of the bot\'s own', () => {
+  beforeAll(() => setSearchLimits(fullSearch));
+  afterAll(() => setSearchLimits(quickSearch));
+  it('fills the hole in front of an exposed leader, judging a decline as declining for the turn', () => {
+    // A logged game (2026-09-08, game sixteen), step 31: The Fish at 10 with
+    // Jelly King at 2 and the Serpent at 1, a hole between them and four
+    // bodies in hand, against Ragick, Inept Ruler and the leader unsapped.
+    // The bot declined, the person cleared both bodies and hit the leader
+    // with a buffed Ruler for the game. Two things were wrong in the model.
+    // The engine refuses every action while a hole is unanswered and the
+    // reply walk handed the person's beam the hole, so the reply to a
+    // decline was a turn in which they did nothing. And the greedy answer
+    // inside a search fed a body into every hole their attackers opened, so
+    // a replacement read as a massacre. Now the hole is answered before
+    // their beam runs, the other side's holes are answered inside a search
+    // as flips are, and at a hole of its own every answer is judged with
+    // the holes after it declined.
+    const replay = JSON.parse(
+      readFileSync(new URL('./fixtures/exposed-leader-hole.json', import.meta.url), 'utf8'),
+    ) as Replay;
+    let s = createGame(
+      replay.decks.map((d) => ({ name: d.name, leaderId: d.leaderId, cards: d.cards })),
+      replay.seed,
+      replay.startingPlayer as PlayerIdx,
+    );
+    for (let i = 0; i < 31; i++) {
+      const step = replay.steps[i];
+      const res = applyAction(s, step.actor as PlayerIdx, actionFromWire(step.action));
+      if (!res.ok) throw new Error(`step ${i}: ${res.error}`);
+      s = res.state;
+    }
+    expect(s.replaceQueue[0]?.player).toBe(1);
+
+    setIntel(null);
+    clearPlan();
+    // The stance applies to the root seat's holes, which a decision sets.
+    warm(s, 1);
+    const root = redactTable(s, 1);
+    const before = remainingHp(root.players[1].leader!);
+    setReplaceStance('decline');
+    const foreseen = nextTurn(root, 1, defaultWeights);
+    setReplaceStance('greedy');
+    expect(foreseen, 'the reply the bot foresees for declining').not.toBeNull();
+    expect(remainingHp(foreseen!.players[1].leader!), 'reaches the leader').toBeLessThan(before);
+
+    clearPlan();
+    const pick = chooseAction(s, 1);
+    expect(pick.type).toBe('REPLACE_SUMMON');
   });
 });

@@ -22,9 +22,9 @@ import {
   evaluate,
   fallenWorth,
   findLethal,
+  leafOutlook,
   LETHAL_SLACK,
   nextTurn,
-  outlook,
   readTable,
   redactTable,
   searchLimits,
@@ -107,7 +107,7 @@ for (const leaf of gathered) {
   const next = isOver(leaf.state) ? leaf.state : nextTurn(leaf.state, seat, w);
   const after = next ? evaluate(next, seat, w) : NaN;
   const fallen = next && !isOver(leaf.state) ? fallenWorth(leaf.state, next, seat, w) : 0;
-  const total = outlook(leaf.state, seat, w, leaf.score);
+  const total = leafOutlook(root, leaf, seat, w);
   console.log(
     `    ${leaf.score.toFixed(2).padStart(9)} std | ${after.toFixed(2).padStart(9)} after | ${fallen.toFixed(2).padStart(7)} fallen | ${total.toFixed(2).padStart(9)} outlook | ${describe(leaf.line)}`,
   );

@@ -529,7 +529,72 @@ public static class Bot
                 s = res.Ok ? res.State! : s;
             }
         }
-        return AnswerFlips(s, weights);
+        return AnswerReplacements(AnswerFlips(s, weights), weights);
+    }
+
+    /// <summary>
+    /// Answer the replacement windows waiting on whoever is not taking the
+    /// turn, greedily on their own reading, as flips are. The engine refuses
+    /// every other action while a dead body's hole is unanswered, so a line
+    /// that killed a body whose owner holds another used to end right there:
+    /// in the reply model the bot's own hand blocked the opponent's whole turn
+    /// at their first kill, and a turn that could clear the board and hit the
+    /// leader read as a turn that did nothing.
+    /// </summary>
+    private static GameState AnswerReplacements(GameState state, BotWeights w)
+    {
+        // A probe reads what one card does on a bare board; a hole it opens is
+        // not a turn anyone is taking, and the death probe reads a body coming
+        // back into the slot a replacement would fill.
+        if (_probing) return state;
+        var s = state;
+        for (int i = 0; i < 8; i++)
+        {
+            if (s.IsOver || s.ReplaceQueue.Count == 0 || s.FlipQueue.Count > 0 || s.Pending is not null) break;
+            int owner = s.ReplaceQueue[0].Player;
+            if (owner == s.Active) break;
+            GameState? pick = null;
+            double best = double.NegativeInfinity;
+            foreach (var action in ReplaceAnswers(s, owner))
+            {
+                var res = Engine.Apply(s, owner, action);
+                if (!res.Ok) continue;
+                double score = Evaluate(res.State!, owner, w);
+                if (score > best + 1e-6)
+                {
+                    best = score;
+                    pick = res.State;
+                }
+            }
+            if (pick is null) break;
+            s = pick;
+        }
+        return s;
+    }
+
+    /// <summary>
+    /// Whether the bot's own replacement windows are declined inside a search
+    /// rather than answered greedily: on while a hole of its own is the
+    /// decision being judged. Every answer at a hole is judged with the holes
+    /// after it declined, one blocker against none, because a greedy answer fed
+    /// a body into every hole their attackers opened next and read any
+    /// replacement as a massacre, while a model that never reached their beam
+    /// past the hole read a decline as a turn in which they did nothing.
+    /// </summary>
+    [ThreadStatic] private static bool _declineHoles;
+
+    /// <summary>For tooling that walks a reply by hand: the stance a decision would have set.</summary>
+    public static void SetDeclineHoles(bool decline) => _declineHoles = decline;
+
+    /// <summary>The answers a seat may give to what waits on it, the stance applied to the root seat's holes.</summary>
+    private static List<GameAction> ReplaceAnswers(GameState state, int owner)
+    {
+        bool hole = state.FlipQueue.Count == 0 && state.Pending is null && state.ChoiceQueue.Count == 0
+            && state.ReplaceQueue.Count > 0 && state.ReplaceQueue[0].Player == owner;
+        if (hole && _declineHoles && _rootSet && owner == _rootSeat) return new List<GameAction> { GameAction.DeclineReplace() };
+        var options = new List<GameAction> { PassAction(state) };
+        options.AddRange(CandidateActions(state, owner));
+        return options;
     }
 
     /// <summary>
@@ -2874,6 +2939,26 @@ public static class Bot
         return power.Cost.Total == 0 && !power.SapSelf && !power.OncePerTurn;
     }
 
+    /// <summary>
+    /// The most a paid step from here is worth to the patient measure: what a
+    /// flat step that only adds a pip is taken for.
+    /// </summary>
+    private static double Unlocks(GameState state, int me, BotWeights w)
+    {
+        double best = double.NegativeInfinity;
+        foreach (var action in CandidateActions(state, me, forKill: true))
+        {
+            if (action.Type is not (ActionType.CastSpell or ActionType.ActivatePower)) continue;
+            var res = Engine.Apply(state, me, action);
+            if (!res.Ok) continue;
+            var after = Settle(res.State!, w, buyOut: true);
+            if (LosesIt(after, me)) continue;
+            double value = CashPotential(after, me, w).Value;
+            if (value > best) best = value;
+        }
+        return best;
+    }
+
     private static bool LosesIt(GameState state, int me)
         => state.Drawn || (state.Winner >= 0 && state.Winner != me);
 
@@ -2949,6 +3034,7 @@ public static class Bot
             GameState? builtState = null;
             GameAction? level = null;
             GameState? levelState = null;
+            double levelUnlock = double.NegativeInfinity;
             // The mana the best cash-in from here needs stays out of the build.
             // A step that spent it built toward nothing the swing could fire.
             var here = CashPotential(cur, me, w);
@@ -2988,10 +3074,29 @@ public static class Bot
                     built = action;
                     builtState = after;
                 }
-                else if (patient && level is null && Math.Abs(pot - standing) <= 1e-9 && FreeRepeat(cur, me, action))
+                else if (patient && Math.Abs(pot - standing) <= 1e-9)
                 {
-                    level = action;
-                    levelState = after;
+                    if (action.Type == ActionType.PlaySupporter)
+                    {
+                        // A supporter is a flat step that pays for the paid step
+                        // after it, and it is taken for what that step is worth:
+                        // the card that buffs the swing is not the card to set for
+                        // a pip. A climb that would not set one cast the buff after
+                        // the swing, on the wrong turn.
+                        double unlock = Unlocks(after, me, w);
+                        if (unlock > standing + 1e-9 && unlock > levelUnlock + 1e-9)
+                        {
+                            level = action;
+                            levelState = after;
+                            levelUnlock = unlock;
+                        }
+                    }
+                    else if (level is null && FreeRepeat(cur, me, action))
+                    {
+                        level = action;
+                        levelState = after;
+                        levelUnlock = standing;
+                    }
                 }
             }
 
@@ -3045,10 +3150,46 @@ public static class Bot
         for (int step = 0; step < steps; step++)
         {
             if (!TurnGoesOn(cur, me)) break;
+            // An offer of my own holds the rest of the turn: it is answered, on
+            // the board it leaves, before anything else is weighed. A rollout
+            // that weighed the answer against standing still stopped on it once
+            // the front was clear, and read a leader open to an unsapped body
+            // as untouched.
+            if (cur.FlipQueue.Count > 0 && cur.FlipQueue[0].Player == me)
+            {
+                GameAction? answer = null;
+                GameState? answered = null;
+                double bestAnswer = double.NegativeInfinity;
+                foreach (var action in FlipAnswersFor(cur, me))
+                {
+                    var res = Engine.Apply(cur, me, action);
+                    if (!res.Ok) continue;
+                    var after = Settle(res.State!, w, buyOut: true);
+                    if (after.Winner == me)
+                    {
+                        line.Add(action);
+                        return new Rollout { State = after, Line = line, Damage = WorstDrop(after) };
+                    }
+                    double board = Evaluate(after, me, w);
+                    if (board > bestAnswer)
+                    {
+                        bestAnswer = board;
+                        answer = action;
+                        answered = after;
+                    }
+                }
+                if (answer is null || answered is null) break;
+                line.Add(answer);
+                cur = answered;
+                continue;
+            }
             double standingStill = Evaluate(cur, me, w);
+            int bodies = FrontCount(cur, me);
             GameAction? pick = null;
             GameState? pickState = null;
             double bestGain = double.NegativeInfinity;
+            bool bestKills = false;
+            double bestSpent = double.PositiveInfinity;
             double bestBoard = double.NegativeInfinity;
 
             foreach (var action in CandidateActions(cur, me, forKill: true))
@@ -3064,26 +3205,50 @@ public static class Bot
                 if (LosesIt(after, me)) continue;
                 double gain = ProgressAgainst(cur, after, me);
                 double board = Evaluate(after, me, w);
-                if (gain > bestGain + 1e-9 || (Math.Abs(gain - bestGain) <= 1e-9 && board > bestBoard))
+                // A kill on the front is progress on their debt, and among the
+                // swings that make it the smallest attacker that does goes
+                // first, so the largest is still unsapped for the leader once
+                // the front is clear. Broken on the board score alone, the tie
+                // went to the biggest body, which survives its clash best, and
+                // the leader was reached with what was left.
+                bool kills = FrontCount(after, me) < bodies;
+                double spent = action.Type == ActionType.DeclareAttack ? AttackerStrength(cur, action.Source) : 0;
+                bool ahead;
+                if (Math.Abs(gain - bestGain) > 1e-9) ahead = gain > bestGain;
+                else if (kills != bestKills) ahead = kills;
+                else if (kills && Math.Abs(spent - bestSpent) > 1e-9) ahead = spent < bestSpent;
+                else ahead = board > bestBoard;
+                if (ahead)
                 {
                     bestGain = gain;
+                    bestKills = kills;
+                    bestSpent = spent;
                     bestBoard = board;
                     pick = action;
                     pickState = after;
                 }
             }
 
-            if (bestGain <= 1e-9 && (pick is null || bestBoard <= standingStill))
+            if (bestGain <= 1e-9 && (pick is null || bestBoard <= standingStill || FrontHp(cur, me) > 0))
             {
                 // Nothing moves a clock from here. A leader behind bodies is
                 // reached by clearing the bodies, and a rollout greedy on the
                 // clocks never took that step, since an attack on a blocker
-                // moves neither. Take whatever takes the most HP off the front,
-                // so the swings after it can land.
+                // moves neither. The breach picks the clearing step, and it
+                // picks it whenever there is a front: left to the board score,
+                // the step that cleared was the biggest body into the softest
+                // blocker, and the swing that followed had nothing large left
+                // for the leader.
                 var breach = w.Breach > 0 ? BreachStep(cur, me, w) : null;
-                if (breach is null) break;
-                pick = breach.Value.Action;
-                pickState = breach.Value.State;
+                if (breach is null)
+                {
+                    if (pick is null || bestBoard <= standingStill) break;
+                }
+                else
+                {
+                    pick = breach.Value.Action;
+                    pickState = breach.Value.State;
+                }
             }
             if (pick is null || pickState is null) break;
             line.Add(pick);
@@ -3091,6 +3256,24 @@ public static class Bot
         }
 
         return new Rollout { State = cur, Line = line, Damage = WorstDrop(cur) };
+    }
+
+    /// <summary>Bodies in front of every enemy leader.</summary>
+    private static int FrontCount(GameState state, int me)
+    {
+        int n = 0;
+        foreach (int foe in LivingOpponents(state, me))
+        {
+            foreach (var s in state.Players[foe].Slots) if (s is not null) n++;
+        }
+        return n;
+    }
+
+    /// <summary>The attack an attacker would deal, or zero for a source the board no longer holds.</summary>
+    private static double AttackerStrength(GameState state, TargetRef source)
+    {
+        var body = state.Find(source);
+        return body is null ? 0 : Effects.EffectiveStrength(state, body);
     }
 
     /// <summary>HP on the bodies in front of every enemy leader.</summary>
@@ -3113,7 +3296,10 @@ public static class Bot
     {
         int front = FrontHp(state, me);
         if (front <= 0) return null;
+        int bodies = FrontCount(state, me);
         (GameAction Action, GameState State)? best = null;
+        bool bestKill = false;
+        double bestSpent = double.PositiveInfinity;
         int bestCut = 0;
         double bestBoard = double.NegativeInfinity;
         foreach (var action in CandidateActions(state, me, forKill: true))
@@ -3126,8 +3312,21 @@ public static class Bot
             int cut = front - FrontHp(after, me);
             if (cut <= 0) continue;
             double board = Evaluate(after, me, w);
-            if (cut > bestCut || (cut == bestCut && board > bestBoard))
+            // A step that removes a body opens the front, and among those the
+            // smallest attacker that does it goes first, so the largest is
+            // still unsapped for the leader once the front is clear. A breach
+            // that took the most HP off the front spent the buffed body on a
+            // blocker and reached the leader with what was left.
+            bool kills = FrontCount(after, me) < bodies;
+            double spent = action.Type == ActionType.DeclareAttack ? AttackerStrength(state, action.Source) : 0;
+            bool ahead;
+            if (kills != bestKill) ahead = kills;
+            else if (kills && Math.Abs(spent - bestSpent) > 1e-9) ahead = spent < bestSpent;
+            else ahead = cut > bestCut || (cut == bestCut && board > bestBoard);
+            if (ahead)
             {
+                bestKill = kills;
+                bestSpent = spent;
                 bestCut = cut;
                 bestBoard = board;
                 best = (action, after);
@@ -3173,6 +3372,24 @@ public static class Bot
             if (s.Active != me && s.Pending is null && s.Phase == Phase.Main)
             {
                 int seat = s.Active;
+                // What their turn so far left waiting on another seat is answered
+                // before they go on: a hole of the bot's own at the root of a
+                // decision used to reach their beam unanswered, and a beam that
+                // may not act finds no line, so the reply to every decline was a
+                // turn in which they did nothing.
+                if (s.CurrentActor != seat)
+                {
+                    var before = s;
+                    if (s.CurrentActor == me) s = AnswerMine(s, me, w);
+                    if (s.CurrentActor != seat)
+                    {
+                        var cleared = Engine.Apply(s, s.CurrentActor, PassAction(s));
+                        if (!cleared.Ok) return null;
+                        s = cleared.State!;
+                    }
+                    if (ReferenceEquals(s, before)) return null;
+                    continue;
+                }
                 // Their turn is played on the hand the bot believes they hold. The
                 // table was redacted at the root of this decision, so a reply
                 // cannot dodge a held trap or spell it has never been shown.
@@ -3328,9 +3545,7 @@ public static class Bot
             if (s.IsOver || s.Active == me || s.CurrentActor != me) break;
             GameState? pick = null;
             double best = double.NegativeInfinity;
-            var options = new List<GameAction> { PassAction(s) };
-            options.AddRange(CandidateActions(s, me));
-            foreach (var action in options)
+            foreach (var action in ReplaceAnswers(s, me))
             {
                 var res = Engine.Apply(s, me, action);
                 if (!res.Ok) continue;
@@ -3358,6 +3573,25 @@ public static class Bot
     /// about what holding it does, so the body it keeps decides the comparison,
     /// and once the enemy leader drops inside range the kill search takes over.
     /// </summary>
+    /// <summary>
+    /// The outlook of a gathered leaf. At a hole of the bot's own, every answer
+    /// is judged with the holes after it declined: one blocker against none.
+    /// </summary>
+    private static double LeafOutlook(GameState root, Leaf leaf, int me, BotWeights w)
+    {
+        bool hole = root.ReplaceQueue.Count > 0 && root.ReplaceQueue[0].Player == me;
+        bool outer = _declineHoles;
+        _declineHoles = hole;
+        try
+        {
+            return Outlook(leaf.State, me, w, leaf.Score);
+        }
+        finally
+        {
+            _declineHoles = outer;
+        }
+    }
+
     private static double Outlook(GameState state, int me, BotWeights w, double standing)
     {
         var next = state.IsOver ? state : NextTurn(state, me, w);
@@ -3704,7 +3938,7 @@ public static class Bot
             var next = leaf.State.IsOver ? leaf.State : NextTurn(leaf.State, me, w);
             double after = next is null ? double.NaN : Evaluate(next, me, w);
             double fallen = next is null || leaf.State.IsOver ? 0 : FallenWorth(leaf.State, next, me, w);
-            double total = Outlook(leaf.State, me, w, leaf.Score);
+            double total = LeafOutlook(state, leaf, me, w);
             lines.Add(string.Format(System.Globalization.CultureInfo.InvariantCulture,
                 "{0,9:F2} std | {1,9:F2} after | {2,7:F2} fallen | {3,9:F2} outlook | {4}",
                 leaf.Score, after, fallen, total, Describe(leaf.Line)));
@@ -3786,7 +4020,7 @@ public static class Bot
         }
         foreach (var leaf in ranked)
         {
-            double total = leaf.Score >= Win ? Win : Outlook(leaf.State, me, w, leaf.Score);
+            double total = leaf.Score >= Win ? Win : LeafOutlook(state, leaf, me, w);
             if (total > best)
             {
                 best = total;
@@ -3814,7 +4048,7 @@ public static class Bot
                 playedTotal = Outlook(after, me, w, Evaluate(after, me, w));
                 foreach (var leaf in SearchTurn(after, me, w, reads).Take(ThreatLeaves))
                 {
-                    double total = leaf.Score >= Win ? Win : Outlook(leaf.State, me, w, leaf.Score);
+                    double total = leaf.Score >= Win ? Win : LeafOutlook(state, leaf, me, w);
                     if (total > playedTotal) playedTotal = total;
                 }
             }
@@ -3922,7 +4156,7 @@ public static class Bot
         }
         foreach (var leaf in ranked)
         {
-            double total = leaf.Score >= Win ? Win : Outlook(leaf.State, me, w, leaf.Score);
+            double total = leaf.Score >= Win ? Win : LeafOutlook(state, leaf, me, w);
             // The line again on the real table, so the opponent's real hand is
             // what the exposure is read against.
             var real = state;
@@ -4081,7 +4315,7 @@ public static class Bot
         int pick = 0;
         for (int i = 0; i < ranked.Count; i++)
         {
-            totals[i] = Outlook(ranked[i].State, me, w, ranked[i].Score);
+            totals[i] = LeafOutlook(state, ranked[i], me, w);
             if (totals[i] > totals[pick] + 1e-6) pick = i;
         }
 

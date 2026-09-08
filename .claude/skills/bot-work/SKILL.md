@@ -79,7 +79,17 @@ behaviour. One decision:
    after them (`replyPeril`, the count asked, 12). Without it the reply
    emptied its own board for a good trade and the outlook priced the kill
    it had handed itself, which is why the bot once stood with a free face
-   hit. The standing side of the blend can
+   hit. `settle` answers the other side's replacement windows greedily,
+   as it answers flips, and never inside a probe: the engine refuses every
+   action while a hole is unanswered, so before this a beam stopped dead
+   at its first kill whenever the victim's owner held a body. The reply
+   walk answers what their turn left waiting on the bot before their beam
+   runs. At a hole of the bot's own, every answer is judged with the holes
+   after it declined (`leafOutlook` sets the stance `replaceAnswers`
+   reads): one blocker against none. Without those three the bot declined
+   to fill a hole in front of a leader at ten facing an unsapped five,
+   because the model's reply to a decline was a turn in which they did
+   nothing. The standing side of the blend can
    write off every body the reply takes (`fallen`), so a doomed body is
    not kept at 40 percent of a value the visible board is about to take;
    it measured down on candy and random and ships at 0. The outlook can
@@ -205,7 +215,16 @@ and the lists as played is the step before training on regret.
 - `structuredClone` was two thirds of a client decision; the engine has a
   hand-written `cloneState` now. Do not reintroduce deep copies in hot paths.
 - Probes never nest (`probing` flag): a grafted Recompiler Power minted a new
-  card at every level and overflowed the stack.
+  card at every level and overflowed the stack. The same flag keeps
+  `settle` from answering replacement windows inside a probe: the death
+  probe reads a body coming back into the slot a replacement would fill,
+  and the Graft pairing test moved the first time replacements were
+  answered everywhere.
+- `setSearchLimits` clears every cache and the root seat. The hole stance
+  applies to the root seat's holes, so a hand-run reply that sets the
+  reply's limits and then searches reads the bot's holes as greedy and
+  looks nothing like the real reply. `warm(state, seat)` after it sets
+  the seat again; the real reply path swaps `limits` without clearing.
 - Shop prices are cached by seat and slot for a whole decision; a probe must
   save and restore those caches (`kitReach`, `cardDoes` do).
 - A card registered only in TypeScript (`hidden`, the face-down stand-in)
@@ -337,6 +356,38 @@ results. Facts that matter:
   percent on decision time, neutral against bots, both engines pick the
   hit, 13 of 13 corpus and all 59 steps of the game agree. Write-up in
   `claude-notes/ai-audit.md`.
+- From the sixteenth logged game (2026-09-08): a kill eight actions deep
+  (clear three weakened blockers with the small attackers, set a
+  supporter, +9 on the big one, swing) is beyond the race and patient
+  rollouts and `findLethal` from either seat, so the oracle, `handsKill`
+  and `perilOf` all read the position as safe. The bot's own regret on
+  that game was 0.1. Next kill-search work: clear with the smallest
+  sufficient attacker, keep the largest for the face, buff it before the
+  swing (audit: "A kill eight actions deep that no search finds"). The
+  losing decision in that game was declining three replacements with
+  four bodies in hand while the leader stood exposed at 10 to an unsapped
+  5-attack body. The cause was the reply model, not the prior: the
+  engine refuses every action while a hole is unanswered, the search
+  never answered the other side's holes, and the reply walk handed the
+  bot's own hole to their beam, so the reply to a decline was a turn in
+  which they did nothing. Fixed 2026-09-08 (replacement answers in
+  `settle`, the walk answers the hole first, the hole stance in
+  `leafOutlook`); the bot replaces at that step in both engines, the
+  fixture `exposed-leader-hole.json` pins it, measurement in
+  `claude-notes/ai-audit.md` ("The hole in the reply model"): 449-149,
+  455-143, 448-152, inside noise, ships.
+- The rollout block (2026-09-08, late): a supporter is a flat step the
+  patient climb takes when it unlocks a paid step, the swing and the
+  breach clear the front with the smallest attacker that kills so the
+  largest stays for the leader, the breach runs whenever a front stands,
+  and a rollout answers its own flip offers before weighing anything
+  else. The patient rollout then finds the eight-action kill of game
+  sixteen from the person's seat. Measured 461-138, 475-125, 474-126
+  against 449-149, 455-143, 448-152 before it: up on every pool, ships.
+  Both suites pass, corpus 13 of 13, both games agree step for step.
+  Next reading: the five kills the deployed bot left on the table over
+  the 28 logged games (`analyze --replay replays/human --seat 1 --top
+  30`), then the four Helemy wins (games 22, 23, 25, 27).
 - Ten gated mechanisms, measured one at a time: `worstCase`
   (on), `breach` (on), `windowAnswers` (on), `deepBurst` (off: two points
   down on random), `paranoia` (off: one to two points down), `fallen`

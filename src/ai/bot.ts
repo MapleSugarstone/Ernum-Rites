@@ -943,7 +943,43 @@ export function settle(state: GameState, w: BotWeights = defaultWeights, buyOut 
       s = res.ok ? res.state : s;
     }
   }
-  return answerFlips(s, w);
+  return answerReplacements(answerFlips(s, w), w);
+}
+
+/**
+ * Answer the replacement windows waiting on whoever is not taking the turn,
+ * greedily on their own reading, as flips are. The engine refuses every other
+ * action while a dead body's hole is unanswered, so a line that killed a body
+ * whose owner holds another used to end right there: in the reply model the
+ * bot's own hand blocked the opponent's whole turn at their first kill, and
+ * a turn that could clear the board and hit the leader read as a turn that
+ * did nothing.
+ */
+function answerReplacements(state: GameState, w: BotWeights): GameState {
+  // A probe reads what one card does on a bare board; a hole it opens is not
+  // a turn anyone is taking, and the death probe reads a body coming back
+  // into the slot a replacement would fill.
+  if (probing) return state;
+  let s = state;
+  for (let i = 0; i < FLIP_ANSWERS; i++) {
+    if (isOver(s) || s.replaceQueue.length === 0 || s.flipQueue.length > 0 || s.pending) break;
+    const owner = s.replaceQueue[0].player;
+    if (owner === s.active) break;
+    let pick: GameState | null = null;
+    let best = Number.NEGATIVE_INFINITY;
+    for (const action of replaceAnswers(s, owner, w)) {
+      const res = applyAction(s, owner, action);
+      if (!res.ok) continue;
+      const score = evaluate(res.state, owner, w);
+      if (score > best + 1e-6) {
+        best = score;
+        pick = res.state;
+      }
+    }
+    if (!pick) break;
+    s = pick;
+  }
+  return s;
 }
 
 /**
@@ -1010,6 +1046,35 @@ function answerFlips(state: GameState, w: BotWeights, own = false): GameState {
     s = pick;
   }
   return s;
+}
+
+/**
+ * How the bot's own replacement windows are answered inside a search:
+ * greedily, or declined while a hole of its own is the decision being judged.
+ * Every answer at a hole is judged with the holes after it declined, one
+ * blocker against none, because a greedy answer fed a body into every hole
+ * their attackers opened next and read any replacement as a massacre, while
+ * a model that never reached their beam past the hole read a decline as a
+ * turn in which they did nothing: the bot stood open at ten to an unsapped
+ * five and three unseen cards.
+ */
+let replaceStance: 'greedy' | 'decline' = 'greedy';
+
+/** For tooling that walks a reply by hand: the stance a decision would have set. */
+export function setReplaceStance(stance: 'greedy' | 'decline'): void {
+  replaceStance = stance;
+}
+
+/** The answers a seat may give to what waits on it, the stance applied to the root seat's holes. */
+function replaceAnswers(state: GameState, owner: PlayerIdx, w: BotWeights): Action[] {
+  const hole =
+    state.flipQueue.length === 0 &&
+    !state.pending &&
+    state.choiceQueue.length === 0 &&
+    state.replaceQueue.length > 0 &&
+    state.replaceQueue[0].player === owner;
+  if (hole && owner === rootSeat && replaceStance === 'decline') return [{ type: 'DECLINE_REPLACE' }];
+  return [passAction(state), ...candidateActions(state, owner, w)];
 }
 
 /** Declining, and paying in each way the cost allows. */
@@ -2991,6 +3056,24 @@ function freeRepeat(state: GameState, me: PlayerIdx, action: Action): boolean {
 }
 
 /** Whether an action hands the game to the opponent or ends it level. */
+/**
+ * The most a paid step from here is worth to the patient measure: what a flat
+ * step that only adds a pip is taken for.
+ */
+function unlocks(state: GameState, me: PlayerIdx, w: BotWeights): number {
+  let best = Number.NEGATIVE_INFINITY;
+  for (const action of candidateActions(state, me, w, true)) {
+    if (action.type !== 'CAST_SPELL' && action.type !== 'ACTIVATE_POWER') continue;
+    const res = applyAction(state, me, action);
+    if (!res.ok) continue;
+    const after = settle(res.state, w, true);
+    if (losesIt(after, me)) continue;
+    const value = cashPotential(after, me, w).value;
+    if (value > best) best = value;
+  }
+  return best;
+}
+
 function losesIt(state: GameState, me: PlayerIdx): boolean {
   return state.drawn || (state.winner !== null && state.winner !== me);
 }
@@ -3068,6 +3151,7 @@ export function burn(
     let pickState: GameState | null = null;
     let level: Action | null = null;
     let levelState: GameState | null = null;
+    let levelUnlock = Number.NEGATIVE_INFINITY;
     // The mana the best cash-in from here needs stays out of the build. A
     // step that spent it built toward nothing the swing could fire.
     const here = cashPotential(cur, me, w);
@@ -3103,9 +3187,23 @@ export function burn(
         bestCash = cash;
         pick = action;
         pickState = after;
-      } else if (patient && !level && Math.abs(p - standing) <= 1e-9 && freeRepeat(cur, me, action)) {
-        level = action;
-        levelState = after;
+      } else if (patient && Math.abs(p - standing) <= 1e-9) {
+        if (action.type === 'PLAY_SUPPORTER') {
+          // A supporter is a flat step that pays for the paid step after it,
+          // and it is taken for what that step is worth: the card that buffs
+          // the swing is not the card to set for a pip. A climb that would
+          // not set one cast the buff after the swing, on the wrong turn.
+          const unlock = unlocks(after, me, w);
+          if (unlock > standing + 1e-9 && unlock > levelUnlock + 1e-9) {
+            level = action;
+            levelState = after;
+            levelUnlock = unlock;
+          }
+        } else if (!level && freeRepeat(cur, me, action)) {
+          level = action;
+          levelState = after;
+          levelUnlock = standing;
+        }
       }
     }
 
@@ -3149,10 +3247,40 @@ export function burn(
 
   for (let step = 0; step < steps; step++) {
     if (!turnGoesOn(cur, me)) break;
+    // An offer of my own holds the rest of the turn: it is answered, on the
+    // board it leaves, before anything else is weighed. A rollout that
+    // weighed the answer against standing still stopped on it once the front
+    // was clear, and read a leader open to an unsapped body as untouched.
+    if (cur.flipQueue.length > 0 && cur.flipQueue[0].player === me) {
+      let answer: Action | null = null;
+      let answered: GameState | null = null;
+      let bestAnswer = Number.NEGATIVE_INFINITY;
+      for (const action of flipAnswers(cur, me)) {
+        const res = applyAction(cur, me, action);
+        if (!res.ok) continue;
+        const after = settle(res.state, w, true);
+        if (after.winner === me) {
+          return { state: after, line: [...line, action], damage: worstDrop(after) };
+        }
+        const board = evaluate(after, me, w);
+        if (board > bestAnswer) {
+          bestAnswer = board;
+          answer = action;
+          answered = after;
+        }
+      }
+      if (!answer || !answered) break;
+      line.push(answer);
+      cur = answered;
+      continue;
+    }
     const standingStill = evaluate(cur, me, w);
+    const bodies = frontCount(cur, me);
     let pick: Action | null = null;
     let pickState: GameState | null = null;
     let bestGain = Number.NEGATIVE_INFINITY;
+    let bestKills = false;
+    let bestSpent = Number.POSITIVE_INFINITY;
     let bestBoard = Number.NEGATIVE_INFINITY;
 
     for (const action of candidateActions(cur, me, w, true)) {
@@ -3165,23 +3293,44 @@ export function burn(
       if (losesIt(after, me)) continue;
       const gain = progressAgainst(cur, after, me);
       const board = evaluate(after, me, w);
-      if (gain > bestGain + 1e-9 || (Math.abs(gain - bestGain) <= 1e-9 && board > bestBoard)) {
+      // A kill on the front is progress on their debt, and among the swings
+      // that make it the smallest attacker that does goes first, so the
+      // largest is still unsapped for the leader once the front is clear.
+      // Broken on the board score alone, the tie went to the biggest body,
+      // which survives its clash best, and the leader was reached with what
+      // was left.
+      const kills = frontCount(after, me) < bodies;
+      const spent = action.type === 'DECLARE_ATTACK' ? attackerStrength(cur, action.source) : 0;
+      let ahead: boolean;
+      if (Math.abs(gain - bestGain) > 1e-9) ahead = gain > bestGain;
+      else if (kills !== bestKills) ahead = kills;
+      else if (kills && Math.abs(spent - bestSpent) > 1e-9) ahead = spent < bestSpent;
+      else ahead = board > bestBoard;
+      if (ahead) {
         bestGain = gain;
+        bestKills = kills;
+        bestSpent = spent;
         bestBoard = board;
         pick = action;
         pickState = after;
       }
     }
 
-    if (bestGain <= 1e-9 && (!pick || bestBoard <= standingStill)) {
+    if (bestGain <= 1e-9 && (!pick || bestBoard <= standingStill || frontHp(cur, me) > 0)) {
       // Nothing moves a clock from here. A leader behind bodies is reached by
       // clearing the bodies, and a rollout greedy on the clocks never took
-      // that step, since an attack on a blocker moves neither. Take whatever
-      // takes the most HP off the front, so the swings after it can land.
+      // that step, since an attack on a blocker moves neither. The breach
+      // picks the clearing step, and it picks it whenever there is a front:
+      // left to the board score, the step that cleared was the biggest body
+      // into the softest blocker, and the swing that followed had nothing
+      // large left for the leader.
       const breach = w.breach > 0 ? breachStep(cur, me, w) : null;
-      if (!breach) break;
-      pick = breach.action;
-      pickState = breach.state;
+      if (!breach) {
+        if (!pick || bestBoard <= standingStill) break;
+      } else {
+        pick = breach.action;
+        pickState = breach.state;
+      }
     }
     if (!pick || !pickState) break;
     line.push(pick);
@@ -3200,6 +3349,21 @@ function frontHp(state: GameState, me: PlayerIdx): number {
   return hp;
 }
 
+/** Bodies in front of every enemy leader. */
+function frontCount(state: GameState, me: PlayerIdx): number {
+  let n = 0;
+  for (const foe of livingOpponents(state, me)) {
+    for (const s of state.players[foe].slots) if (s) n++;
+  }
+  return n;
+}
+
+/** The attack an attacker would deal, or zero for a source the board no longer holds. */
+function attackerStrength(state: GameState, ref: TargetRef): number {
+  const body = ref.kind === 'leader' ? state.players[ref.player].leader : findSummon(state, ref);
+  return body ? effectiveStrength(state, body) : 0;
+}
+
 /**
  * The attack, Power or spell that takes the most HP off the bodies in front
  * of an enemy leader, ties on the evaluator, or nothing when no leader has
@@ -3208,7 +3372,10 @@ function frontHp(state: GameState, me: PlayerIdx): number {
 function breachStep(state: GameState, me: PlayerIdx, w: BotWeights): { action: Action; state: GameState } | null {
   const front = frontHp(state, me);
   if (front <= 0) return null;
+  const bodies = frontCount(state, me);
   let best: { action: Action; state: GameState } | null = null;
+  let bestKill = false;
+  let bestSpent = Number.POSITIVE_INFINITY;
   let bestCut = 0;
   let bestBoard = Number.NEGATIVE_INFINITY;
   for (const action of candidateActions(state, me, w, true)) {
@@ -3220,7 +3387,20 @@ function breachStep(state: GameState, me: PlayerIdx, w: BotWeights): { action: A
     const cut = front - frontHp(after, me);
     if (cut <= 0) continue;
     const board = evaluate(after, me, w);
-    if (cut > bestCut + 1e-9 || (Math.abs(cut - bestCut) <= 1e-9 && board > bestBoard)) {
+    // A step that removes a body opens the front, and among those the
+    // smallest attacker that does it goes first, so the largest is still
+    // unsapped for the leader once the front is clear. A breach that took the
+    // most HP off the front spent the buffed body on a blocker and reached the
+    // leader with what was left.
+    const kills = frontCount(after, me) < bodies;
+    const spent = action.type === 'DECLARE_ATTACK' ? attackerStrength(state, action.source) : 0;
+    let ahead: boolean;
+    if (kills !== bestKill) ahead = kills;
+    else if (kills && Math.abs(spent - bestSpent) > 1e-9) ahead = spent < bestSpent;
+    else ahead = cut > bestCut + 1e-9 || (Math.abs(cut - bestCut) <= 1e-9 && board > bestBoard);
+    if (ahead) {
+      bestKill = kills;
+      bestSpent = spent;
       bestCut = cut;
       bestBoard = board;
       best = { action, state: after };
@@ -3267,6 +3447,21 @@ export function nextTurn(state: GameState, me: PlayerIdx, w: BotWeights): GameSt
     // opposite: a party game seats up to four and they all get to answer.
     if (s.active !== me && !s.pending && s.phase === 'main') {
       const seat = s.active;
+      // What their turn so far left waiting on another seat is answered before
+      // they go on: a hole of the bot's own at the root of a decision used to
+      // reach their beam unanswered, and a beam that may not act finds no line,
+      // so the reply to every decline was a turn in which they did nothing.
+      if (currentActor(s) !== seat) {
+        const before = s;
+        if (currentActor(s) === me) s = answerMine(s, me, w);
+        if (currentActor(s) !== seat) {
+          const res = applyAction(s, currentActor(s), passAction(s));
+          if (!res.ok) return null;
+          s = res.state;
+        }
+        if (s === before) return null;
+        continue;
+      }
       // Their turn is played on the hand the bot believes they hold. The table
       // was redacted at the root of this decision, so a reply cannot dodge a
       // held trap or spell it has never been shown.
@@ -3416,7 +3611,7 @@ function answerMine(state: GameState, me: PlayerIdx, w: BotWeights): GameState {
     if (isOver(s) || s.active === me || currentActor(s) !== me) break;
     let pick: GameState | null = null;
     let best = Number.NEGATIVE_INFINITY;
-    for (const action of [passAction(s), ...candidateActions(s, me, w)]) {
+    for (const action of replaceAnswers(s, me, w)) {
       const res = applyAction(s, me, action);
       if (!res.ok) continue;
       const after = settle(res.state, w);
@@ -3480,6 +3675,22 @@ export function outlook(state: GameState, me: PlayerIdx, w: BotWeights, standing
     if (peril > 0 && myHp > 0) total -= w.peril * Math.min(peril, myHp) + (peril >= myHp ? w.standingDeath : 0);
   }
   return total;
+}
+
+/**
+ * The outlook of a gathered leaf. At a hole of the bot's own, every answer is
+ * judged with the holes after it declined: one blocker against none, rather
+ * than one blocker against a greedy answer that feeds a body into every hole
+ * their attackers open next.
+ */
+export function leafOutlook(root: GameState, leaf: { state: GameState; line: Action[]; score: number }, me: PlayerIdx, w: BotWeights): number {
+  const hole = root.replaceQueue.length > 0 && root.replaceQueue[0].player === me;
+  replaceStance = hole ? 'decline' : 'greedy';
+  try {
+    return outlook(leaf.state, me, w, leaf.score);
+  } finally {
+    replaceStance = 'greedy';
+  }
 }
 
 /**
@@ -3833,7 +4044,7 @@ export function chooseAction(
 
   // Playing the reply out costs a turn of simulation apiece, which is why only
   // the handful of leaves gathered above get one.
-  const totals = ranked.map((leaf) => outlook(leaf.state, me, w, leaf.score));
+  const totals = ranked.map((leaf) => leafOutlook(state, leaf, me, w));
   let pick = 0;
   for (let i = 1; i < ranked.length; i++) {
     if (totals[i] > totals[pick] + 1e-6) pick = i;
