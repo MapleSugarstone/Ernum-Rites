@@ -25,6 +25,7 @@ import {
   leafOutlook,
   LETHAL_SLACK,
   nextTurn,
+  openingKey,
   readTable,
   redactTable,
   searchLimits,
@@ -94,11 +95,19 @@ const gathered: { state: GameState; line: Action[]; score: number }[] = [
   { state: root, line: [], score: evaluate(root, seat, w) },
 ];
 const seen = new Set<string>([digestOf(root)]);
+const spread = w.leafSpread > 0 ? Math.round(w.leafSpread) : 0;
+const opens = new Map<string, number>();
 for (const leaf of leaves) {
   if (gathered.length > 6) break;
   const key = digestOf(leaf.state);
   if (seen.has(key)) continue;
   seen.add(key);
+  if (spread > 0 && leaf.line.length > 0) {
+    const open = openingKey(leaf.line[0]);
+    const taken = opens.get(open) ?? 0;
+    if (taken >= spread) continue;
+    opens.set(open, taken + 1);
+  }
   gathered.push(leaf);
 }
 gathered.sort((a, b) => b.score - a.score);

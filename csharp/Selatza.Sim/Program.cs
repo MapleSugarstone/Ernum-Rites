@@ -47,7 +47,8 @@ public static class Program
             "duel" => Duel(games),
             "versus" => Versus(games, ArgInt(args, "--threads", Environment.ProcessorCount),
                 ArgStr(args, "--decks", "random"), ArgStr(args, "--set", ""), ArgInt(args, "--seed", 1), Flag2(args, "--self"),
-                Flag2(args, "--perfect"), ArgStr(args, "--read", ""), ArgStr(args, "--hand", ""), ArgStr(args, "--deck", ""), ArgStr(args, "--reply", "")),
+                Flag2(args, "--perfect"), ArgStr(args, "--read", ""), ArgStr(args, "--hand", ""), ArgStr(args, "--deck", ""), ArgStr(args, "--reply", ""),
+                ArgStr(args, "--vs", "")),
             "tune" => Tune(games, ArgInt(args, "--rounds", 3),
                 ArgInt(args, "--threads", Environment.ProcessorCount),
                 ArgStr(args, "--only", ""), ArgStr(args, "--decks", "random")),
@@ -368,7 +369,7 @@ public static class Program
     /// answer to "is the new bot better", measured rather than argued.
     /// </summary>
     private static int Versus(int games, int threads, string pool, string set, int seed, bool self, bool perfect = false,
-        string read = "", string hand = "", string deck = "", string reply = "")
+        string read = "", string hand = "", string deck = "", string reply = "", string vs = "")
     {
         // --reply <width>,<depth>,<budget> sets the opponent model's beam for
         // the current bot, so its profile can be tuned against the snapshot.
@@ -404,15 +405,11 @@ public static class Program
         // --set Name=value,... overrides weights on the current side only, so a
         // new term can be measured with and without the search change it came
         // with: zero it here and what is left is the search.
-        var current = new BotWeights();
-        foreach (var pair in set.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            var parts = pair.Split('=');
-            var field = typeof(BotWeights).GetField(parts[0].Trim(),
-                BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)
-                ?? throw new ArgumentException($"no weight named {parts[0]}");
-            field.SetValue(current, double.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture));
-        }
+        var current = WeightsFrom(set);
+        // --vs Name=value,... puts the current bot with those weights in the
+        // other seat instead of the snapshot, so one weight can be measured
+        // against itself without the snapshot's own play between them.
+        var theirs = vs.Length > 0 ? WeightsFrom(vs) : null;
         var decks = new DeckList[games];
         for (int g = 0; g < games; g++) decks[g] = DeckFor(pool, g);
         var result = new MatchupResult();
@@ -442,6 +439,7 @@ public static class Program
                 int actor = s.CurrentActor;
                 var action = actor == seatNow && !self
                     ? Bot.ChooseAction(s, actor, current)
+                    : theirs is not null ? Bot.ChooseAction(s, actor, theirs)
                     : PreviousBot.ChooseAction(s, actor);
                 var res = Engine.Apply(s, actor, action);
                 if (!res.Ok) break;
@@ -458,9 +456,10 @@ public static class Program
             }
         });
 
-        Console.WriteLine($"current bot{(set.Length > 0 ? $" with {set}" : "")} versus the previous snapshot "
-            + $"over {pool} decks, {games} games, {sw.Elapsed.TotalSeconds:0}s");
-        Console.WriteLine($"  current {result.WinsA} - previous {result.WinsB} - drawn {result.Draws}");
+        Console.WriteLine($"current bot{(set.Length > 0 ? $" with {set}" : "")} versus "
+            + (theirs is not null ? $"the current bot with {vs}" : "the previous snapshot")
+            + $" over {pool} decks, seed {seed}, {games} games, {sw.Elapsed.TotalSeconds:0}s");
+        Console.WriteLine($"  current {result.WinsA} - other {result.WinsB} - drawn {result.Draws}");
         Console.WriteLine($"  current wins {result.RateA:P1}, 95% interval {result.Confidence95}"
             + (result.Decisive ? " (decisive)" : " (inside the noise)"));
         Console.WriteLine($"  stores: current ran its own {useA} times and opened the other side's {openA}; "

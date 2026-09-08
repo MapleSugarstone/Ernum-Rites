@@ -179,6 +179,13 @@ export interface BotWeights {
    */
   replyPeril: number;
   /**
+   * How many of the leaves that get an outlook may open with the same action.
+   * The outlook is what decides the turn and only a handful of leaves get one,
+   * so six orderings of a single line used to take every slot and a different
+   * opening was never weighed at all. Zero lifts the cap.
+   */
+  leafSpread: number;
+  /**
    * Share of a pool's worst case priced into each card the enemy holds unseen:
    * the burst of the best cards their leader allows, measured beside that
    * leader. Zero reads an unseen card as nothing. Measured even with zero
@@ -306,6 +313,7 @@ export const defaultWeights: BotWeights = {
   peril: 0,
   standingDeath: 0,
   replyPeril: 12,
+  leafSpread: 2,
   kitPips: 6,
   kitDebt: 8,
   kitSolo: 1,
@@ -3741,6 +3749,48 @@ interface Leaf {
  * Positions are deduplicated by digest, so the many orderings of one set of
  * actions cost a single slot in the beam instead of filling it.
  */
+/** A board or hand reference as a key, so two openings compare as one string. */
+function refKey(r: TargetRef | SourceRef): string {
+  switch (r.kind) {
+    case 'summon':
+      return `summon:${r.player}:${r.slot}`;
+    case 'leader':
+      return `leader:${r.player}`;
+    case 'color':
+      return `color:${r.color}`;
+    default:
+      return `${r.kind}:${r.player}:${r.index}`;
+  }
+}
+
+/**
+ * What a leaf commits to now. Two leaves with the same key are the same
+ * decision at this step whatever their lines do afterwards, which is what the
+ * cap on leaves sharing an opening counts.
+ */
+export function openingKey(a: Action): string {
+  switch (a.type) {
+    case 'PLAY_SUMMON':
+      return `PLAY ${a.handIndex}@${a.slot}`;
+    case 'CAST_SPELL':
+      return `CAST ${a.handIndex}>${a.targets.map(refKey).join(',')}`;
+    case 'DECLARE_ATTACK':
+      return `ATK ${refKey(a.source)}>${refKey(a.target)}`;
+    case 'ACTIVATE_POWER':
+      return `POWER ${refKey(a.source)}#${a.powerIndex}(${a.targets.map(refKey).join(',')})`;
+    case 'PLAY_SUPPORTER':
+      return `SUPPORTER ${a.handIndex}`;
+    case 'PLAY_STAGE':
+      return `STAGE ${a.handIndex}`;
+    case 'USE_STORE':
+      return `USE ${refKey(a.source)}`;
+    case 'OPEN_STORE':
+      return `OPEN ${refKey(a.source)}`;
+    default:
+      return a.type;
+  }
+}
+
 export function searchTurn(state: GameState, me: PlayerIdx, w: BotWeights, reads: EnemyRead[]): Leaf[] {
   const leaves: Leaf[] = [];
   const seen = new Set<string>();
@@ -4017,6 +4067,10 @@ export function chooseAction(
   const seen = new Set<string>([key]);
   const screening = network !== null && networkMode === 'screen' && networkWeight > 0 && state.players.length === 2;
   const gather = screening ? SCREEN_LEAVES : limits.threatLeaves;
+  // Only these leaves get an outlook, so a cap on how many of them open with
+  // the same action keeps a second opening in the comparison.
+  const spread = w.leafSpread > 0 ? Math.round(w.leafSpread) : 0;
+  const opens = new Map<string, number>();
   for (const leaf of searchTurn(state, me, w, reads)) {
     if (leaf.score >= WIN) {
       const opener = begin(state, me, key, leaf.line);
@@ -4026,6 +4080,12 @@ export function chooseAction(
     const leafKey = digestOf(leaf.state);
     if (seen.has(leafKey)) continue;
     seen.add(leafKey);
+    if (spread > 0 && leaf.line.length > 0) {
+      const open = openingKey(leaf.line[0]);
+      const taken = opens.get(open) ?? 0;
+      if (taken >= spread) continue;
+      opens.set(open, taken + 1);
+    }
     ranked.push(leaf);
   }
   ranked.sort((a, b) => b.score - a.score);

@@ -104,6 +104,13 @@ public sealed class BotWeights
     /// </summary>
     public double ReplyPeril = 12;
     /// <summary>
+    /// How many of the leaves that get an outlook may open with the same
+    /// action. The outlook is what decides the turn and only a handful of
+    /// leaves get one, so six orderings of a single line used to take every
+    /// slot and a different opening was never weighed at all. Zero lifts the cap.
+    /// </summary>
+    public double LeafSpread = 2;
+    /// <summary>
     /// Share of a pool's worst case priced into each card the enemy holds
     /// unseen: the burst of the best cards their leader allows, measured
     /// beside that leader. Zero reads an unseen card as nothing. Measured
@@ -3906,10 +3913,19 @@ public static class Bot
         var ranked = new List<Leaf> { stand };
         var seen = new HashSet<string> { Digest.Of(state) };
         var all = SearchTurn(state, me, w, reads);
+        int spread = w.LeafSpread > 0 ? (int)Math.Round(w.LeafSpread) : 0;
+        var opens = new Dictionary<string, int>();
         foreach (var leaf in all)
         {
             if (ranked.Count > ThreatLeaves) break;
             if (!seen.Add(Digest.Of(leaf.State))) continue;
+            if (spread > 0 && leaf.Line.Count > 0)
+            {
+                string open = OpeningKey(leaf.Line[0]);
+                opens.TryGetValue(open, out int taken);
+                if (taken >= spread) continue;
+                opens[open] = taken + 1;
+            }
             ranked.Add(leaf);
         }
         ranked = ranked.OrderByDescending(l => l.Score).ToList();
@@ -4176,6 +4192,32 @@ public static class Bot
         return lines;
     }
 
+    /// <summary>A board or hand reference as a key, so two openings compare as one string.</summary>
+    private static string RefKey(TargetRef r) => r.Kind switch
+    {
+        TargetKind.Summon => "summon:" + r.Player + ":" + r.Index,
+        TargetKind.Leader => "leader:" + r.Player,
+        _ => r.Kind.ToString() + ":" + r.Player + ":" + r.Index,
+    };
+
+    /// <summary>
+    /// What a leaf commits to now. Two leaves with the same key are the same
+    /// decision at this step whatever their lines do afterwards, which is what
+    /// the cap on leaves sharing an opening counts.
+    /// </summary>
+    private static string OpeningKey(GameAction a) => a.Type switch
+    {
+        ActionType.PlaySummon => "PLAY " + a.HandIndex + "@" + a.Slot,
+        ActionType.CastSpell => "CAST " + a.HandIndex + ">" + string.Join(",", a.Targets.Select(RefKey)),
+        ActionType.DeclareAttack => "ATK " + RefKey(a.Source) + ">" + RefKey(a.Target),
+        ActionType.ActivatePower => "POWER " + RefKey(a.Source) + "#" + a.PowerIndex + "(" + string.Join(",", a.Targets.Select(RefKey)) + ")",
+        ActionType.PlaySupporter => "SUPPORTER " + a.HandIndex,
+        ActionType.PlayStage => "STAGE " + a.HandIndex,
+        ActionType.UseStore => "USE " + RefKey(a.Source),
+        ActionType.OpenStore => "OPEN " + RefKey(a.Source),
+        _ => a.Type.ToString(),
+    };
+
     private static string Describe(List<GameAction> line)
     {
         if (line.Count == 0) return "stand";
@@ -4281,11 +4323,22 @@ public static class Bot
         var ranked = new List<Leaf> { stand };
         var seen = new HashSet<string> { key };
         int gather = Chooser is not null ? ScreenLeaves : ThreatLeaves;
+        // Only these leaves get an outlook, so a cap on how many of them open
+        // with the same action keeps a second opening in the comparison.
+        int spread = w.LeafSpread > 0 ? (int)Math.Round(w.LeafSpread) : 0;
+        var opens = new Dictionary<string, int>();
         foreach (var leaf in SearchTurn(state, me, w, reads))
         {
             if (leaf.Score >= Win && Begin(state, me, key, leaf.Line) is { } won) return won;
             if (ranked.Count > gather) break;
             if (!seen.Add(Digest.Of(leaf.State))) continue;
+            if (spread > 0 && leaf.Line.Count > 0)
+            {
+                string open = OpeningKey(leaf.Line[0]);
+                opens.TryGetValue(open, out int taken);
+                if (taken >= spread) continue;
+                opens[open] = taken + 1;
+            }
             ranked.Add(leaf);
         }
         ranked = ranked.OrderByDescending(l => l.Score).ToList();
