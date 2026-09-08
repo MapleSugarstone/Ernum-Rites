@@ -7189,13 +7189,20 @@ function scheduleBot(delay = BOT_DELAY): void {
   setTimeout(botStep, delay);
 }
 
-function botStep(): void {
+async function botStep(): Promise<void> {
   const state = ui.state;
   if (!state || ui.botSeat === null || actor() !== ui.botSeat) {
     ui.botBusy = false;
     return render();
   }
-  const action = chooseAction(state, ui.botSeat);
+  const seat = ui.botSeat;
+  const action = await botChoose(state, seat);
+  // The page kept running while the bot thought. If the match it was
+  // thinking about is gone, its answer is for a table nobody sits at.
+  if (ui.state !== state || ui.botSeat !== seat || actor() !== seat) {
+    ui.botBusy = false;
+    return render();
+  }
   captureWounds();
   const res = applyAction(state, ui.botSeat, action);
   if (!res.ok) {
@@ -7787,6 +7794,72 @@ function writeLogQueue(items: Record<string, unknown>[]): void {
   }
 }
 
+// --- the bot's thread ------------------------------------------------------
+// The bot searches in a Web Worker: a second thread inside the player's own
+// browser, on their device, so a long think never freezes the page. Its first
+// decision of a game scans the deck for kits and prices the opponent's pool,
+// a few seconds in a browser, and that work is started while the other side
+// takes its first turn. Nothing leaves the device and offline play is
+// unchanged. A browser without workers searches on the page's thread as
+// before.
+
+interface BotCall {
+  resolve: (action: Action) => void;
+  state: GameState;
+  seat: PlayerIdx;
+}
+let botWorker: Worker | null = null;
+let botWorkerTried = false;
+let botCallId = 0;
+const botCalls = new Map<number, BotCall>();
+
+function botThread(): Worker | null {
+  if (botWorker || botWorkerTried) return botWorker;
+  botWorkerTried = true;
+  try {
+    const worker = new Worker(new URL('./ai/botworker.ts', import.meta.url), { type: 'module' });
+    worker.onmessage = (e: MessageEvent<{ id: number; action: Action }>) => {
+      const call = botCalls.get(e.data.id);
+      if (!call) return;
+      botCalls.delete(e.data.id);
+      call.resolve(e.data.action);
+    };
+    worker.onerror = (err) => {
+      // The thread is gone: whatever it owed is answered here, and the rest
+      // of the game searches on the page as it used to.
+      console.error('bot worker failed; searching on the page instead', err);
+      worker.terminate();
+      botWorker = null;
+      const owed = [...botCalls.values()];
+      botCalls.clear();
+      for (const call of owed) call.resolve(chooseAction(call.state, call.seat));
+    };
+    botWorker = worker;
+  } catch (err) {
+    console.error('no bot worker; searching on the page instead', err);
+    botWorker = null;
+  }
+  return botWorker;
+}
+
+function botChoose(state: GameState, seat: PlayerIdx): Promise<Action> {
+  const worker = botThread();
+  if (!worker) return Promise.resolve(chooseAction(state, seat));
+  return new Promise((resolve) => {
+    const id = ++botCallId;
+    botCalls.set(id, { resolve, state, seat });
+    worker.postMessage({ id, kind: 'choose', state, seat });
+  });
+}
+
+function botWarm(state: GameState, seat: PlayerIdx): void {
+  botThread()?.postMessage({ id: 0, kind: 'warm', state, seat });
+}
+
+function botReset(): void {
+  botThread()?.postMessage({ id: 0, kind: 'reset' });
+}
+
 function startMatch(decks: [DeckList, DeckList]): void {
   // A new match owns the story from here, so the last one cannot be offered as
   // though it were this one.
@@ -7798,6 +7871,8 @@ function startMatch(decks: [DeckList, DeckList]): void {
   ui.screen = 'game';
   ui.botSeat = ui.setupMode === 'ai' ? 1 : null;
   beginMatchLog(decks, seed);
+  botReset();
+  if (ui.botSeat !== null) botWarm(ui.state, ui.botSeat);
   ui.botBusy = false;
   ui.selection = null;
   ui.targeting = null;

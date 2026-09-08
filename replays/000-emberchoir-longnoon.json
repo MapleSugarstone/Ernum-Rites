@@ -80,13 +80,14 @@
     {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":1,"index":0},"target":{"kind":"summon","player":0,"index":1}}, "digest": "036d6a1c2cbe7f1e"},
     {"actor": 1, "action": {"type":"PAY_FLIP"}, "digest": "e6344f72989b9c67"},
     {"actor": 0, "action": {"type":"DECLINE_REPLACE"}, "digest": "baa599f8aa40f697"},
-    {"actor": 1, "action": {"type":"PLAY_SUMMON","handIndex":2,"slot":2,"targets":[]}, "digest": "ba67b7e368256d13"},
-    {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":1,"index":2},"target":{"kind":"summon","player":0,"index":0}}, "digest": "ec09f944b3e781b9"},
-    {"actor": 0, "action": {"type":"DECLINE_REPLACE"}, "digest": "3b148793b7c0808c"},
-    {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"leader","player":1,"index":0},"target":{"kind":"leader","player":0,"index":0}}, "digest": "016a5adc4c6813d9"},
-    {"actor": 0, "action": {"type":"DECLINE_FLIP"}, "digest": "3fc2e3e05a408572"}
+    {"actor": 1, "action": {"type":"PLAY_SUPPORTER","handIndex":0}, "digest": "2768c9d89fec4667"},
+    {"actor": 1, "action": {"type":"PLAY_SUMMON","handIndex":1,"slot":2,"targets":[]}, "digest": "125901618c7644f7"},
+    {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":1,"index":2},"target":{"kind":"summon","player":0,"index":0}}, "digest": "a57557c1705807c7"},
+    {"actor": 0, "action": {"type":"DECLINE_REPLACE"}, "digest": "dedf79f1e3cbd418"},
+    {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"leader","player":1,"index":0},"target":{"kind":"leader","player":0,"index":0}}, "digest": "34493d58da8fdc8f"},
+    {"actor": 0, "action": {"type":"DECLINE_FLIP"}, "digest": "eefeb9f2ba8243e0"}
   ],
-  "finalDigest": "3fc2e3e05a408572",
+  "finalDigest": "eefeb9f2ba8243e0",
   "winner": 1,
   "winReason": "Archlife (P1) lost their leader."
 }

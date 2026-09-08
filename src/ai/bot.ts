@@ -704,10 +704,13 @@ function dealOn(state: GameState, win: PendingStore, worth: SaleWorth, w: BotWei
 }
 
 /** Answer whatever pick a resolving effect queued, greedily, for its owner. */
-function answerPicks(state: GameState, w: BotWeights): GameState {
+function answerPicks(state: GameState, w: BotWeights, keepPicksOf: PlayerIdx | null = null): GameState {
   let s = state;
   for (let i = 0; i < SALE_PICKS && s.choiceQueue.length > 0 && !isOver(s); i++) {
     const who = s.choiceQueue[0].player;
+    // A kill search keeps its own picks open and branches on them: a tutor
+    // bought for the finisher has to be allowed to find it.
+    if (who === keepPicksOf) break;
     let best: GameState | null = null;
     let bestScore = Number.NEGATIVE_INFINITY;
     for (const action of candidateActions(s, who, w)) {
@@ -918,11 +921,11 @@ function settleStore(state: GameState, w: BotWeights): GameState {
  * deterministic haggling policies instead, so the candidate that opened it is
  * valued by the deal it settles at.
  */
-export function settle(state: GameState, w: BotWeights = defaultWeights, buyOut = false): GameState {
+export function settle(state: GameState, w: BotWeights = defaultWeights, buyOut = false, keepPicksOf: PlayerIdx | null = null): GameState {
   let s = state;
   if (s.pending) {
     if (s.pending.kind === 'store') {
-      s = buyOut ? buyOutStore(s, w) : settleStore(s, w);
+      s = buyOut ? buyOutStore(s, w, keepPicksOf) : settleStore(s, w);
     } else if (w.windowAnswers > 0 && s.pending.player === rootSeat && s.active !== rootSeat) {
       s = answerWindow(s, w);
     } else {
@@ -1019,7 +1022,7 @@ function flipAnswers(state: GameState, owner: PlayerIdx): Action[] {
  * answered greedily so the bought effect lands. A window this cannot close
  * falls back to the haggle.
  */
-function buyOutStore(state: GameState, w: BotWeights): GameState {
+function buyOutStore(state: GameState, w: BotWeights, keepPicksOf: PlayerIdx | null = null): GameState {
   const win = state.pending;
   if (!win || win.kind !== 'store') return state;
   let s = state;
@@ -1036,7 +1039,7 @@ function buyOutStore(state: GameState, w: BotWeights): GameState {
   if (open && open.kind === 'store' && open.player === open.buyer) {
     const closed = applyAction(s, open.buyer, { type: 'STORE_ACCEPT' });
     if (!closed.ok) return settleStore(state, w);
-    s = answerPicks(closed.state, w);
+    s = answerPicks(closed.state, w, keepPicksOf);
   }
   return s;
 }
@@ -1140,7 +1143,7 @@ export function searchLimits(): SearchLimits {
  * exhaustive check. The rollout takes the largest hit available at every step,
  * which is not always the ordering that finishes.
  */
-const LETHAL_SLACK = 6;
+export const LETHAL_SLACK = 6;
 /** A win, scored above anything the evaluator can reach. */
 const WIN = 1e9;
 
@@ -1930,6 +1933,9 @@ const doesCache: Map<string, CardDoes>[] = [new Map(), new Map(), new Map(), new
 let doesSeed = Number.NaN;
 const PROBE_DEBT = 20;
 const PROBE_LOVE = 3;
+/** Love a pool prior is taken at, rounded to this step and capped, so a Love deck's unseen burst is priced at the Love on the table. */
+const PRIOR_LOVE_STEP = 3;
+const PRIOR_LOVE_CAP = 15;
 /** Share of a relief or heal in hand the evaluator trusts to land in time. */
 const RELIEF_TRUST = 0.5;
 const HEAL_TRUST = 0.5;
@@ -2019,8 +2025,9 @@ function probeDamage(
   debt: number,
   pips: number,
   inHand = false,
+  love = PROBE_LOVE,
 ): number {
-  const probe = probeBoard(state, side, kit, debt, false, inHand, false, pips);
+  const probe = probeBoard(state, side, kit, debt, false, inHand, false, pips, love);
   const prices = new Map(shopPrices);
   const deals = new Map(shopDeals);
   const outer = probing;
@@ -2094,8 +2101,12 @@ const NO_PRIOR: PoolPrior = { ranked: [], top: 0, spellTop: 0 };
  * leader. It reads no game state, so it is the same table in every game and
  * in both engines whichever thread fills it first.
  */
-export function poolPrior(leaderId: string, w: BotWeights): PoolPrior {
-  const hit = priorCache.get(leaderId);
+export function poolPrior(leaderId: string, w: BotWeights, love = PROBE_LOVE): PoolPrior {
+  // Love is public, and a card that spends it deals what the table shows, so
+  // the prior is taken at that Love, in steps, and cached per step.
+  const at = Math.min(PRIOR_LOVE_CAP, Math.round(Math.max(0, love) / PRIOR_LOVE_STEP) * PRIOR_LOVE_STEP);
+  const key = `${leaderId}/${at}`;
+  const hit = priorCache.get(key);
   if (hit) return hit;
   if (probing || !limits.scan) return NO_PRIOR;
   const blank = blankCard()?.id ?? leaderId;
@@ -2109,10 +2120,10 @@ export function poolPrior(leaderId: string, w: BotWeights): PoolPrior {
     0,
   );
   const ids = [...poolBehind(leaderId).legal].filter((id) => card(id).type !== 'trap').sort();
-  const empty = probeDamage(base, 0, [], w, PRIOR_DEBT, PRIOR_PIPS);
+  const empty = probeDamage(base, 0, [], w, PRIOR_DEBT, PRIOR_PIPS, false, at);
   const bursts = new Map<string, number>();
   for (const id of ids) {
-    bursts.set(id, Math.max(0, probeDamage(base, 0, [id], w, PRIOR_DEBT, PRIOR_PIPS) - empty));
+    bursts.set(id, Math.max(0, probeDamage(base, 0, [id], w, PRIOR_DEBT, PRIOR_PIPS, false, at) - empty));
   }
   const ranked = ids
     .slice()
@@ -2129,7 +2140,7 @@ export function poolPrior(leaderId: string, w: BotWeights): PoolPrior {
     top: quarter > 0 ? sum / quarter : 0,
     spellTop: spellQuarter > 0 ? spellSum / spellQuarter : 0,
   };
-  priorCache.set(leaderId, prior);
+  priorCache.set(key, prior);
   return prior;
 }
 
@@ -2153,7 +2164,7 @@ function withWorstHand(state: GameState, me: PlayerIdx, w: BotWeights): GameStat
   if (!blank) return state;
   let s: GameState | null = null;
   for (const foe of livingOpponents(state, me)) {
-    const prior = poolPrior(state.players[foe].leaderCardId, w);
+    const prior = poolPrior(state.players[foe].leaderCardId, w, state.players[foe].love);
     if (prior.ranked.length === 0) continue;
     let k = 0;
     const hand = state.players[foe].hand.map((id) => (id === blank ? prior.ranked[k++ % prior.ranked.length] : id));
@@ -2455,7 +2466,7 @@ function dangerOf(state: GameState, side: PlayerIdx, w: BotWeights): number {
     // Their unseen cards priced at the worst their leader's pool holds, when asked.
     if (w.worstCase > 0) {
       const unseen = unseenIn(q);
-      if (unseen > 0) expected = Math.max(expected, w.worstCase * poolPrior(q.leaderCardId, w).top * unseen);
+      if (unseen > 0) expected = Math.max(expected, w.worstCase * poolPrior(q.leaderCardId, w, q.love).top * unseen);
     }
   }
   const p = state.players[side];
@@ -2480,7 +2491,7 @@ export function trapAnswers(state: GameState, side: PlayerIdx, def: CardDef, w: 
     const q = state.players[foe];
     const unseen = unseenIn(q);
     if (unseen <= 0) continue;
-    worst = Math.max(worst, Math.min(DANGER_CAP, poolPrior(q.leaderCardId, w).spellTop * unseen));
+    worst = Math.max(worst, Math.min(DANGER_CAP, poolPrior(q.leaderCardId, w, q.love).spellTop * unseen));
   }
   return worst;
 }
@@ -2542,6 +2553,7 @@ function probeBoard(
   inHand = false,
   plain = false,
   pips = 3,
+  love = PROBE_LOVE,
 ): GameState {
   const s = cloneState(state);
   const p = s.players[me];
@@ -2606,7 +2618,7 @@ function probeBoard(
     q.stage = null;
     // A little Love for the side being probed: what Candy does with it is part
     // of what its cards do, and a card measured with none reads as nothing.
-    q.love = side === me ? PROBE_LOVE : 0;
+    q.love = side === me ? love : 0;
     if (side === me) continue;
     q.slots = [null, null, null];
     q.debtCount = 0;
@@ -3004,7 +3016,7 @@ interface Rollout {
  * cash it at half size. Called with zero it strikes at once, which is the right
  * line about as often, so both are tried and whichever kills is the one used.
  */
-function burn(
+export function burn(
   state: GameState,
   me: PlayerIdx,
   steps: number,
@@ -3507,7 +3519,7 @@ export function searchTurn(state: GameState, me: PlayerIdx, w: BotWeights, reads
  * covers those exhaustively over the actions that can carry damage, a small
  * enough branching factor to be worth doing whenever a kill is close.
  */
-function findLethal(
+export function findLethal(
   state: GameState,
   me: PlayerIdx,
   depth: number,
@@ -3518,14 +3530,20 @@ function findLethal(
     // Shops are in because a purchase can be the step that completes a kill:
     // the piece is bought at the guaranteed price and played. A body from
     // hand is in for the same reason: a buff repeated into a cash-in starts
-    // with the body it feeds.
+    // with the body it feeds. A supporter is in for the pip the finisher
+    // wants, and a pick is in because a spell that asks one, or a tutor
+    // that offers one, used to end the line where the question was asked:
+    // a person's kill of Loan, a supporter and Absurdly Spicy Candy needed
+    // both and was found only by the beam.
     if (
       action.type !== 'ACTIVATE_POWER' &&
       action.type !== 'DECLARE_ATTACK' &&
       action.type !== 'CAST_SPELL' &&
       action.type !== 'USE_STORE' &&
       action.type !== 'OPEN_STORE' &&
-      action.type !== 'PLAY_SUMMON'
+      action.type !== 'PLAY_SUMMON' &&
+      action.type !== 'PLAY_SUPPORTER' &&
+      action.type !== 'RESOLVE_CHOICE'
     ) {
       continue;
     }
@@ -3533,7 +3551,7 @@ function findLethal(
     budget.left--;
     const res = applyAction(state, me, action);
     if (!res.ok) continue;
-    const after = settle(res.state, defaultWeights, true);
+    const after = settle(res.state, defaultWeights, true, me);
     if (after.winner === me) return action;
     if (findLethal(after, me, depth - 1, budget)) return action;
   }
@@ -3612,6 +3630,22 @@ function begin(state: GameState, me: PlayerIdx, key: string, line: Action[]): Ac
   if (line.length === 0) return null;
   plan = { me, key, line: [...line] };
   return follow(state, me, key);
+}
+
+/**
+ * The once-a-game work a first decision would otherwise pay for on the spot:
+ * the deck scan for kits and the pool prior for each opponent's leader, at
+ * the Love they show. Run while the other side is still taking its first
+ * turn, so the bot's first decision costs what its later ones do.
+ */
+export function warm(state: GameState, me: PlayerIdx, w: BotWeights = defaultWeights): void {
+  peek(state, me);
+  rootSeat = me;
+  const table = redactTable(state, me);
+  ensureKits(table, me, w);
+  for (const foe of livingOpponents(table, me)) {
+    poolPrior(table.players[foe].leaderCardId, w, table.players[foe].love);
+  }
 }
 
 export function chooseAction(

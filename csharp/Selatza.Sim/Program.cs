@@ -55,7 +55,8 @@ public static class Program
             "record" => Record(games),
             "explain" => Explain(ArgStr(args, "--replay", "012-sweetshop-store.json"), ArgInt(args, "--step", 0), ArgStr(args, "--set", ""), ArgStr(args, "--then", "")),
             "analyze" => Analyze(ArgStr(args, "--replay", "replays/human"), ArgInt(args, "--seat", -1), ArgStr(args, "--set", ""),
-                Flag2(args, "--deep"), ArgInt(args, "--top", 12)),
+                Flag2(args, "--deep"), ArgInt(args, "--top", 12), Flag2(args, "--oracle")),
+            "decide" => Decide(ArgStr(args, "--replay", "012-sweetshop-store.json"), ArgInt(args, "--seat", -1)),
             "panel" => Panel(games, ArgInt(args, "--threads", Environment.ProcessorCount),
                 ArgStr(args, "--decks", "random"), ArgStr(args, "--set", ""), ArgInt(args, "--seed", 1)),
             "verify" => Verify(),
@@ -822,7 +823,7 @@ public static class Program
     /// where a kill was on the table and not taken, the played-against-best
     /// pairs behind the large gaps, and the largest gaps with their lines.
     /// </summary>
-    private static int Analyze(string path, int seat, string set, bool deep, int top)
+    private static int Analyze(string path, int seat, string set, bool deep, int top, bool oracle)
     {
         var files = Directory.Exists(path)
             ? Directory.GetFiles(path, "*.json").OrderBy(f => f, StringComparer.Ordinal).ToArray()
@@ -840,6 +841,11 @@ public static class Program
             Bot.ReplyBudget = 1500;
         }
         var rows = new List<(string File, int Step, int Turn, int Seat, string Who, Bot.Regret R)>();
+        // --oracle: at each turn's opening, the whole-turn lines the search
+        // weighed, each played out on the real table and asked whether the
+        // opponent kills after it; then whether they could after the turn as
+        // it was really played.
+        var turns = new List<(string File, int Turn, string Who, bool RealExposed, List<Bot.TurnLine> Lines)>();
         var sw = System.Diagnostics.Stopwatch.StartNew();
         foreach (var file in files)
         {
@@ -855,19 +861,34 @@ public static class Program
                 new DeckList { Name = d[0].Name, LeaderId = d[0].LeaderId, Cards = d[0].Cards },
                 new DeckList { Name = d[1].Name, LeaderId = d[1].LeaderId, Cards = d[1].Cards },
                 replay.Seed, replay.StartingPlayer);
+            int openTurn = -1;
+            List<Bot.TurnLine>? openLines = null;
             for (int i = 0; i < replay.Steps.Count; i++)
             {
                 var step = replay.Steps[i];
                 var action = Replays.ParseAction(step.Action);
-                if (seat < 0 || step.Actor == seat)
+                string who = botSeat < 0 ? $"seat {step.Actor}" : step.Actor == botSeat ? "bot" : "person";
+                bool mine = seat < 0 || step.Actor == seat;
+                if (mine && oracle && state.Active == step.Actor && state.Phase == Phase.Main && state.Pending is null)
+                {
+                    if (state.Turn != openTurn)
+                    {
+                        openTurn = state.Turn;
+                        Bot.ClearPlan();
+                        openLines = Bot.TurnLines(state, step.Actor, w);
+                    }
+                    if (action.Type == ActionType.EndTurn && openLines is not null)
+                    {
+                        bool realExposed = Bot.FoeKillsNext(state, step.Actor, w);
+                        turns.Add((Path.GetFileName(file), state.Turn, who, realExposed, openLines));
+                        openLines = null;
+                    }
+                }
+                if (mine && !oracle)
                 {
                     Bot.ClearPlan();
                     var r = Bot.RegretOf(state, step.Actor, action, w);
-                    if (r is not null)
-                    {
-                        string who = botSeat < 0 ? $"seat {step.Actor}" : step.Actor == botSeat ? "bot" : "person";
-                        rows.Add((Path.GetFileName(file), i, state.Turn, step.Actor, who, r));
-                    }
+                    if (r is not null) rows.Add((Path.GetFileName(file), i, state.Turn, step.Actor, who, r));
                 }
                 var res = Engine.Apply(state, step.Actor, action);
                 if (!res.Ok)
@@ -877,6 +898,27 @@ public static class Program
                 }
                 state = res.State!;
             }
+        }
+        if (oracle)
+        {
+            Console.WriteLine($"oracle over {files.Length} replay(s), {turns.Count} turns in {sw.Elapsed.TotalSeconds:0}s{(deep ? " (deep)" : "")}: whether the opponent had a kill after the turn, read with their real hand");
+            foreach (var group in turns.GroupBy(t => t.Who).OrderBy(g => g.Key, StringComparer.Ordinal))
+            {
+                int exposed = group.Count(t => t.RealExposed);
+                int avoidable = group.Count(t => t.RealExposed && t.Lines.Any(l => !l.Exposed));
+                int blind = group.Count(t => t.RealExposed && t.Lines.Count > 0 && t.Lines.All(l => l.Exposed));
+                Console.WriteLine($"  {group.Key,-8} {group.Count(),4} turns; after {exposed} the opponent had a kill: {avoidable} with a safe line among those weighed, {blind} with none among them");
+            }
+            foreach (var t in turns.Where(t => t.RealExposed))
+            {
+                var safe = t.Lines.Where(l => !l.Exposed).OrderByDescending(l => l.Outlook).FirstOrDefault();
+                var best = t.Lines.OrderByDescending(l => l.Outlook).FirstOrDefault();
+                Console.WriteLine($"    {t.File} turn {t.Turn} {t.Who}: the opponent had a kill after this turn; "
+                    + (safe is null
+                        ? $"none of the {t.Lines.Count} lines weighed was safe (best weighed: {best?.Line ?? "none"})"
+                        : $"safe line weighed at {safe.Outlook:F1} against the best's {best?.Outlook ?? 0:F1}: {safe.Line}"));
+            }
+            return 0;
         }
         Console.WriteLine($"analyzed {files.Length} replay(s), {rows.Count} decisions in {sw.Elapsed.TotalSeconds:0}s{(deep ? " (deep)" : "")}");
         // A kill on the table is a category rather than a number: its gap is
@@ -915,6 +957,38 @@ public static class Program
         int space = head.IndexOf(' ');
         int end = paren < 0 ? space : space < 0 ? paren : Math.Min(paren, space);
         return end < 0 ? head : head[..end];
+    }
+
+    /// <summary>
+    /// The C# bot's decision at every step of a replay, one line each in the
+    /// notation Explain uses, so scripts/botdecide.ts can print the TypeScript
+    /// bot's and a diff names the first step where the engines part. The
+    /// recorded action is applied after each decision, so both engines walk
+    /// the same game whatever they would have played.
+    /// </summary>
+    private static int Decide(string file, int seat)
+    {
+        var path = File.Exists(file) ? file : Path.Combine(Corpus.Directory() ?? "replays", file);
+        var replay = Replay.Load(path);
+        var d = replay.Decks;
+        var state = Engine.CreateGame(
+            new DeckList { Name = d[0].Name, LeaderId = d[0].LeaderId, Cards = d[0].Cards },
+            new DeckList { Name = d[1].Name, LeaderId = d[1].LeaderId, Cards = d[1].Cards },
+            replay.Seed, replay.StartingPlayer);
+        for (int i = 0; i < replay.Steps.Count; i++)
+        {
+            var step = replay.Steps[i];
+            var choice = Bot.ChooseAction(state, step.Actor);
+            if (seat < 0 || step.Actor == seat) Console.WriteLine($"{i} {step.Actor} {Bot.DescribeOne(choice)}");
+            var res = Engine.Apply(state, step.Actor, Replays.ParseAction(step.Action));
+            if (!res.Ok)
+            {
+                Console.WriteLine($"step {i} refused: {res.Error}");
+                return 1;
+            }
+            state = res.State!;
+        }
+        return 0;
     }
 
     private static int Verify()

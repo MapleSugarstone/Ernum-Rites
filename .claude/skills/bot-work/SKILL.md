@@ -39,7 +39,12 @@ behaviour. One decision:
    four to ten points better than either. Everything unseen is priced as
    trap density, never imagined as cards.
 2. Kill rollouts (`burn`, race then patient setup with the cash-in climb) and
-   `findLethal` look for a win this turn.
+   `findLethal` look for a win this turn. The exhaustive search sets a
+   supporter for the pip a finisher wants and branches on the picks a spell
+   asks or a tutor offers (`keepPicksOf` keeps the seat's own picks open
+   through the buy-out); before 2026-09-08 a pick ended its line where the
+   question was asked, and a person's kill of Loan, a supporter and Absurdly
+   Spicy Candy was found only by the beam.
 3. `searchTurn` beams the turn (width 12, depth 10, 6000 applies), and the top
    six end-of-turn leaves get an `outlook`: the opponent's reply, then a
    threat measure. The reply is the bot's own beam on a small profile,
@@ -66,7 +71,10 @@ behaviour. One decision:
    (`kitSolo`): at three pips it read Warmateer beside Helemy as a third of
    a kill and kept nothing. A spell trap in hand is priced by the enemy
    pool's spell burst (`trapHold`), since the believed hand holds no spells
-   for it to spring on in the search. A kit piece on the board can count
+   for it to spring on in the search. The pool prior behind both is taken at
+   the opponent's shown Love (steps of three to fifteen), since a card that
+   spends Love deals what the table shows and the probe used to hand it
+   three. A kit piece on the board can count
    for less while the kit's mana is short (`kitExposed`), which is what
    holds Warmateer on turn one; it measured down against bots and ships
    at 1, off, for the human game log to judge.
@@ -124,7 +132,24 @@ trap and never races a combo. Three checks sit beside it (2026-09-07):
   what the seat could know. The report is regret per seat (bot and
   person), kills on the table not taken, the played-against-best pairs
   behind the large gaps, and the largest gaps with their lines. On the
-  bot's own replay at its table profile every gap is zero.
+  bot's own replay at its table profile every gap is zero. A kill the
+  root's checks find is the root's value; the report counts a kill on the
+  table as a category rather than as the win constant.
+- `--oracle` instead asks, per turn, whether the opponent had a kill
+  after it with their real hand, and whether a safe end of turn was among
+  the whole-turn lines the search weighed. It uses the bot's own searches,
+  so a kill that needs a draw first is not one it finds.
+- `npx tsx scripts/narrate.ts <replay>` tells a game turn by turn with
+  step numbers; `npx tsx scripts/playout.ts <replay> [step] [--set ...]`
+  lets the bot play both seats on from any step; `scripts/botexplain.ts`
+  and `Selatza.Sim explain` both print the kill checks (race, built,
+  exhaustive) beside the gathered leaves.
+- Parity on a game the corpus does not cover: `Selatza.Sim decide --replay
+  <file>` and `npx tsx scripts/botdecide.ts <file>` print each engine's
+  decision at every step in one notation; `diff --strip-trailing-cr` the
+  two. Human games are where the engines meet positions the corpus never
+  reaches (a Candy hand at ten Love read six points apart in the explain
+  tools, and the decisions still agreed on all 63 steps).
 
 The tournament log (`.szgl`) cannot feed the analyzer: it stores a played
 card by index, not the action. A log format that carries the raw action
@@ -307,6 +332,15 @@ results. Facts that matter:
   delete the VM with `gcloud compute instances delete meta-meta --zone
   us-central1-a --quiet` so its disk stops billing. Confirm with `gcloud
   compute instances list` that nothing else is left running.
+- From the first human games in the log (2026-09-08): the bot's own
+  decisions read a mean regret near zero against the deeper search, and it
+  still lost at 13 HP to Absurdly Spicy Candy from hand, which deals one
+  plus the Love spent. The pool prior prices unseen burst on a probe board
+  with three Love (`PROBE_LOVE`), so a Love-scaled card reads as four when
+  the table shows twelve, and Love is public. Next read item: the prior at
+  the opponent's shown Love. `scripts/narrate.ts` tells a pulled game turn
+  by turn, `scripts/playout.ts <replay> [step]` lets the bot play both
+  seats on from any position of it.
 - Next candidates on the search side, in order: cache the card probes per
   process (a tenth to a quarter of a tournament game), a cheaper reply
   profile for the tournament instrument only, the threat measure as a beam,

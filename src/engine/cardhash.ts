@@ -3,10 +3,13 @@ import { allCards } from './registry';
 /**
  * A short fingerprint of the card set as this build sees it: every printed
  * id, level, statline, cost and text. Two clients on different card updates
- * hash differently, so a logged game says which set it was played on.
+ * hash differently, so a logged game says which set it was played on. Cards
+ * minted during play (grafts, Recomps, the `gen-` ids) are left out, or the
+ * same build would hash differently from one game to the next.
  */
 export function cardSetHash(): string {
   const lines = allCards()
+    .filter((c) => !c.id.startsWith('gen-'))
     .map((c) =>
       [c.id, c.type, c.level ?? '', c.strength ?? '', c.hp ?? '', JSON.stringify(c.cost ?? null), c.text ?? ''].join('|'),
     )

@@ -100,14 +100,17 @@
     {"actor": 0, "action": {"type":"ACTIVATE_POWER","source":{"kind":"leader","player":0,"index":0},"powerIndex":1,"targets":[]}, "digest": "611834e8fccc8be3"},
     {"actor": 0, "action": {"type":"PLAY_SUMMON","handIndex":1,"slot":0,"targets":[]}, "digest": "9ac85b39061d654d"},
     {"actor": 0, "action": {"type":"END_TURN"}, "digest": "43be5f5349717362"},
-    {"actor": 1, "action": {"type":"PLAY_SUMMON","handIndex":1,"slot":0,"targets":[]}, "digest": "7297cedaea89851f"},
-    {"actor": 1, "action": {"type":"PLAY_SUMMON","handIndex":0,"slot":2,"targets":[]}, "digest": "4ede7523df399875"},
-    {"actor": 1, "action": {"type":"ACTIVATE_POWER","source":{"kind":"leader","player":1,"index":0},"powerIndex":0,"targets":[]}, "digest": "e69d53f72080dfcc"},
-    {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":1,"index":0},"target":{"kind":"summon","player":0,"index":0}}, "digest": "ed3ec2131dc032c8"},
-    {"actor": 0, "action": {"type":"DECLINE_REPLACE"}, "digest": "bd45ccaf2e369c81"},
-    {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":1,"index":1},"target":{"kind":"leader","player":0,"index":0}}, "digest": "00ffce2d09e47550"}
+    {"actor": 1, "action": {"type":"PLAY_SUPPORTER","handIndex":0}, "digest": "4be487c865161cfe"},
+    {"actor": 1, "action": {"type":"PLAY_SUMMON","handIndex":0,"slot":0,"targets":[]}, "digest": "89999b9906a1fb44"},
+    {"actor": 1, "action": {"type":"ACTIVATE_POWER","source":{"kind":"leader","player":1,"index":0},"powerIndex":0,"targets":[]}, "digest": "392e9a5ed3d18f25"},
+    {"actor": 1, "action": {"type":"OPEN_STORE","source":{"kind":"summon","player":0,"index":0}}, "digest": "24183bcf23d40ca7"},
+    {"actor": 0, "action": {"type":"STORE_OFFER","price":3}, "digest": "46c7974c1fec4221"},
+    {"actor": 1, "action": {"type":"STORE_REJECT"}, "digest": "5caae21de4107a97"},
+    {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":1,"index":0},"target":{"kind":"summon","player":0,"index":0}}, "digest": "fcca6a184c8f92b4"},
+    {"actor": 0, "action": {"type":"DECLINE_REPLACE"}, "digest": "7dd87f1441acf805"},
+    {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":1,"index":1},"target":{"kind":"leader","player":0,"index":0}}, "digest": "c79f5ac2ebb0d8b4"}
   ],
-  "finalDigest": "00ffce2d09e47550",
+  "finalDigest": "c79f5ac2ebb0d8b4",
   "winner": 1,
   "winReason": "Pink Deus (P1) lost their leader."
 }

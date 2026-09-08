@@ -15,15 +15,19 @@ import { join } from 'node:path';
 import '../src/cards';
 import { card } from '../src/engine/registry';
 import {
+  burn,
   chooseAction,
   clearPlan,
   defaultWeights,
   evaluate,
   fallenWorth,
+  findLethal,
+  LETHAL_SLACK,
   nextTurn,
   outlook,
   readTable,
   redactTable,
+  searchLimits,
   searchTurn,
 } from '../src/ai/bot';
 import { applyAction, createGame } from '../src/engine/engine';
@@ -68,6 +72,20 @@ for (let side = 0; side < root.players.length; side++) {
 
 const describe = (line: Action[]): string =>
   line.length === 0 ? 'stand' : line.map((a) => JSON.stringify(actionToWire(a))).join(' ; ');
+
+// The kill checks that run before the beam at the table, so a kill the beam
+// never gathers is still shown.
+{
+  const race = burn(root, seat, searchLimits().maxBurnSteps, w);
+  const built = burn(root, seat, searchLimits().maxBurnSteps, w, searchLimits().maxSetupSteps, true);
+  let kill = race.state.winner === seat ? `race: ${describe(race.line)}` : built.state.winner === seat ? `built: ${describe(built.line)}` : '';
+  const foeHp = Math.min(...root.players.filter((_, i) => i !== seat && !root.players[i].eliminated).map((p) => (p.leader ? remainingHp(p.leader) : 0)));
+  if (!kill && Math.max(race.damage, built.damage) + LETHAL_SLACK >= foeHp) {
+    const found = findLethal(root, seat, searchLimits().lethalDepth, { left: searchLimits().lethalBudget });
+    if (found) kill = `exhaustive: ${describe([found])} ...`;
+  }
+  console.log(`  kill checks: race ${race.damage}, built ${built.damage} against ${foeHp} HP${kill ? `; kill found by ${kill}` : '; no kill found'}`);
+}
 
 // The gather, exactly as chooseAction builds it: standing still, then the
 // beam's best leaves by score, one per distinct position.

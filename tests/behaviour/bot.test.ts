@@ -255,17 +255,20 @@ describe('store negotiation', () => {
     s.players[1].leader.storeStock = 1;
     s.players[0].slots[0] = body(s, BODY, 0, 5);
     clearPlan();
-    expect(chooseAction(s, 0)).toEqual({
-      type: 'OPEN_STORE',
-      source: { kind: 'leader', player: 1 },
-    });
-    // Played out with the bot in both chairs, the haggle closes and the swing
-    // lands before the turn ends.
+    // Played out with the bot in both chairs, the haggle closes and a swing
+    // lands before the turn ends. Which swing comes first is the search's
+    // business: since the kill search branches on the bought pick, it may
+    // swing the body for three first and put the purchase on the leader for
+    // the last two, which kills just the same.
     let at = s;
+    const played: string[] = [];
     for (let i = 0; i < 12 && at.winner === null; i++) {
       const actor = currentActor(at);
-      at = step(at, actor, chooseAction(at, actor));
+      const a = chooseAction(at, actor);
+      if (actor === 0) played.push(a.type);
+      at = step(at, actor, a);
     }
+    expect(played, 'the purchase is part of the kill').toContain('OPEN_STORE');
     expect(at.winner).toBe(0);
   });
 
@@ -511,5 +514,60 @@ describe('holding a spell trap', () => {
     };
     expect(price('r3-cybersiren', 'r1-slicebot', 'rx-siphon', 'R')).toBeGreaterThan(1);
     expect(price('kh-PinkDeus', 'k1-apprentice', 'kx-trapExpensiveSecurity', 'K')).toBe(0);
+  });
+});
+
+describe('the kill search', () => {
+  beforeAll(() => setSearchLimits(fullSearch));
+  afterAll(() => setSearchLimits(quickSearch));
+
+  it('sets a supporter for the pip the finisher wants', () => {
+    // Helemy with Warmateer out and two Pepper faces a leader at 4 HP with
+    // nothing in front. Alchemize wants three, and the third is a Pepper
+    // card in hand set as a supporter. A person's kill of Loan, a supporter
+    // and Absurdly Spicy Candy was found by the beam and not by the kill
+    // search, which never set a supporter.
+    const ember = starterDecks.find((d) => d.key === 'emberchoir')!;
+    const sweet = starterDecks.find((d) => d.key === 'sweetshop')!;
+    let s = createGame(
+      [
+        { name: 'Bot', leaderId: 'p3-helemy', cards: [...ember.cards] },
+        { name: 'Other', leaderId: 'n3-AcolyteofGrinkle', cards: [...sweet.cards] },
+      ],
+      3,
+      0,
+    );
+    const step = (actor: 0 | 1, action: Parameters<typeof applyAction>[2]) => {
+      const res = applyAction(s, actor, action);
+      if (!res.ok) throw new Error(`${action.type}: ${res.error}`);
+      s = res.state;
+    };
+    s.players[0].hand = ['p2-warmateer'];
+    s.players[1].hand = [];
+    step(0, { type: 'PLAY_SUMMON', handIndex: 0, slot: 0 });
+    step(0, { type: 'END_TURN' });
+    step(1, { type: 'END_TURN' });
+    s.players[0].hand = ['p1-beast'];
+    s.players[1].hand = [];
+    for (let i = 0; i < 2; i++) s.players[0].supporters.push({ cardId: 'p2-warmateer', sapped: false });
+    (s.players[0].mana as Record<string, number>).P = 2;
+    const leader = s.players[1].leader!;
+    let left = leader.hp.filter((c) => !c.flipped).length;
+    for (const c of leader.hp) {
+      if (left <= 4) break;
+      if (!c.flipped) {
+        c.flipped = true;
+        left--;
+      }
+    }
+
+    setIntel(null);
+    clearPlan();
+    for (let i = 0; i < 8 && !isOver(s) && currentActor(s) === 0; i++) {
+      const a = chooseAction(s, 0);
+      step(0, a);
+      if (a.type === 'END_TURN') break;
+    }
+    expect(s.winner, 'the kill was found and taken this turn').toBe(0);
   });
 });

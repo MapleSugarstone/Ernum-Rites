@@ -504,7 +504,7 @@ public static class Bot
     /// struck or refused, so the search reads a settled price rather than an
     /// open negotiation.
     /// </summary>
-    public static GameState Settle(GameState state, BotWeights? w = null, bool buyOut = false)
+    public static GameState Settle(GameState state, BotWeights? w = null, bool buyOut = false, int keepPicksOf = -1)
     {
         var weights = w ?? BotWeights.Default;
         var s = state;
@@ -512,7 +512,7 @@ public static class Bot
         {
             if (s.Pending.Store is not null)
             {
-                s = buyOut ? BuyOut(s, weights) : SettleStore(s, weights);
+                s = buyOut ? BuyOut(s, weights, keepPicksOf) : SettleStore(s, weights);
             }
             else if (weights.WindowAnswers > 0 && _rootSet && s.Pending.Player == _rootSeat && s.Active != _rootSeat)
             {
@@ -625,7 +625,7 @@ public static class Bot
     /// pick is answered greedily so the bought effect lands. A window this
     /// cannot close falls back to the haggle.
     /// </summary>
-    private static GameState BuyOut(GameState state, BotWeights w)
+    private static GameState BuyOut(GameState state, BotWeights w, int keepPicksOf = -1)
     {
         if (state.Pending?.Store is not { } win) return state;
         var s = state;
@@ -642,7 +642,7 @@ public static class Bot
         {
             var closed = Engine.Apply(s, open.Buyer, GameAction.StoreAccept());
             if (!closed.Ok) return SettleStore(state, w);
-            s = AnswerPicks(closed.State!, w);
+            s = AnswerPicks(closed.State!, w, keepPicksOf);
         }
         return s;
     }
@@ -810,12 +810,15 @@ public static class Bot
     }
 
     /// <summary>Answer whatever pick a resolving effect queued, greedily, for its owner.</summary>
-    public static GameState AnswerPicks(GameState state, BotWeights w)
+    public static GameState AnswerPicks(GameState state, BotWeights w, int keepPicksOf = -1)
     {
         var s = state;
         for (int i = 0; i < SalePicks && s.ChoiceQueue.Count > 0 && !s.IsOver; i++)
         {
             int who = s.ChoiceQueue[0].Player;
+            // A kill search keeps its own picks open and branches on them: a
+            // tutor bought for the finisher has to be allowed to find it.
+            if (who == keepPicksOf) break;
             GameState? best = null;
             double bestScore = double.NegativeInfinity;
             foreach (var action in CandidateActions(s, who))
@@ -1771,6 +1774,9 @@ public static class Bot
     [ThreadStatic] private static bool _rootSet;
     private const int ProbeDebt = 20;
     private const int ProbeLove = 3;
+    /// <summary>Love a pool prior is taken at, rounded to this step and capped, so a Love deck's unseen burst is priced at the Love on the table.</summary>
+    private const int PriorLoveStep = 3;
+    private const int PriorLoveCap = 15;
     private const string EmptyProbe = "";
     /// <summary>Share of a relief or heal in hand the evaluator trusts to land in time.</summary>
     private const double ReliefTrust = 0.5;
@@ -1839,9 +1845,9 @@ public static class Bot
     /// leader stands, so a card is measured beside what it will actually be
     /// played with.
     /// </summary>
-    private static int ProbeDamage(GameState state, int side, string[] kit, BotWeights w, int debt, int pips, bool inHand = false)
+    private static int ProbeDamage(GameState state, int side, string[] kit, BotWeights w, int debt, int pips, bool inHand = false, int love = ProbeLove)
     {
-        var probe = ProbeBoard(state, side, kit, debt, false, inHand, false, pips);
+        var probe = ProbeBoard(state, side, kit, debt, false, inHand, false, pips, love);
         var prices = _shopPrices is null ? null : new Dictionary<string, SaleWorth>(_shopPrices, StringComparer.Ordinal);
         var deals = _shopDeals is null ? null : new Dictionary<string, int?>(_shopDeals, StringComparer.Ordinal);
         bool outer = _probing;
@@ -2222,16 +2228,21 @@ public static class Bot
             var q = state.Players[foe];
             int unseen = UnseenIn(q);
             if (unseen <= 0) continue;
-            worst = Math.Max(worst, Math.Min(DangerCap, PoolPriorOf(q.LeaderCardId, w).SpellTop * unseen));
+            worst = Math.Max(worst, Math.Min(DangerCap, PoolPriorOf(q.LeaderCardId, w, q.Love).SpellTop * unseen));
         }
         return worst;
     }
 
-    private static PoolPrior PoolPriorOf(string leaderId, BotWeights w)
+    private static PoolPrior PoolPriorOf(string leaderId, BotWeights w, int love = ProbeLove)
     {
+        // Love is public, and a card that spends it deals what the table
+        // shows, so the prior is taken at that Love, in steps, and cached per
+        // step.
+        int at = Math.Min(PriorLoveCap, (int)Math.Round(Math.Max(0, love) / (double)PriorLoveStep, MidpointRounding.AwayFromZero) * PriorLoveStep);
+        string key = leaderId + "/" + at;
         lock (_priors)
         {
-            if (_priors.TryGetValue(leaderId, out var hit)) return hit;
+            if (_priors.TryGetValue(key, out var hit)) return hit;
         }
         if (_probing || Light) return NoPrior;
         string blank = BlankCard()?.Id ?? leaderId;
@@ -2241,11 +2252,11 @@ public static class Bot
             new DeckList { Name = "B", LeaderId = leaderId, Cards = deck }, 0, 0);
         var ids = PoolBehind(leaderId).Legal.Where(id => Registry.Card(id).Type != CardType.Trap)
             .OrderBy(id => id, StringComparer.Ordinal).ToArray();
-        double empty = ProbeDamage(board, 0, Array.Empty<string>(), w, PriorDebt, PriorPips);
+        double empty = ProbeDamage(board, 0, Array.Empty<string>(), w, PriorDebt, PriorPips, false, at);
         var bursts = new Dictionary<string, double>(StringComparer.Ordinal);
         foreach (var id in ids)
         {
-            bursts[id] = Math.Max(0, ProbeDamage(board, 0, new[] { id }, w, PriorDebt, PriorPips) - empty);
+            bursts[id] = Math.Max(0, ProbeDamage(board, 0, new[] { id }, w, PriorDebt, PriorPips, false, at) - empty);
         }
         var ranked = ids.OrderByDescending(id => bursts[id]).ThenBy(id => id, StringComparer.Ordinal).ToArray();
         int quarter = (ranked.Length + 3) / 4;
@@ -2263,7 +2274,7 @@ public static class Bot
         };
         lock (_priors)
         {
-            _priors[leaderId] = prior;
+            _priors[key] = prior;
         }
         return prior;
     }
@@ -2291,7 +2302,7 @@ public static class Bot
         GameState? s = null;
         foreach (int foe in LivingOpponents(state, me))
         {
-            var prior = PoolPriorOf(state.Players[foe].LeaderCardId, w);
+            var prior = PoolPriorOf(state.Players[foe].LeaderCardId, w, state.Players[foe].Love);
             if (prior.Ranked.Length == 0) continue;
             int k = 0;
             var hand = new List<string>(state.Players[foe].Hand.Count);
@@ -2317,7 +2328,7 @@ public static class Bot
             if (w.WorstCase > 0)
             {
                 int unseen = UnseenIn(q);
-                if (unseen > 0) expected = Math.Max(expected, w.WorstCase * PoolPriorOf(q.LeaderCardId, w).Top * unseen);
+                if (unseen > 0) expected = Math.Max(expected, w.WorstCase * PoolPriorOf(q.LeaderCardId, w, q.Love).Top * unseen);
             }
         }
         var p = state.Players[side];
@@ -2424,7 +2435,7 @@ public static class Bot
     /// a blocker reach.
     /// </summary>
     private static GameState ProbeBoard(GameState state, int me, string[] kit, int debt = 0,
-        bool hurt = false, bool inHand = false, bool plain = false, int pips = 3)
+        bool hurt = false, bool inHand = false, bool plain = false, int pips = 3, int love = ProbeLove)
     {
         var s = state.Clone();
         var p = s.Players[me];
@@ -2495,7 +2506,7 @@ public static class Bot
             // A little Love for the side being probed: what Candy does with it is
             // part of what its cards do, and a card measured with none reads as
             // nothing.
-            q.Love = side == me ? ProbeLove : 0;
+            q.Love = side == me ? love : 0;
             if (side == me) continue;
             Array.Clear(q.Slots);
             q.DebtCount = 0;
@@ -3451,14 +3462,17 @@ public static class Bot
             // kill: the piece is bought at the guaranteed price and played.
             // A body from hand is in too: a buff repeated into a cash-in starts
             // with the body it feeds.
+            // A supporter is in for the pip the finisher wants, and a pick is
+            // in because a spell that asks one, or a tutor that offers one,
+            // used to end the line where the question was asked.
             if (action.Type is not (ActionType.ActivatePower or ActionType.DeclareAttack
                 or ActionType.CastSpell or ActionType.UseStore or ActionType.OpenStore
-                or ActionType.PlaySummon)) continue;
+                or ActionType.PlaySummon or ActionType.PlaySupporter or ActionType.ResolveChoice)) continue;
             if (budget <= 0) break;
             budget--;
             var res = Engine.Apply(state, me, action);
             if (!res.Ok) continue;
-            var after = Settle(res.State!, null, buyOut: true);
+            var after = Settle(res.State!, null, buyOut: true, keepPicksOf: me);
             if (after.Winner == me) return action;
             if (FindLethal(after, me, depth - 1, ref budget) is not null) return action;
         }
@@ -3600,6 +3614,21 @@ public static class Bot
             ranked.Add(leaf);
         }
         ranked = ranked.OrderByDescending(l => l.Score).ToList();
+        // The kill checks that run before the beam at the table, so a kill
+        // the beam never gathers is still shown.
+        {
+            var race = Burn(state, me, MaxBurnSteps, w);
+            var built = Burn(state, me, MaxBurnSteps, w, MaxSetupSteps, true);
+            string kill = race.State.Winner == me ? "race: " + Describe(race.Line)
+                : built.State.Winner == me ? "built: " + Describe(built.Line) : "";
+            if (kill.Length == 0 && Math.Max(race.Damage, built.Damage) + LethalSlack >= NearestFoeHp(state, me))
+            {
+                int budget = LethalBudget;
+                var found = FindLethal(state, me, LethalDepth, ref budget);
+                if (found is not null) kill = "exhaustive: " + Describe(new List<GameAction> { found }) + " ...";
+            }
+            lines.Add($"kill checks: race {race.Damage}, built {built.Damage} against {NearestFoeHp(state, me)} HP" + (kill.Length > 0 ? "; kill found by " + kill : "; no kill found"));
+        }
         lines.Add("leaves " + all.Count);
         foreach (var leaf in all.Take(14))
         {
@@ -3623,6 +3652,9 @@ public static class Bot
 
     /// <summary>The search's own window settlement, for replaying a line outside the search.</summary>
     public static GameState SettleFor(GameState state, BotWeights? w = null) => Settle(state, w ?? BotWeights.Default);
+
+    /// <summary>One action described the way Explain describes a line, for comparing decisions across the engines.</summary>
+    public static string DescribeOne(GameAction a) => Describe(new List<GameAction> { a });
 
     /// <summary>The candidate actions the search would branch on here, described the way Explain describes a line.</summary>
     public static List<string> Candidates(GameState state, int me, BotWeights? w = null)
@@ -3731,6 +3763,118 @@ public static class Bot
         // A kill the played action leads to is on the table too.
         if (playedTotal > best) best = playedTotal;
         return new Regret(best, playedTotal, bestLine, playedKey, best >= Win, playedTotal >= Win);
+    }
+
+    /// <summary>
+    /// Whether the opponent has a kill on their next turn from this position,
+    /// read with their real hand: hindsight, for asking after a game whether
+    /// a turn ended somewhere it should not have. The position is the real
+    /// table at the end of the seat's turn, before the turn ends; the walk to
+    /// their main phase passes whatever is queued, and their kill search runs
+    /// on everything they hold.
+    /// </summary>
+    public static bool FoeKillsNext(GameState state, int me, BotWeights? w = null)
+    {
+        w ??= BotWeights.Default;
+        var saved = Intel;
+        Intel = new ReadConfig { Perfect = true };
+        try
+        {
+            var s = state;
+            if (s.Active == me && s.Phase == Phase.Main && s.Pending is null)
+            {
+                var ended = Engine.Apply(s, me, GameAction.EndTurn());
+                if (!ended.Ok) return false;
+                s = ended.State!;
+            }
+            for (int i = 0; i < 12 && !s.IsOver && !(s.Active != me && s.Phase == Phase.Main && s.Pending is null); i++)
+            {
+                var r = Engine.Apply(s, s.CurrentActor, PassAction(s));
+                if (!r.Ok) return false;
+                s = r.State!;
+            }
+            if (s.IsOver) return s.Winner >= 0 && s.Winner != me;
+            if (s.Active == me || s.Phase != Phase.Main || s.Pending is not null) return false;
+            int foe = s.Active;
+            ClearShops();
+            _rootSeat = foe;
+            _rootSet = true;
+            EnsureKits(s, foe, w);
+            var race = Burn(s, foe, MaxBurnSteps, w);
+            if (race.State.Winner == foe) return true;
+            var built = Burn(s, foe, MaxBurnSteps, w, MaxSetupSteps, true);
+            if (built.State.Winner == foe) return true;
+            if (Math.Max(race.Damage, built.Damage) + LethalSlack >= NearestFoeHp(s, foe))
+            {
+                int budget = LethalBudget;
+                if (FindLethal(s, foe, LethalDepth, ref budget) is not null) return true;
+            }
+            // The beam finds kills the rollouts and the exhaustive search do
+            // not, the same way it does at the table.
+            foreach (var leaf in SearchTurn(s, foe, w, ReadTable(s, foe)))
+            {
+                if (leaf.Score >= Win) return true;
+                break;
+            }
+            return false;
+        }
+        finally
+        {
+            Intel = saved;
+        }
+    }
+
+    /// <summary>One whole-turn line the search considered at a turn's first decision, and whether the real table lets the opponent kill after it.</summary>
+    public sealed record TurnLine(string Line, double Outlook, bool Exposed);
+
+    /// <summary>
+    /// The whole-turn lines the search gathers at the opening of a seat's
+    /// turn, each played out on the real table and asked whether the opponent
+    /// kills after it. Hindsight again: it says whether a safe end of turn was
+    /// among the lines the bot weighed, which is the question a lost game
+    /// asks. The search itself still sees the redacted table.
+    /// </summary>
+    public static List<TurnLine> TurnLines(GameState state, int me, BotWeights? w = null)
+    {
+        w ??= BotWeights.Default;
+        var lines = new List<TurnLine>();
+        if (state.IsOver || state.Active != me || state.Phase != Phase.Main || state.Pending is not null) return lines;
+        ClearShops();
+        Peek(state, me);
+        _rootSeat = me;
+        _rootSet = true;
+        var root = RedactTable(state, me);
+        EnsureKits(root, me, w);
+        var reads = ReadTable(root, me);
+        var stand = new Leaf { State = root, Line = new List<GameAction>(), Score = Evaluate(root, me, w) };
+        var ranked = new List<Leaf> { stand };
+        var seen = new HashSet<string> { Digest.Of(root) };
+        foreach (var leaf in SearchTurn(root, me, w, reads))
+        {
+            if (ranked.Count > ThreatLeaves) break;
+            if (!seen.Add(Digest.Of(leaf.State))) continue;
+            ranked.Add(leaf);
+        }
+        foreach (var leaf in ranked)
+        {
+            double total = leaf.Score >= Win ? Win : Outlook(leaf.State, me, w, leaf.Score);
+            // The line again on the real table, so the opponent's real hand is
+            // what the exposure is read against.
+            var real = state;
+            bool ok = true;
+            foreach (var action in leaf.Line)
+            {
+                var res = Engine.Apply(real, me, action);
+                if (!res.Ok) { ok = false; break; }
+                real = Settle(res.State!, w);
+                if (real.IsOver) break;
+            }
+            if (!ok) continue;
+            bool exposed = !real.IsOver && FoeKillsNext(real, me, w);
+            if (real.IsOver && real.Winner != me) exposed = true;
+            lines.Add(new TurnLine(leaf.Line.Count == 0 ? "stand" : Describe(leaf.Line), total, exposed));
+        }
+        return lines;
     }
 
     private static string Describe(List<GameAction> line)
