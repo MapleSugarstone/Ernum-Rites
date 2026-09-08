@@ -99,6 +99,11 @@ public sealed class BotWeights
     /// </summary>
     public double Reply = 0.6;
     /// <summary>
+    /// How many of the reply's best lines are asked whether they hand the next
+    /// seat a kill before one is believed. Zero believes the best line as it stands.
+    /// </summary>
+    public double ReplyPeril = 12;
+    /// <summary>
     /// Share of a pool's worst case priced into each card the enemy holds
     /// unseen: the burst of the best cards their leader allows, measured
     /// beside that leader. Zero reads an unseen card as nothing. Measured
@@ -3246,7 +3251,67 @@ public static class Bot
             _replying = outer;
         }
         var best = leaves.Count > 0 ? leaves[0] : null;
-        return best is not null && best.Score > standing + 1e-6 ? best.State : state;
+        if (best is null || best.Score <= standing + 1e-6) return state;
+        if (w.ReplyPeril <= 0) return best.State;
+        // The best few lines are asked whether they hand the next seat a kill,
+        // and the first that does not is the reply. Standing is asked after
+        // them. When everything asked hands one, the best line stands: they
+        // are dead either way, or the check is wrong.
+        int asked = (int)Math.Round(w.ReplyPeril);
+        var seen = new HashSet<string>();
+        int checkedLeaves = 0;
+        foreach (var leaf in leaves)
+        {
+            if (checkedLeaves >= asked || leaf.Score <= standing + 1e-6) break;
+            if (!seen.Add(Digest.Of(leaf.State))) continue;
+            checkedLeaves++;
+            if (!HandsKill(leaf.State, foe, w)) return leaf.State;
+        }
+        if (!HandsKill(state, foe, w)) return state;
+        return best.State;
+    }
+
+    /// <summary>
+    /// The position the seat after the active one opens on once the active
+    /// seat ends its turn: what the turn left waiting on other seats answered
+    /// by them, its own flip offers closed, the turn ended, everything still
+    /// queued passed. Null when the turn cannot end from here.
+    /// </summary>
+    private static GameState? HandOver(GameState state, BotWeights w)
+    {
+        int seat = state.Active;
+        var s = state;
+        for (int i = 0; i < 4 && !s.IsOver && s.CurrentActor != seat; i++) s = AnswerMine(s, s.CurrentActor, w);
+        s = AnswerFlips(s, w, own: true);
+        if (s.IsOver) return s;
+        if (s.Active != seat || s.Phase != Phase.Main || s.Pending is not null) return null;
+        var ended = Engine.Apply(s, seat, GameAction.EndTurn());
+        if (!ended.Ok) return null;
+        s = ended.State!;
+        for (int i = 0; i < 8; i++)
+        {
+            if (s.IsOver) return s;
+            if (s.Active != seat && s.Phase == Phase.Main && s.Pending is null) return s;
+            var res = Engine.Apply(s, s.CurrentActor, PassAction(s));
+            if (!res.Ok) return null;
+            s = res.State!;
+        }
+        return null;
+    }
+
+    /// <summary>Whether a reply leaves the seat that plays next a kill on the seat that made it.</summary>
+    private static bool HandsKill(GameState state, int foe, BotWeights w)
+    {
+        var s = HandOver(state, w);
+        if (s is null) return false;
+        if (s.IsOver) return s.Winner != foe;
+        int hp = LeaderHpOf(s, foe);
+        if (hp <= 0) return true;
+        int who = s.Active;
+        var race = Burn(s, who, MaxThreatSteps, w);
+        if (race.State.Winner == who || race.Damage >= hp) return true;
+        var built = Burn(s, who, MaxThreatSteps, w, MaxThreatSetup);
+        return built.State.Winner == who || built.Damage >= hp;
     }
 
     /// <summary>

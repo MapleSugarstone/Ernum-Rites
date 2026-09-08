@@ -54,7 +54,14 @@ behaviour. One decision:
    worth five to eleven points on every pool. The walker also closes the
    reply's own costed flip offers before ending their turn; a reply that
    stopped on one used to fail to end, and the position got no reply at
-   all (worth 8 to 23 games per 600). The standing side of the blend can
+   all (worth 8 to 23 games per 600). The reply looks one turn ahead: its
+   best distinct lines are asked whether they hand the next seat a kill
+   (`handsKill`: hand the turn over, run the next seat's rollouts against
+   the replying leader) and the first that does not is believed, standing
+   after them (`replyPeril`, the count asked, 12). Without it the reply
+   emptied its own board for a good trade and the outlook priced the kill
+   it had handed itself, which is why the bot once stood with a free face
+   hit. The standing side of the blend can
    write off every body the reply takes (`fallen`), so a doomed body is
    not kept at 40 percent of a value the visible board is about to take;
    it measured down on candy and random and ships at 0. The outlook can
@@ -125,7 +132,12 @@ trap and never races a combo. Three checks sit beside it (2026-09-07):
   build and a card-set hash, with nothing that names a person. Reading it
   needs the `LOG_TOKEN` secret; `LOG_TOKEN=... npx tsx scripts/pull-logs.ts
   https://<worker>` pulls new games into `replays/human/`. Those games are
-  the validation set: never trained on, only measured.
+  the validation set: never trained on, only measured. A game played on
+  the dev server is logged too: the Vite proxy sends `/api/log` to the
+  deployed worker (`LOG_URL` overrides), the worker accepts any localhost
+  port as an origin, and a game the page could not send posts on the next
+  load. The maintainer plays on localhost, and "0 games pulled" after a
+  match they describe means it sat in that queue.
 - `Selatza.Sim analyze --replay <file or folder> [--seat n] [--deep]`
   re-searches every decision of a replay and scores the played action
   against the best line found, on the redacted table, so the label is
@@ -182,6 +194,12 @@ and the lists as played is the step before training on regret.
 - The patient climb keeps back the mana its best cash-in needs
   (`cashPotential(...).cashIn`). Without it a repeatable buff ate every pip
   and the Power that was to fire the buffed body was never affordable.
+- The client decides in a Web Worker (`src/ai/botworker.ts`, the bridge in
+  `src/main.ts`): a decision on the page thread froze the page for four
+  seconds on the bot's first turn, the deck scan and the pool prior
+  together. `warm()` runs that once-a-game work at match start while the
+  person takes their turn, and a worker that fails falls back to deciding
+  on the page. `botStep` drops an answer whose match is gone.
 - When you build a board by hand to test a line, check the defending side
   for a Redirection body (Strange Station is one) before reading a missing
   leader target as a search bug. And a hand-built turn has to decline the
@@ -266,12 +284,24 @@ results. Facts that matter:
   at six pips now sees the kit; holding the piece (`kitExposed`) is the
   behaviour a bot cannot judge and the human log can. The next meta check
   is the test of whether the evolution converges on those pairs.
-- Nine gated mechanisms, measured one at a time: `worstCase`
+- From the seventh logged game (2026-09-08): the bot stood with an
+  unsapped Ash Demon in front of an exposed leader at twelve because the
+  reply it foresaw for standing traded everything away and handed it a
+  kill, while the reply it foresaw after the hit blocked. The reply now
+  asks its best lines whether they hand the next seat a kill and
+  believes the first that does not (`replyPeril`, the count of distinct
+  lines asked, 12; the safe line was the ninth in that position). Seven
+  percent on decision time, neutral against bots, both engines pick the
+  hit, 13 of 13 corpus and all 59 steps of the game agree. Write-up in
+  `claude-notes/ai-audit.md`.
+- Ten gated mechanisms, measured one at a time: `worstCase`
   (on), `breach` (on), `windowAnswers` (on), `deepBurst` (off: two points
   down on random), `paranoia` (off: one to two points down), `fallen`
   (off: one to two and a half points down on candy and random), `peril`
   with `standingDeath` (off: a point down on every pool), `kitExposed`
-  (off at 1: down on two pools of three), `trapHold` (on: neutral). The
+  (off at 1: down on two pools of three), `trapHold` (on: neutral),
+  `replyPeril` (on at 12: neutral, two points down on candy inside
+  noise). The
   scan's `kitPips`, `kitDebt` and `kitSolo` ship at 6, 8 and 1, inside
   noise against bots. Switch any
   with `versus --set Name=0|1` before believing a claim about it. Their

@@ -47,6 +47,13 @@ export default defineConfig({
     // hand /api to the worker rather than answer it. `ws` covers the room
     // socket, which is an upgrade on the same prefix.
     proxy: {
+      // A game played on the dev server is logged to the deployed worker, so
+      // it can be pulled and analyzed like one played on the site. Rooms stay
+      // on the local worker.
+      '/api/log': {
+        target: process.env.LOG_URL ?? 'https://ernum-rites-server.maplesugarstone.workers.dev',
+        changeOrigin: true,
+      },
       '/api': {
         target: process.env.WORKER_URL ?? 'http://127.0.0.1:8787',
         changeOrigin: true,

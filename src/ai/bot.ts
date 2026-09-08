@@ -170,6 +170,15 @@ export interface BotWeights {
    */
   reply: number;
   /**
+   * How many of the reply's best lines are asked whether they hand the next
+   * seat a kill before one is believed. A player who looks a turn ahead does
+   * not empty their board in front of a leader the other side can reach, and a
+   * reply model that does hands the bot kills it will never be given: it stood
+   * on a free face hit because the reply it foresaw traded everything and died
+   * to the turn after. Zero believes the best line as it stands.
+   */
+  replyPeril: number;
+  /**
    * Share of a pool's worst case priced into each card the enemy holds unseen:
    * the burst of the best cards their leader allows, measured beside that
    * leader. Zero reads an unseen card as nothing. Measured even with zero
@@ -296,6 +305,7 @@ export const defaultWeights: BotWeights = {
   standingKill: 60,
   peril: 0,
   standingDeath: 0,
+  replyPeril: 12,
   kitPips: 6,
   kitDebt: 8,
   kitSolo: 1,
@@ -3330,11 +3340,69 @@ function replyOf(state: GameState, foe: PlayerIdx, w: BotWeights): GameState {
     limits = outer;
   }
   const best = leaves[0];
-  return best && best.score > standing + 1e-6 ? best.state : state;
+  if (!best || best.score <= standing + 1e-6) return state;
+  if (w.replyPeril <= 0) return best.state;
+  // The best few lines are asked whether they hand the next seat a kill, and
+  // the first that does not is the reply. Standing is asked after them. When
+  // everything asked hands one, the best line stands: they are dead either
+  // way, or the check is wrong.
+  const asked = Math.round(w.replyPeril);
+  const seen = new Set<string>();
+  let checked = 0;
+  for (const leaf of leaves) {
+    if (checked >= asked || leaf.score <= standing + 1e-6) break;
+    const key = digestOf(leaf.state);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    checked++;
+    if (!handsKill(leaf.state, foe, w)) return leaf.state;
+  }
+  if (!handsKill(state, foe, w)) return state;
+  return best.state;
 }
 
 /** The beam the opponent's reply gets: the same search, kept to the size of the loop it replaced. */
 const replySearch = { beamWidth: 8, maxTurnDepth: 6, searchBudget: 600 } as const;
+
+/**
+ * The position the seat after the active one opens on once the active seat
+ * ends its turn: what the turn left waiting on other seats answered by them,
+ * its own flip offers closed, the turn ended, everything still queued passed.
+ * Null when the turn cannot end from here.
+ */
+function handOver(state: GameState, w: BotWeights): GameState | null {
+  const seat = state.active;
+  let s = state;
+  for (let i = 0; i < 4 && !isOver(s) && currentActor(s) !== seat; i++) s = answerMine(s, currentActor(s), w);
+  s = answerFlips(s, w, true);
+  if (isOver(s)) return s;
+  if (s.active !== seat || s.phase !== 'main' || s.pending) return null;
+  const ended = applyAction(s, seat, { type: 'END_TURN' });
+  if (!ended.ok) return null;
+  s = ended.state;
+  for (let i = 0; i < 8; i++) {
+    if (isOver(s)) return s;
+    if (s.active !== seat && s.phase === 'main' && !s.pending) return s;
+    const res = applyAction(s, currentActor(s), passAction(s));
+    if (!res.ok) return null;
+    s = res.state;
+  }
+  return null;
+}
+
+/** Whether a reply leaves the seat that plays next a kill on the seat that made it. */
+function handsKill(state: GameState, foe: PlayerIdx, w: BotWeights): boolean {
+  const s = handOver(state, w);
+  if (!s) return false;
+  if (isOver(s)) return s.winner !== foe;
+  const hp = leaderHpOf(s, foe);
+  if (hp <= 0) return true;
+  const who = s.active;
+  const race = burn(s, who, limits.maxThreatSteps, w);
+  if (race.state.winner === who || race.damage >= hp) return true;
+  const built = burn(s, who, limits.maxThreatSteps, w, limits.maxThreatSetup);
+  return built.state.winner === who || built.damage >= hp;
+}
 
 /**
  * Answer what their line left waiting on me before their turn can end: a body

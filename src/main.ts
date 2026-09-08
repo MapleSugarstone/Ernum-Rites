@@ -7753,10 +7753,11 @@ function recordMatchStep(actor: PlayerIdx, action: Action): void {
 }
 
 /** Send a finished game to the server, or keep it for the next visit when that fails. */
-async function postGameLog(record: Record<string, unknown>): Promise<void> {
+async function postGameLog(record?: Record<string, unknown>): Promise<void> {
   if (!onlineAvailable()) return;
   const queued = readLogQueue();
-  const batch = [...queued, record];
+  const batch = record ? [...queued, record] : queued;
+  if (batch.length === 0) return;
   const left: Record<string, unknown>[] = [];
   for (const item of batch) {
     try {
@@ -9244,6 +9245,8 @@ document.addEventListener('visibilitychange', () => {
 
 syncViewport();
 render();
+// A game the last visit could not send goes now.
+void postGameLog();
 void prepareFrames(BASE).then(render);
 onTintReady(render);
 

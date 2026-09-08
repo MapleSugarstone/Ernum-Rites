@@ -4,8 +4,10 @@
 // run when the bot changes, with `npm run test:behaviour`, and are not part of
 // the deploy gate, which keeps only general legal play: legality, termination,
 // and the two engines agreeing.
+import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { starterDecks } from '../../src/cards';
+import { actionFromWire, type Replay } from '../../src/engine/replay';
 import { chooseAction, clearPlan, defaultWeights, evaluate, fullSearch, nextTurn, outlook, quickSearch, redactTable, setIntel, setSearchLimits } from '../../src/ai/bot';
 import { applyAction, createGame } from '../../src/engine/engine';
 import {
@@ -569,5 +571,52 @@ describe('the kill search', () => {
       if (a.type === 'END_TURN') break;
     }
     expect(s.winner, 'the kill was found and taken this turn').toBe(0);
+  });
+});
+
+describe('the reply looks a turn ahead', () => {
+  beforeAll(() => setSearchLimits(fullSearch));
+  afterAll(() => setSearchLimits(quickSearch));
+  it('takes a free face hit rather than banking on a reply that trades into a kill', () => {
+    // A logged game (2026-09-08, game seven), the bot's third turn: Ash Demon
+    // has just arrived unsapped, the person leads Pink Deus at 12 with an
+    // empty board and no mana for a trap, and the bot ended its turn. The
+    // reply it foresaw for standing traded every scavenged body away and
+    // left the person dead to the turn after, so standing read as a kill in
+    // waiting and the free hit for four as the line that spoiled it. A reply
+    // that looks a turn ahead keeps a blocker instead, and the hit is taken.
+    const replay = JSON.parse(
+      readFileSync(new URL('./fixtures/ash-demon-face.json', import.meta.url), 'utf8'),
+    ) as Replay;
+    let s = createGame(
+      replay.decks.map((d) => ({ name: d.name, leaderId: d.leaderId, cards: d.cards })),
+      replay.seed,
+      replay.startingPlayer as PlayerIdx,
+    );
+    for (let i = 0; i < 37; i++) {
+      const step = replay.steps[i];
+      const res = applyAction(s, step.actor as PlayerIdx, actionFromWire(step.action));
+      if (!res.ok) throw new Error(`step ${i}: ${res.error}`);
+      s = res.state;
+    }
+    const demon = s.players[1].slots.findIndex((x) => x?.cardId === 'p2-ash demon');
+    expect(demon).toBeGreaterThanOrEqual(0);
+    expect(s.players[1].slots[demon]!.sapped).toBe(false);
+    expect(s.players[0].slots.every((x) => x === null)).toBe(true);
+
+    setIntel(null);
+    clearPlan();
+    const root = redactTable(s, 1);
+    const foreseen = nextTurn(root, 1, defaultWeights);
+    expect(foreseen, 'the reply the bot foresees for standing').not.toBeNull();
+    expect(foreseen!.players[0].slots.some((x) => x !== null), 'keeps a body in front of the leader').toBe(true);
+
+    clearPlan();
+    const pick = chooseAction(s, 1);
+    expect(pick.type).toBe('DECLARE_ATTACK');
+    if (pick.type === 'DECLARE_ATTACK') {
+      expect(pick.source).toEqual({ kind: 'summon', player: 1, slot: demon });
+      expect(pick.target.kind).toBe('leader');
+    }
   });
 });

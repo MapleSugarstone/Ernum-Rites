@@ -37,7 +37,11 @@ function mayReadLog(env: Env, request: Request): boolean {
 function isAllowedOrigin(env: Env, origin: string | null): boolean {
   const allowed = (env.ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
   if (allowed.length === 0) return true;
-  return origin !== null && allowed.includes(origin);
+  if (origin === null) return false;
+  // A dev server picks the next free port when its usual one is taken, and
+  // the games it plays are the ones worth logging.
+  if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
+  return allowed.includes(origin);
 }
 
 function corsHeaders(env: Env, origin: string | null): Record<string, string> {
