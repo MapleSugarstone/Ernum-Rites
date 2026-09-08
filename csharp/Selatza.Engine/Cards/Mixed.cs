@@ -127,11 +127,11 @@ public static class Mixed
             {
                 StrengthBonus = a =>
                 {
-                    if (a.Summon.CardId != "m-bg-machineblue" || a.Summon.Owner != a.Controller) return 0;
+                    if (a.Source is null || a.Summon.Uid != a.Source.Uid) return 0;
                     int n = 0;
                     foreach (var s in a.State.Players[a.Controller].Slots)
                     {
-                        if (s is not null && s.CardId != "m-bg-machineblue") n++;
+                        if (s is not null && s.Uid != a.Summon.Uid) n++;
                     }
                     return n;
                 },

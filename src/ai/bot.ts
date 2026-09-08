@@ -18,6 +18,7 @@ import {
   storeBoosted,
   storeOf,
   storePriceBounds,
+  storeSelfPrice,
   targetCandidates,
 } from '../engine/engine';
 import { deckIdentity, isLegalUnder } from '../engine/identity';
@@ -154,6 +155,11 @@ export interface BotWeights {
    */
   trapHold: number;
   /**
+   * Price a Love-scaled effect at the seat's own Love, which is public, rather
+   * than at a fixed three. Off restores the constant.
+   */
+  loveReal: number;
+  /**
    * Share of a kit piece's progress it keeps on the board while the kit's
    * mana is not there yet. In the pro meta check Warmateer landed on turn
    * two with no supporters in 231 of 274 Helemy games and was never Rallied
@@ -185,6 +191,32 @@ export interface BotWeights {
    * opening was never weighed at all. Zero lifts the cap.
    */
   leafSpread: number;
+  /**
+   * Whether a Store the seat can run is reason on its own to run the exhaustive
+   * kill search. The rollouts clear a blocker by attacking it, which spends the
+   * attacks the kill needs, and buying the same blocker away reads a point
+   * better on the climb's measure, so a kill a Store unlocks is invisible to
+   * them and their damage estimate closes the gate in front of the one search
+   * that branches over a purchase. A person killed through an annihilated
+   * blocker while the threat check read the position as no damage at all. Zero
+   * leaves the gate on the rollouts alone.
+   */
+  storeReach: number;
+  /**
+   * How likely they must be to hold a summon before one of their unseen cards
+   * is believed to be a body. Filling a hole is free and takes exactly one
+   * body, so the question is only whether they hold any, and the pool's summon
+   * share against the cards they still hold answers it. Zero believes they
+   * never hold one, which is what the search did while a person refilled 108
+   * holes across the logged games.
+   *
+   * Ships at 0. Over 292 replacement windows in the log the hole is filled
+   * 49.3% of the time and flat in hand size, so a believed body is wrong half
+   * the time whichever way it is set, and the pool's summon share overstates a
+   * hand's because bodies get played out of it. The decision belongs where the
+   * kill is weighed rather than in the read.
+   */
+  handBodies: number;
   /**
    * Share of a pool's worst case priced into each card the enemy holds unseen:
    * the burst of the best cards their leader allows, measured beside that
@@ -314,10 +346,13 @@ export const defaultWeights: BotWeights = {
   standingDeath: 0,
   replyPeril: 12,
   leafSpread: 2,
+  storeReach: 1,
+  handBodies: 0,
   kitPips: 6,
   kitDebt: 8,
   kitSolo: 1,
   trapHold: 0.5,
+  loveReal: 1,
   kitExposed: 1,
   reply: 0.6,
   worstCase: 1,
@@ -1227,6 +1262,12 @@ export function searchLimits(): SearchLimits {
  * which is not always the ordering that finishes.
  */
 export const LETHAL_SLACK = 6;
+/**
+ * The plies a Store spends before it can carry any damage: the purchase and
+ * the pick it asks. A kill through a bought blocker sits two steps deeper than
+ * the same kill without one, so the exhaustive search is given them back.
+ */
+export const STORE_PLIES = 2;
 /** A win, scored above anything the evaluator can reach. */
 const WIN = 1e9;
 
@@ -1479,6 +1520,12 @@ const UNSEEN_WEIGHT = 0.25;
 export interface EnemyRead {
   /** Share of the cards they could still be holding that are traps. */
   trapDensity: number;
+  /**
+   * Share of the cards they could still be holding that are summons, which is
+   * the chance an unseen card can fill a hole. Filling one is free, so nothing
+   * but the card's type decides whether they can answer.
+   */
+  bodyDensity: number;
   /** The cheapest trap their colours still allow them to be holding. */
   cheapestTrap: CardDef | null;
   /** The seat this read is about. */
@@ -1690,7 +1737,12 @@ function knownTrapIn(state: GameState, me: PlayerIdx, foe: PlayerIdx): boolean {
  * holding, a card they have shown counting in full and one they have not at
  * the unseen weight. The same size as the real hand, which is public.
  */
-export function believedHand(state: GameState, me: PlayerIdx, foe: PlayerIdx): string[] {
+export function believedHand(
+  state: GameState,
+  me: PlayerIdx,
+  foe: PlayerIdx,
+  w: BotWeights = defaultWeights,
+): string[] {
   const p = state.players[foe];
   if (intel.perfect) return [...p.hand];
   const t = trackOf(state, me, foe);
@@ -1704,7 +1756,22 @@ export function believedHand(state: GameState, me: PlayerIdx, foe: PlayerIdx): s
   if (hand.length >= p.hand.length) return hand;
   if (intel.knownOnly) {
     const blank = blankCard()?.id ?? p.hand[0];
-    while (hand.length < p.hand.length) hand.push(blank);
+    // Filling a hole is free, so nothing but a card's type decides whether they
+    // can answer a line that clears the front. The share of the pool that is a
+    // summon says how many of the cards left in hand can, and that many stand
+    // in as bodies rather than as traps. Without this a kill line believed a
+    // slot it cleared stayed clear, and a person refilled it 108 times over the
+    // 61 logged games.
+    const unseen = p.hand.length - hand.length;
+    const pool = poolBehind(p.leaderCardId);
+    const density = pool.total > 0 ? pool.summons / pool.total : 0;
+    // A hole takes exactly one body to fill, so believing in more than one buys
+    // nothing here and prices their whole hand as a board. One stands in when
+    // the pool's summon share says they probably hold one at all.
+    const chance = unseen > 0 ? 1 - Math.pow(1 - density, unseen) : 0;
+    const bodies = w.handBodies > 0 && chance >= w.handBodies ? 1 : 0;
+    const body = pool.blankBody?.id ?? blank;
+    for (let i = 0; i < unseen; i++) hand.push(i < bodies ? body : blank);
     return hand;
   }
 
@@ -1741,11 +1808,15 @@ export function believedHand(state: GameState, me: PlayerIdx, foe: PlayerIdx): s
 }
 
 /** The position with every other seat's hidden hand replaced by the one the bot believes in. */
-export function redactTable(state: GameState, me: PlayerIdx): GameState {
+export function redactTable(
+  state: GameState,
+  me: PlayerIdx,
+  w: BotWeights = defaultWeights,
+): GameState {
   if (intel.perfect) return state;
   const s = cloneState(state);
   for (let seat = 0; seat < state.players.length; seat++) {
-    if (seat !== me) s.players[seat].hand = believedHand(state, me, seat as PlayerIdx);
+    if (seat !== me) s.players[seat].hand = believedHand(state, me, seat as PlayerIdx, w);
   }
   return s;
 }
@@ -1753,7 +1824,7 @@ export function redactTable(state: GameState, me: PlayerIdx): GameState {
 export function readEnemy(state: GameState, seat: PlayerIdx): EnemyRead {
   const foe = state.players[seat];
   const pool = poolBehind(foe.leaderCardId);
-  if (pool.total <= 0) return { trapDensity: 0, cheapestTrap: null, seat };
+  if (pool.total <= 0) return { trapDensity: 0, bodyDensity: 0, cheapestTrap: null, seat };
 
   const seen = seenCopies(state, seat, pool);
 
@@ -1762,15 +1833,19 @@ export function readEnemy(state: GameState, seat: PlayerIdx): EnemyRead {
   // set on every plan.
   let total = pool.total;
   let traps = pool.traps;
+  let summons = pool.summons;
   for (const [id, shown] of seen) {
     const left = Math.max(0, COPY_LIMIT - shown);
     const delta = left - COPY_LIMIT * UNSEEN_WEIGHT;
     total += delta;
-    if (card(id).type === 'trap') traps += delta;
+    const type = card(id).type;
+    if (type === 'trap') traps += delta;
+    if (type === 'summon') summons += delta;
   }
 
   return {
     trapDensity: total > 0 ? Math.max(0, Math.min(1, traps / total)) : 0,
+    bodyDensity: total > 0 ? Math.max(0, Math.min(1, summons / total)) : 0,
     cheapestTrap: pool.cheapestTrap,
     seat,
   };
@@ -1783,7 +1858,11 @@ interface LeaderPool {
   total: number;
   /** The trap share of that weight. */
   traps: number;
+  /** The summon share of that weight, which is what can fill a hole. */
+  summons: number;
   cheapestTrap: CardDef | null;
+  /** The lowest-id summon the pool allows, as the stand-in for an unseen body. */
+  blankBody: CardDef | null;
 }
 
 const poolCache = new Map<string, LeaderPool>();
@@ -1802,6 +1881,8 @@ function poolBehind(leaderCardId: string): LeaderPool {
   const legal = new Set<string>();
   let total = 0;
   let traps = 0;
+  let summons = 0;
+  let blankBody: CardDef | null = null;
   let cheapestTrap: CardDef | null = null;
   let cheapestPips = Number.POSITIVE_INFINITY;
   let cheapestColored = Number.POSITIVE_INFINITY;
@@ -1812,6 +1893,11 @@ function poolBehind(leaderCardId: string): LeaderPool {
     legal.add(def.id);
     const weight = COPY_LIMIT * UNSEEN_WEIGHT;
     total += weight;
+    if (def.type === 'summon') {
+      summons += weight;
+      // By id, so both engines stand in the same card for an unseen body.
+      if (!blankBody || def.id < blankBody.id) blankBody = def;
+    }
     if (def.type !== 'trap') continue;
     traps += weight;
     // Cheapest by total pips, then by coloured pips, then by id: a colourless
@@ -1830,7 +1916,7 @@ function poolBehind(leaderCardId: string): LeaderPool {
     }
   }
 
-  const built: LeaderPool = { legal, total, traps, cheapestTrap };
+  const built: LeaderPool = { legal, total, traps, summons, cheapestTrap, blankBody };
   poolCache.set(leaderCardId, built);
   return built;
 }
@@ -2028,6 +2114,16 @@ const DECK_SHARE = 0.25;
 const BURST_TRUST = 0.5;
 const DANGER_CAP = 8;
 
+/**
+ * The Love a card's own effect is priced at: the seat's own, which is public,
+ * rounded to the prior's step so one probe answers a range of it. The prior's
+ * cap does not apply, because that bounds a guess at cards the bot cannot see
+ * and this number is on the table.
+ */
+function probeLoveOf(state: GameState, side: PlayerIdx): number {
+  return Math.round(Math.max(0, state.players[side].love) / PRIOR_LOVE_STEP) * PRIOR_LOVE_STEP;
+}
+
 function cardDoes(state: GameState, side: PlayerIdx, def: CardDef, w: BotWeights): CardDoes {
   if (!limits.scan || probing || def.type === 'trap') return NOTHING_DONE;
   if (doesSeed !== state.seed) {
@@ -2036,9 +2132,14 @@ function cardDoes(state: GameState, side: PlayerIdx, def: CardDef, w: BotWeights
     doesSeed = state.seed;
   }
   const cache = doesCache[side];
-  const hit = cache.get(def.id);
+  // Love is public, and a card that spends it does what the table shows, so a
+  // Love-scaled effect is priced at the seat's own Love rather than a fixed
+  // three, and cached per step of it.
+  const at = w.loveReal > 0 ? probeLoveOf(state, side) : PROBE_LOVE;
+  const key = `${def.id}/${at}`;
+  const hit = cache.get(key);
   if (hit) return hit;
-  cache.set(def.id, NOTHING_DONE);
+  cache.set(key, NOTHING_DONE);
   const prices = new Map(shopPrices);
   const deals = new Map(shopDeals);
   const outer = probing;
@@ -2047,16 +2148,17 @@ function cardDoes(state: GameState, side: PlayerIdx, def: CardDef, w: BotWeights
   try {
     // The board can do things on its own: a leader's Store, a flip. Only what
     // the card adds counts, so an empty probe is the baseline.
-    let empty = cache.get(EMPTY_PROBE);
+    const emptyKey = `${EMPTY_PROBE}/${at}`;
+    let empty = cache.get(emptyKey);
     if (!empty) {
-      const one = measureProbe(probeBoard(state, side, [], PROBE_DEBT, true, false, true), side, w);
+      const one = measureProbe(probeBoard(state, side, [], PROBE_DEBT, true, false, true, PROBE_PIPS, at), side, w);
       empty = {
         relief: one.relief,
         heal: one.heal,
-        burst: w.deepBurst > 0 ? probeDamage(state, side, [], w, PROBE_DEBT, PROBE_PIPS) : one.burst,
+        burst: w.deepBurst > 0 ? probeDamage(state, side, [], w, PROBE_DEBT, PROBE_PIPS, false, at) : one.burst,
         draw: one.draw,
       };
-      cache.set(EMPTY_PROBE, empty);
+      cache.set(emptyKey, empty);
     }
     // A summon is measured from the hand, for its battlecry, and from a slot,
     // for its Powers and its Store. Relief and heal are the most one action
@@ -2064,13 +2166,13 @@ function cardDoes(state: GameState, side: PlayerIdx, def: CardDef, w: BotWeights
     // side's own leader: one action never saw a buff repeated into a cash-in.
     const with_: CardDoes = { relief: 0, heal: 0, burst: 0, draw: 0 };
     for (const inHand of def.type === 'summon' ? [true, false] : [true]) {
-      const m = measureProbe(probeBoard(state, side, [def.id], PROBE_DEBT, true, inHand, true), side, w);
+      const m = measureProbe(probeBoard(state, side, [def.id], PROBE_DEBT, true, inHand, true, PROBE_PIPS, at), side, w);
       with_.relief = Math.max(with_.relief, m.relief);
       with_.heal = Math.max(with_.heal, m.heal);
       with_.draw = Math.max(with_.draw, m.draw);
       with_.burst = Math.max(
         with_.burst,
-        w.deepBurst > 0 ? probeDamage(state, side, [def.id], w, PROBE_DEBT, PROBE_PIPS, inHand) : m.burst,
+        w.deepBurst > 0 ? probeDamage(state, side, [def.id], w, PROBE_DEBT, PROBE_PIPS, inHand, at) : m.burst,
       );
     }
     done = {
@@ -2086,7 +2188,7 @@ function cardDoes(state: GameState, side: PlayerIdx, def: CardDef, w: BotWeights
     shopDeals.clear();
     for (const [k, v] of deals) shopDeals.set(k, v);
   }
-  cache.set(def.id, done);
+  cache.set(key, done);
   return done;
 }
 
@@ -3594,6 +3696,27 @@ function handOver(state: GameState, w: BotWeights): GameState | null {
 }
 
 /** Whether a reply leaves the seat that plays next a kill on the seat that made it. */
+/**
+ * Whether this seat can run a Store of its own now and carry what it costs.
+ * Asked because a Store buys a blocker away without spending an attack, which
+ * is the one thing the rollouts price wrong: they clear the same blocker by
+ * attacking it and arrive with nothing left to swing at the leader.
+ */
+export function canRunStore(state: GameState, seat: PlayerIdx, w: BotWeights): boolean {
+  const p = state.players[seat];
+  if (p.eliminated) return false;
+  const refs: SourceRef[] = [{ kind: 'leader', player: seat }];
+  for (let slot = 0; slot < p.slots.length; slot++) refs.push({ kind: 'summon', player: seat, slot });
+  for (const ref of refs) {
+    if (storeBlockers(state, seat, ref)) continue;
+    const body = findSummon(state, ref);
+    const store = body ? storeOf(body, card(body.cardId)) : null;
+    if (!store) continue;
+    if (Number.isFinite(debtCost(state, seat, storeSelfPrice(state, seat, store), w))) return true;
+  }
+  return false;
+}
+
 function handsKill(state: GameState, foe: PlayerIdx, w: BotWeights): boolean {
   const s = handOver(state, w);
   if (!s) return false;
@@ -3604,7 +3727,17 @@ function handsKill(state: GameState, foe: PlayerIdx, w: BotWeights): boolean {
   const race = burn(s, who, limits.maxThreatSteps, w);
   if (race.state.winner === who || race.damage >= hp) return true;
   const built = burn(s, who, limits.maxThreatSteps, w, limits.maxThreatSetup);
-  return built.state.winner === who || built.damage >= hp;
+  if (built.state.winner === who || built.damage >= hp) return true;
+  // The rollouts are the whole of this check, and they cannot find a kill a
+  // Store unlocks. Where one can be run, ask the search that branches over the
+  // purchase and its pick.
+  if (w.storeReach > 0 && canRunStore(s, who, w)) {
+    return (
+      findLethal(s, who, limits.lethalDepth + STORE_PLIES, { left: limits.lethalBudget * 2 }, w) !==
+      null
+    );
+  }
+  return false;
 }
 
 /**
@@ -3853,6 +3986,7 @@ export function findLethal(
   me: PlayerIdx,
   depth: number,
   budget: { left: number },
+  w: BotWeights = defaultWeights,
 ): Action | null {
   if (depth <= 0 || budget.left <= 0 || !turnGoesOn(state, me)) return null;
   for (const action of candidateActions(state, me, defaultWeights, true)) {
@@ -3863,7 +3997,12 @@ export function findLethal(
     // wants, and a pick is in because a spell that asks one, or a tutor
     // that offers one, used to end the line where the question was asked:
     // a person's kill of Loan, a supporter and Absurdly Spicy Candy needed
-    // both and was found only by the beam.
+    // both and was found only by the beam. A flip payment is in for the same
+    // reason: `settle` answers the other side's offers and never the searcher's
+    // own, so a blow the attacker has to pay for stopped on the first HP card
+    // and every kill behind it was invisible here. Answering the offers greedily
+    // instead of branching on them reached the same kills and measured slower,
+    // because every node with a queue paid for an evaluate and a second settle.
     if (
       action.type !== 'ACTIVATE_POWER' &&
       action.type !== 'DECLARE_ATTACK' &&
@@ -3872,7 +4011,8 @@ export function findLethal(
       action.type !== 'OPEN_STORE' &&
       action.type !== 'PLAY_SUMMON' &&
       action.type !== 'PLAY_SUPPORTER' &&
-      action.type !== 'RESOLVE_CHOICE'
+      action.type !== 'RESOLVE_CHOICE' &&
+      !(action.type === 'PAY_FLIP' && w.storeReach > 0)
     ) {
       continue;
     }
@@ -3882,7 +4022,7 @@ export function findLethal(
     if (!res.ok) continue;
     const after = settle(res.state, defaultWeights, true, me);
     if (after.winner === me) return action;
-    if (findLethal(after, me, depth - 1, budget)) return action;
+    if (findLethal(after, me, depth - 1, budget, w)) return action;
   }
   return null;
 }
@@ -3970,7 +4110,7 @@ function begin(state: GameState, me: PlayerIdx, key: string, line: Action[]): Ac
 export function warm(state: GameState, me: PlayerIdx, w: BotWeights = defaultWeights): void {
   peek(state, me);
   rootSeat = me;
-  const table = redactTable(state, me);
+  const table = redactTable(state, me, w);
   ensureKits(table, me, w);
   for (const foe of livingOpponents(table, me)) {
     poolPrior(table.players[foe].leaderCardId, w, table.players[foe].love);
@@ -3995,7 +4135,7 @@ export function chooseAction(
   // reply model alone was redacted, so the root's own scores leaked the truth.
   peek(state, me);
   rootSeat = me;
-  state = redactTable(state, me);
+  state = redactTable(state, me, w);
 
   // Once a game: what the bot's own list can assemble, so the evaluator can
   // price a piece before the turn that uses it.
@@ -4052,8 +4192,16 @@ export function chooseAction(
     const opener = begin(state, me, key, built.line);
     if (opener) return opener;
   }
-  if (Math.max(race.damage, built.damage) + LETHAL_SLACK >= nearestFoeHp(state, me)) {
-    const kill = findLethal(state, me, limits.lethalDepth, { left: limits.lethalBudget });
+  const storeUp = w.storeReach > 0 && canRunStore(state, me, w);
+  if (Math.max(race.damage, built.damage) + LETHAL_SLACK >= nearestFoeHp(state, me) || storeUp) {
+    const reach = storeUp ? STORE_PLIES : 0;
+    const kill = findLethal(
+      state,
+      me,
+      limits.lethalDepth + reach,
+      { left: limits.lethalBudget * (storeUp ? 2 : 1) },
+      w,
+    );
     if (kill) return kill;
   }
 

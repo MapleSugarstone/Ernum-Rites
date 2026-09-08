@@ -147,11 +147,11 @@ export const mixedCards: CardDef[] = [
     hp: 3,
     text: 'Has +1 attack for each other summon you control.',
     triggers: {
-      strengthBonus: ({ state, controller, summon }) => {
-        if (summon.cardId !== 'm-bg-machineblue' || summon.owner !== controller) return 0;
+      strengthBonus: ({ state, controller, summon, source }) => {
+        if (!source || summon.uid !== source.uid) return 0;
         let n = 0;
         for (const s of state.players[controller].slots) {
-          if (s && s.cardId !== 'm-bg-machineblue') n++;
+          if (s && s.uid !== summon.uid) n++;
         }
         return n;
       },

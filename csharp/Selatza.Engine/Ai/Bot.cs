@@ -82,6 +82,8 @@ public sealed class BotWeights
     /// and the search springs it there.
     /// </summary>
     public double TrapHold = 0.5;
+    /// <summary>Price a Love-scaled effect at the seat's own Love, which is public, rather than at a fixed three. Off restores the constant.</summary>
+    public double LoveReal = 1;
     /// <summary>
     /// Share of a kit piece's progress it keeps on the board while the kit's
     /// mana is not there yet. In the pro meta check Warmateer landed on turn
@@ -110,6 +112,29 @@ public sealed class BotWeights
     /// slot and a different opening was never weighed at all. Zero lifts the cap.
     /// </summary>
     public double LeafSpread = 2;
+    /// <summary>
+    /// Whether a Store the seat can run is reason on its own to run the
+    /// exhaustive kill search. The rollouts clear a blocker by attacking it,
+    /// which spends the attacks the kill needs, and buying the same blocker
+    /// away reads a point better on the climb's measure, so a kill a Store
+    /// unlocks is invisible to them and their damage estimate closes the gate
+    /// in front of the one search that branches over a purchase. Zero leaves
+    /// the gate on the rollouts alone.
+    /// </summary>
+    public double StoreReach = 1;
+    /// <summary>
+    /// How likely they must be to hold a summon before one of their unseen
+    /// cards is believed to be a body. Filling a hole is free and takes exactly
+    /// one body, and the leader is only exposed once every slot in front of it
+    /// is empty, so one refill stops every swing at it. Zero believes they
+    /// never hold one, which is what the search did while a person refilled 108
+    /// holes across the logged games.
+    /// </summary>
+    /// Ships at 0. Over 292 replacement windows in the log the hole is filled
+    /// 49.3% of the time and flat in hand size, so a believed body is wrong
+    /// half the time whichever way it is set, and the pool's summon share
+    /// overstates a hand's because bodies get played out of it.
+    public double HandBodies = 0;
     /// <summary>
     /// Share of a pool's worst case priced into each card the enemy holds
     /// unseen: the burst of the best cards their leader allows, measured
@@ -340,6 +365,12 @@ public static class Bot
     /// step, which is not always the ordering that finishes.
     /// </summary>
     private const int LethalSlack = 6;
+    /// <summary>
+    /// The plies a Store spends before it can carry any damage: the purchase
+    /// and the pick it asks. A kill through a bought blocker sits two steps
+    /// deeper than the same kill without one.
+    /// </summary>
+    private const int StorePlies = 2;
     /// <summary>A win, scored above anything the evaluator can reach.</summary>
     private const double Win = 1e9;
 
@@ -1359,6 +1390,11 @@ public static class Bot
     {
         /// <summary>Share of the cards they could still be holding that are traps.</summary>
         public double TrapDensity;
+        /// <summary>
+        /// Share of the cards they could still be holding that are summons,
+        /// which is the chance an unseen card can fill a hole.
+        /// </summary>
+        public double BodyDensity;
         /// <summary>The cheapest trap their colours still allow them to be holding.</summary>
         public CardDef? CheapestTrap;
         /// <summary>The seat this read is about.</summary>
@@ -1518,7 +1554,7 @@ public static class Bot
     /// holding, a card they have shown counting in full and one they have not at
     /// the unseen weight. The same size as the real hand, which is public.
     /// </summary>
-    private static List<string> BelievedHand(GameState state, int me, int foe)
+    private static List<string> BelievedHand(GameState state, int me, int foe, BotWeights? w = null)
     {
         var p = state.Players[foe];
         if (Intel.Perfect) return new List<string>(p.Hand);
@@ -1533,8 +1569,20 @@ public static class Bot
         if (hand.Count >= p.Hand.Count) return hand;
         if (Intel.KnownOnly)
         {
+            w ??= BotWeights.Default;
             string blank = BlankCard()?.Id ?? p.Hand[0];
-            while (hand.Count < p.Hand.Count) hand.Add(blank);
+            // A hole takes exactly one body to fill and the leader is only
+            // exposed once every slot in front of it is empty, so one refill
+            // stops every swing at it. One body stands in when the pool's
+            // summon share says they probably hold one; believing in more buys
+            // nothing here and prices their whole hand as a board.
+            int unseen = p.Hand.Count - hand.Count;
+            var bodyPool = PoolBehind(p.LeaderCardId);
+            double density = bodyPool.Total > 0 ? bodyPool.Summons / bodyPool.Total : 0;
+            double chance = unseen > 0 ? 1 - Math.Pow(1 - density, unseen) : 0;
+            int bodies = w.HandBodies > 0 && chance >= w.HandBodies ? 1 : 0;
+            string body = bodyPool.BlankBody?.Id ?? blank;
+            for (int i = 0; i < unseen; i++) hand.Add(i < bodies ? body : blank);
             return hand;
         }
 
@@ -1574,13 +1622,13 @@ public static class Bot
     }
 
     /// <summary>The position with every other seat's hidden hand replaced by the one the bot believes in.</summary>
-    private static GameState RedactTable(GameState state, int me)
+    private static GameState RedactTable(GameState state, int me, BotWeights? w = null)
     {
         if (Intel.Perfect) return state;
         var s = state.Clone();
         for (int foe = 0; foe < state.Players.Length; foe++)
         {
-            if (foe != me) s.Players[foe].Hand = BelievedHand(state, me, foe);
+            if (foe != me) s.Players[foe].Hand = BelievedHand(state, me, foe, w);
         }
         return s;
     }
@@ -1646,18 +1694,21 @@ public static class Bot
         // The pool above counted every card as unseen. Only the handful that
         // have actually surfaced need correcting, which is what keeps this off
         // the whole set on every plan.
-        double total = pool.Total, traps = pool.Traps;
+        double total = pool.Total, traps = pool.Traps, summons = pool.Summons;
         foreach (var (id, shown) in seen)
         {
             int left = Math.Max(0, Rarities.CopyLimit - shown);
             double delta = left - Rarities.CopyLimit * UnseenWeight;
             total += delta;
-            if (Registry.Card(id).Type == CardType.Trap) traps += delta;
+            var type = Registry.Card(id).Type;
+            if (type == CardType.Trap) traps += delta;
+            if (type == CardType.Summon) summons += delta;
         }
 
         return new EnemyRead
         {
             TrapDensity = total > 0 ? Math.Clamp(traps / total, 0, 1) : 0,
+            BodyDensity = total > 0 ? Math.Clamp(summons / total, 0, 1) : 0,
             CheapestTrap = pool.CheapestTrap,
             Seat = seat,
         };
@@ -1671,7 +1722,11 @@ public static class Bot
         public double Total;
         /// <summary>The trap share of that weight.</summary>
         public double Traps;
+        /// <summary>The summon share of that weight, which is what can fill a hole.</summary>
+        public double Summons;
         public CardDef? CheapestTrap;
+        /// <summary>The lowest-id summon the pool allows, as the stand-in for an unseen body.</summary>
+        public CardDef? BlankBody;
     }
 
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, LeaderPool>
@@ -1698,6 +1753,13 @@ public static class Bot
                 built.Legal.Add(def.Id);
                 double weight = Rarities.CopyLimit * UnseenWeight;
                 built.Total += weight;
+                if (def.Type == CardType.Summon)
+                {
+                    built.Summons += weight;
+                    // By id, so both engines stand in the same card for a body.
+                    if (built.BlankBody is null || string.CompareOrdinal(def.Id, built.BlankBody.Id) < 0)
+                        built.BlankBody = def;
+                }
                 if (def.Type != CardType.Trap) continue;
                 built.Traps += weight;
                 // Cheapest by total pips, then by coloured pips, then by id: a
@@ -1864,13 +1926,27 @@ public static class Bot
     private const double BurstTrust = 0.5;
     private const double DangerCap = 8;
 
+    /// <summary>
+    /// The Love a card's own effect is priced at: the seat's own, which is
+    /// public, rounded to the prior's step so one probe answers a range of it.
+    /// The prior's cap does not apply, because that bounds a guess at cards
+    /// the bot cannot see and this number is on the table.
+    /// </summary>
+    private static int ProbeLoveOf(GameState state, int side) =>
+        (int)Math.Round(Math.Max(0, state.Players[side].Love) / (double)PriorLoveStep, MidpointRounding.AwayFromZero) * PriorLoveStep;
+
     private static CardDoes CardDoesOf(GameState state, int side, CardDef def, BotWeights w)
     {
         if (Light || _probing || def.Type == CardType.Trap) return NothingDone;
         SeedDoes(state);
         var cache = _does![side];
-        if (cache.TryGetValue(def.Id, out var hit)) return hit;
-        cache[def.Id] = NothingDone;
+        // Love is public, and a card that spends it does what the table shows,
+        // so a Love-scaled effect is priced at the seat's own Love rather than
+        // a fixed three, and cached per step of it.
+        int at = w.LoveReal > 0 ? ProbeLoveOf(state, side) : ProbeLove;
+        string key = def.Id + "/" + at;
+        if (cache.TryGetValue(key, out var hit)) return hit;
+        cache[key] = NothingDone;
         var prices = _shopPrices is null ? null : new Dictionary<string, SaleWorth>(_shopPrices, StringComparer.Ordinal);
         var deals = _shopDeals is null ? null : new Dictionary<string, int?>(_shopDeals, StringComparer.Ordinal);
         bool outer = _probing;
@@ -1880,11 +1956,12 @@ public static class Bot
         {
             // The board can do things on its own: a flip, a Power. Only what the
             // card adds counts, so an empty probe is the baseline.
-            if (!cache.TryGetValue(EmptyProbe, out var empty))
+            string emptyKey = EmptyProbe + "/" + at;
+            if (!cache.TryGetValue(emptyKey, out var empty))
             {
-                var one = MeasureProbe(ProbeBoard(state, side, Array.Empty<string>(), ProbeDebt, true, false, true), side, w);
-                empty = new CardDoes(one.Relief, one.Heal, w.DeepBurst > 0 ? ProbeDamage(state, side, Array.Empty<string>(), w, ProbeDebt, ProbePips) : one.Burst, one.Draw);
-                cache[EmptyProbe] = empty;
+                var one = MeasureProbe(ProbeBoard(state, side, Array.Empty<string>(), ProbeDebt, true, false, true, love: at), side, w);
+                empty = new CardDoes(one.Relief, one.Heal, w.DeepBurst > 0 ? ProbeDamage(state, side, Array.Empty<string>(), w, ProbeDebt, ProbePips, love: at) : one.Burst, one.Draw);
+                cache[emptyKey] = empty;
             }
             // A summon is measured from the hand, for its battlecry, and from a
             // slot, for its Powers and its Store.
@@ -1894,11 +1971,11 @@ public static class Bot
             double relief = 0, heal = 0, burst = 0, draw = 0;
             foreach (bool inHand in def.Type == CardType.Summon ? new[] { true, false } : new[] { true })
             {
-                var m = MeasureProbe(ProbeBoard(state, side, new[] { def.Id }, ProbeDebt, true, inHand, true), side, w);
+                var m = MeasureProbe(ProbeBoard(state, side, new[] { def.Id }, ProbeDebt, true, inHand, true, love: at), side, w);
                 relief = Math.Max(relief, m.Relief);
                 heal = Math.Max(heal, m.Heal);
                 draw = Math.Max(draw, m.Draw);
-                burst = Math.Max(burst, w.DeepBurst > 0 ? ProbeDamage(state, side, new[] { def.Id }, w, ProbeDebt, ProbePips, inHand) : m.Burst);
+                burst = Math.Max(burst, w.DeepBurst > 0 ? ProbeDamage(state, side, new[] { def.Id }, w, ProbeDebt, ProbePips, inHand, at) : m.Burst);
             }
             done = new CardDoes(Math.Max(0, relief - empty.Relief), Math.Max(0, heal - empty.Heal), Math.Max(0, burst - empty.Burst), Math.Max(0, draw - empty.Draw));
         }
@@ -1908,7 +1985,7 @@ public static class Bot
             _shopPrices = prices;
             _shopDeals = deals;
         }
-        cache[def.Id] = done;
+        cache[key] = done;
         return done;
     }
 
@@ -3524,6 +3601,28 @@ public static class Bot
     }
 
     /// <summary>Whether a reply leaves the seat that plays next a kill on the seat that made it.</summary>
+    /// <summary>
+    /// Whether this seat can run a Store of its own now and carry what it
+    /// costs. Asked because a Store buys a blocker away without spending an
+    /// attack, which is the one thing the rollouts price wrong: they clear the
+    /// same blocker by attacking it and arrive with nothing left to swing.
+    /// </summary>
+    private static bool CanRunStore(GameState state, int seat, BotWeights w)
+    {
+        var p = state.Players[seat];
+        for (int i = -1; i < p.Slots.Length; i++)
+        {
+            var body = i < 0 ? p.Leader : p.Slots[i];
+            if (body is null) continue;
+            var r = i < 0 ? TargetRef.Leader(seat) : TargetRef.Summon(seat, i);
+            if (Engine.StoreBlockers(state, seat, r) is not null) continue;
+            var store = Engine.StoreOf(body, Registry.Card(body.CardId));
+            if (store is null) continue;
+            if (!double.IsInfinity(DebtCost(state, seat, Engine.StoreSelfPrice(state, seat, store), w))) return true;
+        }
+        return false;
+    }
+
     private static bool HandsKill(GameState state, int foe, BotWeights w)
     {
         var s = HandOver(state, w);
@@ -3535,7 +3634,16 @@ public static class Bot
         var race = Burn(s, who, MaxThreatSteps, w);
         if (race.State.Winner == who || race.Damage >= hp) return true;
         var built = Burn(s, who, MaxThreatSteps, w, MaxThreatSetup);
-        return built.State.Winner == who || built.Damage >= hp;
+        if (built.State.Winner == who || built.Damage >= hp) return true;
+        // The rollouts are the whole of this check, and they cannot find a kill
+        // a Store unlocks. Where one can be run, ask the search that branches
+        // over the purchase and its pick.
+        if (w.StoreReach > 0 && CanRunStore(s, who, w))
+        {
+            int budget = LethalBudget * 2;
+            return FindLethal(s, who, LethalDepth + StorePlies, ref budget, w) is not null;
+        }
+        return false;
     }
 
     /// <summary>
@@ -3759,8 +3867,9 @@ public static class Bot
     /// damage, a small enough branching factor to be worth doing whenever a kill
     /// is close.
     /// </summary>
-    private static GameAction? FindLethal(GameState state, int me, int depth, ref int budget)
+    private static GameAction? FindLethal(GameState state, int me, int depth, ref int budget, BotWeights? w = null)
     {
+        w ??= BotWeights.Default;
         if (depth <= 0 || budget <= 0 || !TurnGoesOn(state, me)) return null;
         foreach (var action in CandidateActions(state, me, forKill: true))
         {
@@ -3770,17 +3879,23 @@ public static class Bot
             // with the body it feeds.
             // A supporter is in for the pip the finisher wants, and a pick is
             // in because a spell that asks one, or a tutor that offers one,
-            // used to end the line where the question was asked.
+            // used to end the line where the question was asked. A flip
+            // payment is not in the list: Settle answers the other side's
+            // offers and never the searcher's own, so a blow the attacker has
+            // to pay for stopped on the first HP card and every kill behind it
+            // was invisible here. Answering the offers greedily instead of
+            // branching on them reached the same kills and measured slower.
             if (action.Type is not (ActionType.ActivatePower or ActionType.DeclareAttack
                 or ActionType.CastSpell or ActionType.UseStore or ActionType.OpenStore
-                or ActionType.PlaySummon or ActionType.PlaySupporter or ActionType.ResolveChoice)) continue;
+                or ActionType.PlaySummon or ActionType.PlaySupporter or ActionType.ResolveChoice)
+                && !(action.Type == ActionType.PayFlip && w.StoreReach > 0)) continue;
             if (budget <= 0) break;
             budget--;
             var res = Engine.Apply(state, me, action);
             if (!res.Ok) continue;
             var after = Settle(res.State!, null, buyOut: true, keepPicksOf: me);
             if (after.Winner == me) return action;
-            if (FindLethal(after, me, depth - 1, ref budget) is not null) return action;
+            if (FindLethal(after, me, depth - 1, ref budget, w) is not null) return action;
         }
         return null;
     }
@@ -3936,10 +4051,11 @@ public static class Bot
             var built = Burn(state, me, MaxBurnSteps, w, MaxSetupSteps, true);
             string kill = race.State.Winner == me ? "race: " + Describe(race.Line)
                 : built.State.Winner == me ? "built: " + Describe(built.Line) : "";
-            if (kill.Length == 0 && Math.Max(race.Damage, built.Damage) + LethalSlack >= NearestFoeHp(state, me))
+            bool storeUp = w.StoreReach > 0 && CanRunStore(state, me, w);
+            if (kill.Length == 0 && (Math.Max(race.Damage, built.Damage) + LethalSlack >= NearestFoeHp(state, me) || storeUp))
             {
-                int budget = LethalBudget;
-                var found = FindLethal(state, me, LethalDepth, ref budget);
+                int budget = LethalBudget * (storeUp ? 2 : 1);
+                var found = FindLethal(state, me, LethalDepth + (storeUp ? StorePlies : 0), ref budget, w);
                 if (found is not null) kill = "exhaustive: " + Describe(new List<GameAction> { found }) + " ...";
             }
             lines.Add($"kill checks: race {race.Damage}, built {built.Damage} against {NearestFoeHp(state, me)} HP" + (kill.Length > 0 ? "; kill found by " + kill : "; no kill found"));
@@ -4028,10 +4144,12 @@ public static class Bot
             var built = race.State.Winner == me ? race : Burn(state, me, MaxBurnSteps, w, MaxSetupSteps, true);
             if (race.State.Winner == me) killLine = Describe(race.Line);
             else if (built.State.Winner == me) killLine = Describe(built.Line);
-            else if (Math.Max(race.Damage, built.Damage) + LethalSlack >= NearestFoeHp(state, me))
+            else if (Math.Max(race.Damage, built.Damage) + LethalSlack >= NearestFoeHp(state, me)
+                || (w.StoreReach > 0 && CanRunStore(state, me, w)))
             {
-                int budget = LethalBudget;
-                if (FindLethal(state, me, LethalDepth, ref budget) is { } kill) killLine = Describe(new List<GameAction> { kill }) + " ; ... (a kill the exhaustive search found)";
+                bool up = w.StoreReach > 0 && CanRunStore(state, me, w);
+                int budget = LethalBudget * (up ? 2 : 1);
+                if (FindLethal(state, me, LethalDepth + (up ? StorePlies : 0), ref budget, w) is { } kill) killLine = Describe(new List<GameAction> { kill }) + " ; ... (a kill the exhaustive search found)";
             }
         }
         foreach (var leaf in ranked)
@@ -4119,10 +4237,11 @@ public static class Bot
             if (race.State.Winner == foe) return true;
             var built = Burn(s, foe, MaxBurnSteps, w, MaxSetupSteps, true);
             if (built.State.Winner == foe) return true;
-            if (Math.Max(race.Damage, built.Damage) + LethalSlack >= NearestFoeHp(s, foe))
+            bool storeUp = w.StoreReach > 0 && CanRunStore(s, foe, w);
+            if (Math.Max(race.Damage, built.Damage) + LethalSlack >= NearestFoeHp(s, foe) || storeUp)
             {
-                int budget = LethalBudget;
-                if (FindLethal(s, foe, LethalDepth, ref budget) is not null) return true;
+                int budget = LethalBudget * (storeUp ? 2 : 1);
+                if (FindLethal(s, foe, LethalDepth + (storeUp ? StorePlies : 0), ref budget, w) is not null) return true;
             }
             // The beam finds kills the rollouts and the exhaustive search do
             // not, the same way it does at the table.
@@ -4308,10 +4427,11 @@ public static class Bot
         {
             return assembled;
         }
-        if (Math.Max(race.Damage, built.Damage) + LethalSlack >= NearestFoeHp(state, me))
+        bool storeUp = w.StoreReach > 0 && CanRunStore(state, me, w);
+        if (Math.Max(race.Damage, built.Damage) + LethalSlack >= NearestFoeHp(state, me) || storeUp)
         {
-            int budget = LethalBudget;
-            if (FindLethal(state, me, LethalDepth, ref budget) is { } kill) return kill;
+            int budget = LethalBudget * (storeUp ? 2 : 1);
+            if (FindLethal(state, me, LethalDepth + (storeUp ? StorePlies : 0), ref budget, w) is { } kill) return kill;
         }
 
         // Otherwise take the best turn the beam found, judged on where it leaves

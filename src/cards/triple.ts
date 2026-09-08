@@ -240,8 +240,8 @@ export const tripleCards: CardDef[] = [
     hp: 3,
     text: 'Has +1 attack for each summon in your debt zone.',
     triggers: {
-      strengthBonus: ({ state, controller, summon }) => {
-        if (summon.cardId !== 'm-bry-drownedwanderer' || summon.owner !== controller) return 0;
+      strengthBonus: ({ state, controller, summon, source }) => {
+        if (!source || summon.uid !== source.uid) return 0;
         return state.players[controller].debt.filter((id) => card(id).type === 'summon').length;
       },
     },
@@ -456,8 +456,8 @@ export const tripleCards: CardDef[] = [
     hp: 1,
     text: 'Has +1 attack for each Love you hold.',
     triggers: {
-      strengthBonus: ({ state, controller, summon }) => {
-        if (summon.cardId !== 'm-mbr-saraza' || summon.owner !== controller) return 0;
+      strengthBonus: ({ state, controller, summon, source }) => {
+        if (!source || summon.uid !== source.uid) return 0;
         return state.players[controller].love;
       },
     },

@@ -16,6 +16,11 @@
 # as gcp-meta.sh. The VM stops itself after two hours whatever happens, and
 # this script deletes it when the logs are in.
 set -euo pipefail
+# The Cloud SDK is not on the PATH a bash tool or a bare shell starts with, and
+# the first gcloud call below hides its own stderr, so without this the script
+# exits instantly and silently under set -e.
+export PATH="$PATH:/c/Users/Krazv/AppData/Local/Google/Cloud SDK/google-cloud-sdk/bin"
+command -v gcloud >/dev/null || { echo "gcloud is not on PATH; install the Cloud SDK or fix the export above" >&2; exit 1; }
 
 TAG=${1:?usage: gcp-versus.sh <tag> <games> <machine list> <zone list> <arm> [<arm> ...]}
 GAMES=${2:?games}

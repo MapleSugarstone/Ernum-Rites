@@ -16,14 +16,17 @@ import '../src/cards';
 import { card } from '../src/engine/registry';
 import {
   burn,
+  canRunStore,
   chooseAction,
   clearPlan,
+  type BotWeights,
   defaultWeights,
   evaluate,
   fallenWorth,
   findLethal,
   leafOutlook,
   LETHAL_SLACK,
+  STORE_PLIES,
   nextTurn,
   openingKey,
   readTable,
@@ -40,6 +43,16 @@ import type { PlayerIdx } from '../src/engine/types';
 
 const file = process.argv[2] ?? '012-sweetshop-store.json';
 const stop = Number(process.argv[3] ?? 0);
+// --set name=value,... overrides weights, so one position can be read at a
+// few settings of a term without a rebuild.
+const setAt = process.argv.indexOf('--set');
+const overrides: Record<string, number> = {};
+if (setAt >= 0 && process.argv[setAt + 1]) {
+  for (const pair of process.argv[setAt + 1].split(',')) {
+    const [k, v] = pair.split('=');
+    overrides[k] = Number(v);
+  }
+}
 const replay = JSON.parse(readFileSync(join(process.cwd(), 'replays', file), 'utf8')) as Replay;
 let state = createGame(
   replay.decks.map((d) => ({ name: d.name, leaderId: d.leaderId, cards: d.cards })),
@@ -54,7 +67,8 @@ for (let i = 0; i < stop && i < replay.steps.length; i++) {
   state = res.state;
 }
 const seat = replay.steps[stop].actor as PlayerIdx;
-const w = defaultWeights;
+const w: BotWeights = { ...defaultWeights, ...overrides } as BotWeights;
+for (const k of Object.keys(overrides)) if (!(k in defaultWeights)) throw new Error(`no weight named ${k}`);
 clearPlan();
 const pick = chooseAction(state, seat, w);
 console.log(
@@ -81,8 +95,9 @@ const describe = (line: Action[]): string =>
   const built = burn(root, seat, searchLimits().maxBurnSteps, w, searchLimits().maxSetupSteps, true);
   let kill = race.state.winner === seat ? `race: ${describe(race.line)}` : built.state.winner === seat ? `built: ${describe(built.line)}` : '';
   const foeHp = Math.min(...root.players.filter((_, i) => i !== seat && !root.players[i].eliminated).map((p) => (p.leader ? remainingHp(p.leader) : 0)));
-  if (!kill && Math.max(race.damage, built.damage) + LETHAL_SLACK >= foeHp) {
-    const found = findLethal(root, seat, searchLimits().lethalDepth, { left: searchLimits().lethalBudget });
+  if (!kill && (Math.max(race.damage, built.damage) + LETHAL_SLACK >= foeHp || (w.storeReach > 0 && canRunStore(root, seat, w)))) {
+    const up = w.storeReach > 0 && canRunStore(root, seat, w);
+    const found = findLethal(root, seat, searchLimits().lethalDepth + (up ? STORE_PLIES : 0), { left: searchLimits().lethalBudget * (up ? 2 : 1) }, w);
     if (found) kill = `exhaustive: ${describe([found])} ...`;
   }
   console.log(`  kill checks: race ${race.damage}, built ${built.damage} against ${foeHp} HP${kill ? `; kill found by ${kill}` : '; no kill found'}`);

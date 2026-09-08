@@ -44,6 +44,18 @@ BUCKET="gs://${PROJECT}-meta"
 BUILD=$(mktemp -d)
 SEED1=$(( SEED0 + SEEDS - 1 ))
 
+# A run may name its own leaders in runs/roster-<tag>.txt, one comma-separated
+# list of card ids. The ids are read here and written into the startup script,
+# so a relaunch from the keeper picks up the same roster without being told.
+POOL="--every-leader --leader-pool meta"
+ROSTER="runs/roster-${TAG}.txt"
+if [ -f "${ROSTER}" ]; then
+  LEADERS=$(tr -d ' \r\n' < "${ROSTER}")
+  COUNT=$(printf '%s' "${LEADERS}" | tr ',' '\n' | grep -c .)
+  POOL="--leaders ${LEADERS} --agents ${COUNT}"
+  echo "roster ${ROSTER}: ${COUNT} leaders"
+fi
+
 cleanup() {
   echo "deleting ${VM}"
   gcloud compute instances delete "${VM}" --zone "${ZONE}" --quiet >/dev/null 2>&1 || true
@@ -97,7 +109,7 @@ STARTUP="${BUILD}/startup.sh"
   # a fresh log beside the earlier one, so the db command takes a pattern.
   echo 'PIDS=""'
   for s in $(seq "${SEED0}" "${SEED1}"); do
-    echo "./train/Selatza.Train train --no-net --every-leader --leader-pool meta --rounds ${ROUNDS} --games 6 --seed ${s} --threads \$THREADS --out runs/${TAG}${s} --log-games runs/${TAG}${s}/games.szgl >> runs/${TAG}${s}.log 2>&1 & PIDS=\"\$PIDS \$!\""
+    echo "./train/Selatza.Train train --no-net ${POOL} --rounds ${ROUNDS} --games 6 --seed ${s} --threads \$THREADS --out runs/${TAG}${s} --log-games runs/${TAG}${s}/games.szgl >> runs/${TAG}${s}.log 2>&1 & PIDS=\"\$PIDS \$!\""
   done
   echo 'wait $PIDS'
   echo 'DBS=""'

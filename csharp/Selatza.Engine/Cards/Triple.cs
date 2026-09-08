@@ -225,8 +225,7 @@ public static class Triple
             {
                 StrengthBonus = a =>
                 {
-                    if (a.Summon.CardId != "m-bry-drownedwanderer" || a.Summon.Owner != a.Controller)
-                        return 0;
+                    if (a.Source is null || a.Summon.Uid != a.Source.Uid) return 0;
                     int n = 0;
                     foreach (var id in a.State.Players[a.Controller].DebtZone)
                     {
@@ -448,7 +447,7 @@ public static class Triple
             {
                 StrengthBonus = a =>
                 {
-                    if (a.Summon.CardId != "m-mbr-saraza" || a.Summon.Owner != a.Controller) return 0;
+                    if (a.Source is null || a.Summon.Uid != a.Source.Uid) return 0;
                     return a.State.Players[a.Controller].Love;
                 },
             },
