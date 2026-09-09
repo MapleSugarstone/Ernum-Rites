@@ -162,7 +162,7 @@ export const yellowCards: CardDef[] = [
   k.summon(2, 'admirer', 'The Admirer', ['Mortal'], {
     hp: 3,
     str: 3,
-    text: 'Battlecry: An ally gains +2 attack.',
+    text: 'Battlecry: An ally summon gains +2 attack.',
     targets: [T.ally()],
     triggers: {
       onEnter: (c) => {
@@ -615,7 +615,7 @@ export const yellowCards: CardDef[] = [
     },
   }),
   k.trap('hollowring', 'Trap: Hollow Ring', { S: 1 }, {
-    text: 'The attacking summon deals no damage in this battle. Deal 2 to every enemy summon.',
+    text: 'The attacking summon: their base attack sets to 0 this turn. Deal 2 to every enemy summon.',
     effect: (c) => {
       const a = battleAttacker(c.state);
       if (a) c.buffStrength(a, -99, 'turn');

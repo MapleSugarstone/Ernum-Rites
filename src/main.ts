@@ -3280,6 +3280,11 @@ function promptHtml(state: GameState): string {
   const ch = state.choiceQueue[0];
   if (ch && choiceIsLive(state) && canAct()) {
     const sourceName = tryCard(ch.source)?.name ?? 'Choose';
+    // The question is authored prose with the printed number in it, and the
+    // engine adds Effect Damage when the effect runs, so the prompt asked for
+    // a target with a number the blow was never going to deal. Rewritten the
+    // same way a card's own text is, and so already escaped.
+    const asked = withEffectDamage(esc(ch.prompt), effectDamageOf(state, me));
     if (ch.cards) {
       const none = (ch.legal?.length ?? 0) === 0;
       // Tucked away to read the board. The overlay is still built and still
@@ -3341,7 +3346,7 @@ function promptHtml(state: GameState): string {
         .join('');
       return `<div class="prompt choice">
         <h2>${esc(sourceName)}</h2>
-        <p>${esc(ch.prompt)} Legal picks are ringed.</p>
+        <p>${asked} Legal picks are ringed.</p>
         <div class="debtpick">${cardsHtml || '<p>The pile is empty.</p>'}</div>
         <div class="row">${ch.optional ? btn('skip-choice', 'Skip') : ''}</div>
       </div>`;
@@ -3362,7 +3367,7 @@ function promptHtml(state: GameState): string {
     const waiting = state.choiceQueue.length;
     return `<div class="fxbanner">
       ${art}
-      <span class="fxtext"><b>${esc(sourceName)}</b> ${esc(ch.prompt)} Click a ringed target.</span>
+      <span class="fxtext"><b>${esc(sourceName)}</b> ${asked} Click a ringed target.</span>
       ${waiting > 1 ? `<span class="fxmore">${waiting} to answer</span>` : ''}
       ${canSkip ? btn('skip-choice', 'Skip') : ''}
     </div>`;
@@ -3493,9 +3498,13 @@ function promptHtml(state: GameState): string {
     if (needsDiscard) {
       priceParts.push(picked >= 0 ? `discard ${esc(card(p.hand[picked] ?? '').name)}` : 'discard a card');
     }
+    // The prompt is the one place a flip is read before it fires, so it has to
+    // show what it will actually deal. Effect Damage is added by the engine when
+    // the effect runs, and the payer is the flip's controller, so it is theirs
+    // that applies.
     return `<div class="prompt urgent flipprompt">
       <h2>${esc(def.name)} flipped</h2>
-      ${renderCard(def, { classes: ['flipfocus'] })}
+      ${renderCard(def, { classes: ['flipfocus'], edmg: effectDamageOf(state, me) })}
       <p>Cost: ${priceParts.join(', ')}${needsDiscard && picked < 0 ? '. Click one in your hand.' : ''}</p>
       <div class="row">
         ${affordable ? btn('pay-flip', 'Pay and trigger', 'primary') : ''}
@@ -5127,7 +5136,7 @@ function renderRules(): string {
     <h2>15. Stores and Love</h2>
     ${sec('15-1.', 'A Store is a power printed as a &ldquo;Store:&rdquo; line. Its controller may run it once per turn by taking 2 debt, plus any &ldquo;Store costs +N&rdquo; surcharge, never on the turn the card entered play.')}
     ${sec('15-2.', 'On your own main step you may open another player&rsquo;s Store while it shows a stock token. The seller must answer with a price from 1 to 4 plus the surcharge, as an offer or a final offer.')}
-    ${sec('15-3.', 'Against an offer you may accept, reject, or counter with a different price. Moving the slider commits you to countering. Against a final offer you may only accept or reject, and only the seller may declare an offer final.')}
+    ${sec('15-3.', 'Against an offer you may accept, reject, or counter with a different price. Moving the slider does not commit you to countering: accepting waits while your price differs from the one on the table, and sliding back to their price offers it again. Against a final offer you may only accept or reject, and only the seller may declare an offer final.')}
     ${sec('15-4.', 'The haggle holds an opening offer and up to three counters. After that the seller may only accept the counter or restate a price as final. Each pass runs on the response clock, and a timeout counts as a rejection for the buyer and as &ldquo;top price, final&rdquo; for the seller.')}
     ${sec('15-5.', 'On acceptance the buyer takes the agreed price as debt, the effect resolves for the buyer with any target asked of them next, and the seller gains 1 Love. Rejecting closes that Store for the turn.')}
     ${sec('15-6.', 'A bought effect reads as if the buyer had printed it: &ldquo;you&rdquo;, &ldquo;your summons&rdquo; and &ldquo;an empty slot&rdquo; all mean the buyer&rsquo;s. Running your own Store gives no Love. Neither counts as using a Power.')}

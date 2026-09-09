@@ -147,7 +147,7 @@ public static class Yellow
 
         K.Summon(2, "admirer", "The Admirer", F(Faction.Mortal), str: 3,
             hp: 3,
-            text: "Battlecry: An ally gains +2 attack.",
+            text: "Battlecry: An ally summon gains +2 attack.",
             targets: Specs(Ally()),
             triggers: new Triggers
             {
@@ -569,7 +569,7 @@ public static class Yellow
             }),
 
         K.Trap("hollowring", "Trap: Hollow Ring", new Cost(S: 1),
-            "The attacking summon deals no damage in this battle. Deal 2 to every enemy summon.",
+            "The attacking summon: their base attack sets to 0 this turn. Deal 2 to every enemy summon.",
             null, c =>
             {
                 if (c.State.BattleAttacker is { } a) c.BuffStrength(a, -99, ModDuration.Turn);
