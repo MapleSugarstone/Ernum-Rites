@@ -235,6 +235,16 @@ export interface BotWeights {
    */
   killRisk: number;
   /**
+   * Whether a hand's Love-scaled cards are priced as sharing one pool of Love
+   * rather than each holding all of it. A Love card spends every token at once,
+   * so two of them cannot both be worth what the table's Love makes them, and
+   * summing their full worth read a hand of two as twice the threat it can ever
+   * be. The whole Candy mechanic is Love-scaled, so this is a systematic bias
+   * in a balance run, not a rounding error. Zero prices every card at the full
+   * Love, which is what the evaluator did before.
+   */
+  loveOnce: number;
+  /**
    * Share of a pool's worst case priced into each card the enemy holds unseen:
    * the burst of the best cards their leader allows, measured beside that
    * leader. Zero reads an unseen card as nothing. Measured even with zero
@@ -366,6 +376,7 @@ export const defaultWeights: BotWeights = {
   storeReach: 1,
   handBodies: 0,
   killRisk: 0.5,
+  loveOnce: 1,
   kitPips: 6,
   kitDebt: 8,
   kitSolo: 1,
@@ -2153,7 +2164,13 @@ function probeLoveOf(state: GameState, side: PlayerIdx): number {
   return Math.round(Math.max(0, state.players[side].love) / PRIOR_LOVE_STEP) * PRIOR_LOVE_STEP;
 }
 
-function cardDoes(state: GameState, side: PlayerIdx, def: CardDef, w: BotWeights): CardDoes {
+function cardDoes(
+  state: GameState,
+  side: PlayerIdx,
+  def: CardDef,
+  w: BotWeights,
+  loveAt?: number,
+): CardDoes {
   if (!limits.scan || probing || def.type === 'trap') return NOTHING_DONE;
   if (doesSeed !== state.seed) {
     for (const m of doesCache) m.clear();
@@ -2164,7 +2181,7 @@ function cardDoes(state: GameState, side: PlayerIdx, def: CardDef, w: BotWeights
   // Love is public, and a card that spends it does what the table shows, so a
   // Love-scaled effect is priced at the seat's own Love rather than a fixed
   // three, and cached per step of it.
-  const at = w.loveReal > 0 ? probeLoveOf(state, side) : PROBE_LOVE;
+  const at = loveAt ?? (w.loveReal > 0 ? probeLoveOf(state, side) : PROBE_LOVE);
   const key = `${def.id}/${at}`;
   const hit = cache.get(key);
   if (hit) return hit;
@@ -2638,7 +2655,24 @@ function shownIds(p: PlayerState): string[] {
 function stillCan(state: GameState, side: PlayerIdx, w: BotWeights, pick: (d: CardDoes) => number): number {
   const p = state.players[side];
   let total = 0;
-  for (const id of p.hand) total += pick(cardDoes(state, side, card(id), w));
+  // A Love card spends every token at once, so two of them in a hand cannot
+  // both have the Love. Each card is priced with no Love at all, and the Love
+  // is then handed to whichever one gains most by it. Counting the gain on
+  // every card read a hand of two as twice the threat it can ever be, and the
+  // whole Candy mechanic is Love-scaled.
+  let bestLove = 0;
+  for (const id of p.hand) {
+    const def = card(id);
+    const dry = w.loveOnce > 0 ? pick(cardDoes(state, side, def, w, 0)) : 0;
+    const wet = pick(cardDoes(state, side, def, w));
+    if (w.loveOnce > 0) {
+      total += dry;
+      if (wet - dry > bestLove) bestLove = wet - dry;
+    } else {
+      total += wet;
+    }
+  }
+  total += bestLove;
   const own = rootSeat === null || side === rootSeat;
   if (own) {
     let deck = 0;

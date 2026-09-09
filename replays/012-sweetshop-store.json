@@ -80,20 +80,13 @@
     {"actor": 1, "action": {"type":"DECLINE_REPLACE"}, "digest": "6a78ece1a2e8b504"},
     {"actor": 0, "action": {"type":"PLAY_SUPPORTER","handIndex":1}, "digest": "0531490d61e7e0df"},
     {"actor": 0, "action": {"type":"END_TURN"}, "digest": "0a659659322c6a49"},
-    {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"leader","player":1,"index":0},"target":{"kind":"summon","player":0,"index":1}}, "digest": "b08b665dd8f92566"},
-    {"actor": 0, "action": {"type":"REPLACE_SUMMON","handIndex":0,"targets":[]}, "digest": "8ab1829245b8452b"},
-    {"actor": 1, "action": {"type":"PLAY_SUMMON","handIndex":2,"slot":0,"targets":[]}, "digest": "9327bc138a06e329"},
-    {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":1,"index":0},"target":{"kind":"summon","player":0,"index":1}}, "digest": "270a7ff9db9c7253"},
-    {"actor": 0, "action": {"type":"DECLINE_FLIP"}, "digest": "4ddddf248d9eb5d7"},
-    {"actor": 1, "action": {"type":"PLAY_SUPPORTER","handIndex":1}, "digest": "045bc305ae7a2fa7"},
-    {"actor": 1, "action": {"type":"PLAY_SUMMON","handIndex":0,"slot":1,"targets":[]}, "digest": "107c78dfc02315c1"},
-    {"actor": 1, "action": {"type":"ACTIVATE_POWER","source":{"kind":"summon","player":1,"index":1},"powerIndex":0,"targets":[]}, "digest": "6cfbee5686d780cf"},
-    {"actor": 1, "action": {"type":"PLAY_SUMMON","handIndex":0,"slot":2,"targets":[]}, "digest": "0908065977d7d4a5"},
-    {"actor": 1, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":1,"index":2},"target":{"kind":"summon","player":0,"index":0}}, "digest": "f6836ac963549f90"},
-    {"actor": 1, "action": {"type":"DECLINE_FLIP"}, "digest": "5c44dd2def6e33af"},
-    {"actor": 1, "action": {"type":"END_TURN"}, "digest": "5178ab97c15ebe42"}
+    {"actor": 1, "action": {"type":"ACTIVATE_POWER","source":{"kind":"leader","player":1,"index":0},"powerIndex":1,"targets":[]}, "digest": "7918b7b5bb5cc1ed"},
+    {"actor": 1, "action": {"type":"PLAY_SUPPORTER","handIndex":1}, "digest": "5b6edf7d6117849f"},
+    {"actor": 1, "action": {"type":"END_TURN"}, "digest": "9651e4b62f701764"},
+    {"actor": 0, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":0,"index":0},"target":{"kind":"leader","player":1,"index":0}}, "digest": "5d44f555612fe6cd"},
+    {"actor": 0, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":0,"index":2},"target":{"kind":"leader","player":1,"index":0}}, "digest": "32a3787215c77e1c"}
   ],
-  "finalDigest": "5178ab97c15ebe42",
-  "winner": 1,
-  "winReason": "Pink Deus (P1) reached 25 debt."
+  "finalDigest": "32a3787215c77e1c",
+  "winner": 0,
+  "winReason": "Pink Deus (P2) lost their leader."
 }

@@ -151,6 +151,16 @@ public sealed class BotWeights
     /// engines while leaving game 58's Store kill and game 17's real kill alone.
     public double KillRisk = 0.5;
     /// <summary>
+    /// Whether a hand's Love-scaled cards are priced as sharing one pool of
+    /// Love rather than each holding all of it. A Love card spends every token
+    /// at once, so two of them cannot both be worth what the table's Love makes
+    /// them, and summing their full worth read a hand of two as twice the
+    /// threat it can ever be. The whole Candy mechanic is Love-scaled, so this
+    /// is a systematic bias in a balance run. Zero prices every card at the
+    /// full Love, which is what the evaluator did before.
+    /// </summary>
+    public double LoveOnce = 1;
+    /// <summary>
     /// Share of a pool's worst case priced into each card the enemy holds
     /// unseen: the burst of the best cards their leader allows, measured
     /// beside that leader. Zero reads an unseen card as nothing. Measured
@@ -1958,7 +1968,7 @@ public static class Bot
     private static int ProbeLoveOf(GameState state, int side) =>
         (int)Math.Round(Math.Max(0, state.Players[side].Love) / (double)PriorLoveStep, MidpointRounding.AwayFromZero) * PriorLoveStep;
 
-    private static CardDoes CardDoesOf(GameState state, int side, CardDef def, BotWeights w)
+    private static CardDoes CardDoesOf(GameState state, int side, CardDef def, BotWeights w, int? loveAt = null)
     {
         if (Light || _probing || def.Type == CardType.Trap) return NothingDone;
         SeedDoes(state);
@@ -1966,7 +1976,7 @@ public static class Bot
         // Love is public, and a card that spends it does what the table shows,
         // so a Love-scaled effect is priced at the seat's own Love rather than
         // a fixed three, and cached per step of it.
-        int at = w.LoveReal > 0 ? ProbeLoveOf(state, side) : ProbeLove;
+        int at = loveAt ?? (w.LoveReal > 0 ? ProbeLoveOf(state, side) : ProbeLove);
         string key = def.Id + "/" + at;
         if (cache.TryGetValue(key, out var hit)) return hit;
         cache[key] = NothingDone;
@@ -2328,7 +2338,23 @@ public static class Bot
     {
         var p = state.Players[side];
         double total = 0;
-        foreach (var id in p.Hand) total += pick(CardDoesOf(state, side, Registry.Card(id), w));
+        // A Love card spends every token at once, so two of them in a hand
+        // cannot both have the Love. Each is priced with none, and the Love then
+        // goes to whichever gains most by it.
+        double bestLove = 0;
+        foreach (var id in p.Hand)
+        {
+            var def = Registry.Card(id);
+            double wet = pick(CardDoesOf(state, side, def, w));
+            if (w.LoveOnce > 0)
+            {
+                double dry = pick(CardDoesOf(state, side, def, w, 0));
+                total += dry;
+                if (wet - dry > bestLove) bestLove = wet - dry;
+            }
+            else total += wet;
+        }
+        total += bestLove;
         bool own = !_rootSet || side == _rootSeat;
         if (own)
         {
