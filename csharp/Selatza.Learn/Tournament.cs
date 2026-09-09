@@ -26,6 +26,24 @@ public sealed class TournamentConfig
     /// <summary>Cards a losing deck swaps out at the end of a round.</summary>
     public int MutateOnLoss { get; set; } = 3;
 
+    /// <summary>
+    /// How far an agent's own record of a card may override the population's
+    /// when it picks what to add. Removals have always read the agent's own
+    /// stats and additions have always read everyone's, so a deck could shed
+    /// what failed for it but never acquire what suited it, and no combination
+    /// worth only one leader could be found. At 0 additions are the
+    /// population's opinion alone, which is the behaviour before this existed.
+    /// </summary>
+    public double LocalAddWeight { get; set; } = 0.75;
+
+    /// <summary>
+    /// How hard an agent's own record of a colour steers what it adds. A card
+    /// the agent has never played carries no local score, so without this a
+    /// deck cannot learn that a whole colour is stranded in its hand. At 0 the
+    /// colour a card prints does not affect whether it is added.
+    /// </summary>
+    public double ColorAffinity { get; set; } = 0.5;
+
     /// <summary>Weakest agents handed a fresh leader and deck at each checkpoint.</summary>
     public int ReseedWorst { get; set; }
 
@@ -458,12 +476,39 @@ public sealed class Tournament
             if (a.Frozen) continue;
             if (a.RoundLosses <= a.RoundWins) continue;
             int swaps = Math.Min(_cfg.MutateOnLoss * (a.RoundLosses - a.RoundWins), a.Deck.Count / 4);
+            var mine = a.Stats;
+            var colours = _cfg.ColorAffinity > 0 ? mine.ColorScores() : null;
             a.Deck = DeckGen.Mutate(a.LeaderId, a.Deck, swaps,
-                card => a.Stats.Score(card),
-                card => _global.GlobalScore(card, totalPlays),
+                card => mine.Score(card),
+                card => AddScore(card, mine, colours, totalPlays),
                 _rng, _cfg.Deck.Size, _cfg.Deck.Largest);
             a.Mutations += swaps;
         }
+    }
+
+    /// <summary>
+    /// What a losing deck weighs when it picks a card to add. The population's
+    /// opinion is the prior, the agent's own record of that card overrides it as
+    /// the record grows, and its record of the card's colour carries to cards it
+    /// has never drawn. Nothing here names a card or a leader: a pairing worth
+    /// only one leader is found because that leader's own games say so.
+    /// </summary>
+    private double AddScore(int card, CardStats mine, double[]? colours, int totalPlays)
+    {
+        double global = _global.GlobalScore(card, totalPlays);
+        double score = global;
+        if (_cfg.LocalAddWeight > 0)
+        {
+            int plays = mine.Plays(card);
+            double trust = _cfg.LocalAddWeight * plays / (plays + CardStats.Shrink);
+            score = trust * mine.Score(card) + (1 - trust) * global;
+        }
+        if (colours is not null)
+        {
+            int ci = Array.IndexOf(Colors.All, CardIndex.Def(card).Color);
+            if (ci >= 0) score += _cfg.ColorAffinity * colours[ci];
+        }
+        return score;
     }
 
     /// <summary>

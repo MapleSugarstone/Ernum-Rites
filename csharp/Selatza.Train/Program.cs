@@ -209,6 +209,8 @@ public static class Program
             GamesPerPairing = Int(args, "--games", 2),
             EvolveEvery = Int(args, "--evolve-every", 10),
             MutateOnLoss = Int(args, "--mutate", 3),
+            LocalAddWeight = Dbl(args, "--local-add", 0.75),
+            ColorAffinity = Dbl(args, "--colour-affinity", 0.5),
             ReseedWorst = Int(args, "--reseed", 0),
             Threads = Int(args, "--threads", Math.Max(1, Environment.ProcessorCount - 1)),
             Seed = Int(args, "--seed", 1),

@@ -113,6 +113,18 @@ read. One legend converts wounds 1 for 1 instead.
 **Destroy** is the one word for sending a body to the debt zone, whoever owns it
 and whatever caused it.
 
+**Store** is Candy's keyword. A Store prints an effect that costs no mana. On
+your own turn you may run each Store you control once by taking 2 debt. On
+another player's turn that player may open it and negotiate: the seller names a
+price from 1 to 4, the buyer accepts, rejects or counters, and a closed deal
+charges the buyer that price as debt, resolves the effect for them and hands the
+seller 1 Love. A rejection closes that Store to that buyer until the turn ends.
+
+**Love** is a counter each player keeps between turns, shown as heart tokens in
+the supporter row. A card printing `Love:` spends every token its controller
+holds and applies the effect once per token spent, so two Love cards in one hand
+compete for the same tokens.
+
 ## Colors, factions and rarity
 
 | Letter | Color | Feel |
@@ -122,15 +134,17 @@ and whatever caused it.
 | R | Robot (green) | Power Shields, armor plating, reach, taking what you want |
 | F | Fish (blue) | Bounce, enemy mill, catching spent HP, fishing the dead out of debt |
 | S | Solar (yellow) | Extra supporters, permanent buffs, real healing |
+| K | Candy (pink) | Shops that sell their effect to the other side, Love tokens, price haggling |
 
 Each of those lists is deliberately exclusive: an effect belongs to one color,
 dual cards may borrow from both of their halves, and neutral trades effects for
 stats.
 
-Nine factions run across the colors. Fish, Machine, Spirit and Living are each
-one color's identity. Mortal, Scholar and Star are deliberately spread so two
-colors can share a payoff without sharing a cost, and Beast and Hedron are small
-and sit wherever the art does. Only a handful of cards read factions at all.
+Twelve factions run across the colors. Fish, Machine, Spirit and Living are each
+one color's identity, Saccharine is Candy's and Grinkle is Neutral's. Mortal,
+Scholar and Star are deliberately spread so two colors can share a payoff without
+sharing a cost, and Beast, Hedron and Ernum are small and sit wherever the art
+does. Only a handful of cards read factions at all.
 
 A deck may run up to 2 of any card. Rarity does not cap copies. The level a
 summon prints from 1 to 3 is what carries the trade-off, so a 48-card deck is at
@@ -153,16 +167,16 @@ set today is already in the table.
 
 | Rarity | Cards |
 | --- | --- |
-| Common | 99 |
-| Rare | 93 |
-| Epic | 61 |
-| Legendary | 51 |
+| Common | 112 |
+| Rare | 122 |
+| Epic | 74 |
+| Legendary | 69 |
 | Prismatic | 1 |
 
 Prismatic belongs to one card. Ernum carries every color and prints on a frame of
 its own.
 
-By level 66% of level 1 summons are Common, 39% of level 2 and 20% of level 3.
+By level 63% of level 1 summons are Common, 35% of level 2 and 17% of level 3.
 
 **Color identity.** A deck may only run cards whose colors its leader already
 brings, and identity is a subset rather than an overlap. A leader brings its own
@@ -172,18 +186,18 @@ play a Fish-and-Robot dual card, because that card would drag a color the leader
 does not have. A Fish-and-Robot leader unlocks both colors and everything inside
 them. Leading a deck is a seat rather than a card type: any summon with a body can take
 it, so picking a dual-color summon as your leader is how you build two-color
-decks. The ten triple-color legends take that to its end: nothing in the set
+decks. The twenty triple-color legends take that to its end: nothing in the set
 brings three colors except one of them, so each is the key to its own identity
-and you either lead with it or never cast it. Five cards carry a `starter` flag. It marks them as the ones to hand a
+and you either lead with it or never cast it. Six cards carry a `starter` flag. It marks them as the ones to hand a
 player who has not built a deck yet. It is a curation hint and nothing more.
 
 ## The card set
 
-296 cards, one for every piece of art in `assets/Cardgame`: ten level-1, ten
-level-2 and ten level-3 summons per color, one of which is that color's
-starter, ten spells, traps and fields per color, 51 dual-color cards across
-ten color pairs, and one level 3 legend for each of the ten three-color
-combinations. A test asserts that every art file is used by exactly one card and
+378 cards, one for every piece of art in `assets/Cardgame`: ten level-1, ten
+level-2 and ten level-3 summons per color and for Neutral, one of which is that
+color's starter, about ten spells, traps and fields per color, 76 dual-color
+cards across the fifteen color pairs, and one level 3 legend for each of the
+twenty three-color combinations. A test asserts that every art file is used by exactly one card and
 that no card points at art the pack does not ship.
 
 Cards are rendered with the real frames. The frame PNGs are transparent over the
@@ -271,9 +285,9 @@ corpus and the balance harness stay strictly two-player, and the digest keeps
 that honest by printing the new state fields only when they are set, which
 never happens in a duel, so the conformance suite still pins both engines to
 identical two-player strings. On the wire, the party size rides in the room's
-own name, a mid-game disconnect concedes for the player who dropped and the
-game goes on, and `RULES_REVISION` was bumped so a stale build cannot be
-seated in a room it does not understand.
+own name, a mid-game disconnect holds the seat for the grace window and concedes
+it only if nobody resumes, and `RULES_REVISION` was bumped so a stale build
+cannot be seated in a room it does not understand.
 
 On screen the opponents' boards sit next to each other at 70% size in a
 horizontal carousel: a slider under the row pans between them, the row glides
@@ -308,11 +322,12 @@ text above the notes. The result is a document someone can act on directly.
 
 Fifteen decks in the set were built by the training tournament rather than by
 hand. They come out of a run where every body that can stand as a leader is
-handed to an agent and the population rebuilds its decks over seven hundred
-rounds. The best deck for each color and each of the ten color pairs is kept.
+handed to an agent and the population rebuilds its decks over nine hundred
+rounds. The best deck for each color and each color pair is kept. The run
+predates Candy, so there is no evolved Candy deck.
 
 They are no longer offered on the setup screen. That screen lists your saved
-decks above the five hand-built starters. The evolved decks stay in
+decks above the six hand-built starters. The evolved decks stay in
 `evolvedDecks` and are still reachable by key, so an imported deck naming one
 resolves.
 
@@ -332,6 +347,61 @@ sequences of actions the turn can hold, a rollout that looks for a kill, a greed
 model of the opponent's reply, and a term for what the board still threatens
 after that. Every step applies actions to copies of the state and reads the
 result, so a new card needs no bot support at all.
+
+## How a bot change gets measured
+
+No bot change ships on the strength of an argument. Every mechanism sits behind a
+named weight so it can be enabled and disabled, and the two configurations are
+measured against each other over the same decks.
+
+```bash
+Selatza.Sim versus --games 600 --decks candy --set KillRisk=0.5 --vs KillRisk=0
+```
+
+`--set` names the weights on one side and `--vs` names them on the other, so both
+seats run the same build and only the weight differs. Every deck is played twice
+with the seats swapped, so a bot against its own copy reads 50 percent rather than
+whatever the first seat is worth. Six hundred games gives an interval of about
+four points. Leave `--vs` off and the other seat is the previously shipped bot.
+
+Two sources of error account for most incorrect conclusions.
+
+The first is treating one seed as a general result. A single seed is a single deck
+set: the same bot measured five points apart on two candy seeds, and a change that
+read as a three-point win on one deck set was worth nothing on another. A claim
+needs two pools or two seeds before it is worth reporting.
+
+The second is measuring a weight that never reaches the decision path. Such a
+weight produces a result indistinguishable from a change that does nothing, and
+two configurations returning results identical to the digit indicate that case
+rather than a genuine null result. Confirm that the weight moves decisions before
+spending machine time on it:
+
+```bash
+Selatza.Sim decide --replay replays/human/<game>.json --seat 1 --set KillRisk=0.5
+```
+
+Head-to-heads establish whether a change costs games. They cannot establish
+whether it plays well. Both sides share the same blind spots, and a weakness
+neither bot knows how to attack is invisible in a match between them. The game log
+covers that case. Games real people played against the bot form a held-out set
+that is never trained on and only measured. `Selatza.Sim analyze` re-searches
+every decision in them and reports where the played move fell short. `--oracle`
+instead asks whether the opponent had a kill after each turn. It reads their real
+hand rather than the believed one, so it reports kills the bot had no way to see.
+
+Both reports overstate the bot's errors. The analyzer clears the plan and rerolls
+its peeks before re-searching, so its best line is not always a line the bot could
+have found at the table. It also counts a kill as not taken even when the bot
+played that kill's own first move. Resolve a flagged decision by putting the
+position back in front of the bot with `Selatza.Sim explain` or
+`scripts/botexplain.ts` and reading what it weighs.
+
+A change therefore clears two bars: inside noise against bots, and doing what it
+claims against people. Several shipped mechanisms measure at exactly even and earn
+their place by fixing a failure traced in a real game. Several plausible ones
+measured badly and sit at zero with the measurement recorded beside them. That
+record is what stops them being rebuilt.
 
 ## Balancing the set against evolved decks
 
@@ -423,6 +493,37 @@ measure of what the network is worth.
 npm run train:gauntlet -- --net runs/latest/net0.snn --games 60
 ```
 
+## Long runs on rented machines
+
+A tournament game costs about ten seconds of one core at the full search profile,
+so a meta check of several hundred rounds is days of work on a laptop and under an
+hour on a machine with a hundred cores. `scripts/gcp-meta.sh` and
+`scripts/gcp-versus.sh` publish the trainer for Linux, stage it in a bucket, rent
+a machine, run the work and pull the results back. The machines are the cheap
+interruptible kind, and that constraint determines the rest of the design.
+
+An interruptible machine is reclaimed without warning, so a run has to survive
+losing one. The trainer snapshots after every round and resumes from where it
+stopped, the snapshot lives in the bucket rather than on the machine's disk, and a
+run relaunched with the same tag continues rather than starting over. A
+head-to-head batch runs its arms one at a time and uploads each result as it
+finishes, so stopping at any point preserves every completed arm. An earlier
+design split the cores across eleven arms and uploaded only at the end, and a
+machine reclaimed after two hours produced nothing.
+
+Two limits constrain what you can ask for. A rented machine carries a hard maximum
+run duration enforced from outside, so nothing done inside the guest extends it. A
+machine shape refused in one region is refused for one of two reasons: the region
+has no spare capacity, or the account's quota for that shape is smaller than the
+machine. Only the second is worth a quota request, so establish which one applies
+before retrying elsewhere.
+
+Keep runs small enough to finish. One seed, a short leader roster, and only as
+many arms as the question needs. Launch a long batch detached so it outlives the
+session that started it, then confirm that its log is growing within the first
+minute. A launcher that fails silently is indistinguishable from one that is
+working.
+
 ## The C# engine
 
 The same rules exist a second time in `csharp/` and run about nine times
@@ -487,9 +588,11 @@ placeholder card (`src/engine/redact.ts`), so the authority never hands a client
 anything it should not see. A turn clock runs on Durable Object alarms and times
 out a player who stops acting.
 
-The room owns every timer. A card played on your own turn adds time back to it,
-1.5 seconds for the first card and less for each one after, reaching 0 at the
-tenth. The count resets on your next turn. See `playBonusMs` in
+The room owns every timer. A card played on your own turn adds time back to it:
+a flat second for every card, plus a fading bonus that starts at 1.5 seconds and
+reaches 0 at the tenth play. The first card is therefore worth 2.5 seconds and
+the eleventh onward is worth 1, so a turn spent playing cards is never shorter
+than one spent stalling. The count resets on your next turn. See `playBonusMs` in
 `src/engine/timing.ts`. Clients never compute the bonus themselves. They display
 whatever `clock` the push carries, and the clock is not part of the digest, so it
 cannot cause a desync.
@@ -517,10 +620,12 @@ that disagrees. It is derived rather than written down so it cannot be forgotten
 and it means a card change wants the worker deployed alongside the push: until
 both are out the two halves disagree and nobody is seated.
 
-What is still missing is reconnection. Closing a socket frees the seat in
-`worker/room.ts`, so a player who drops cannot resume the match they were in.
-A party room softens this without fixing it: a mid-game drop concedes for that
-seat, the player is eliminated, and the match carries on for everyone else.
+Reconnection runs on a resume token. A seat is issued one with its `seated`
+push, closing a socket marks the seat away rather than freeing it, and a `join`
+carrying that token reclaims the seat and resends the state. An away seat is held
+for 90 seconds (`AWAY_GRACE_SECONDS` in `src/engine/timing.ts`) and concedes only
+once that window lapses. Party rooms use the same path, and a seat that does
+lapse is eliminated while the match carries on for everyone else.
 
 ```bash
 npx wrangler dev

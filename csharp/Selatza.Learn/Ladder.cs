@@ -138,6 +138,39 @@ public sealed class CardStats
     /// <summary>Lift, less a penalty for a card that spends the game in hand.</summary>
     public double Score(int card) => Lift(card) - 0.25 * DeadRate(card);
 
+    /// <summary>
+    /// The same score aggregated over every card of one printed colour, which
+    /// is what carries an agent's experience to a card it has never drawn.
+    /// A colour whose mana the deck cannot reliably supply strands its cards in
+    /// hand, and that shows up here before any single card has enough plays to
+    /// say so. Indexed by <see cref="Colors.All"/>; neutral and Ernum cards are
+    /// in no bucket, so they are never steered by it.
+    /// </summary>
+    public double[] ColorScores()
+    {
+        var lift = new double[Colors.All.Length];
+        var plays = new double[Colors.All.Length];
+        var stuck = new double[Colors.All.Length];
+        var seen = new double[Colors.All.Length];
+        for (int c = 0; c < _plays.Length; c++)
+        {
+            if (_appearances[c] == 0) continue;
+            int ci = Array.IndexOf(Colors.All, CardIndex.Def(c).Color);
+            if (ci < 0) continue;
+            lift[ci] += _lift[c];
+            plays[ci] += _plays[c];
+            stuck[ci] += _stuck[c];
+            seen[ci] += _appearances[c];
+        }
+        var outList = new double[Colors.All.Length];
+        for (int i = 0; i < outList.Length; i++)
+        {
+            double dead = seen[i] > 0 ? stuck[i] / seen[i] : 0;
+            outList[i] = lift[i] / (plays[i] + Shrink) - 0.25 * dead;
+        }
+        return outList;
+    }
+
     public void Merge(CardStats other)
     {
         for (int i = 0; i < _plays.Length; i++)

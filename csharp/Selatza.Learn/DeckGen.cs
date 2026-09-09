@@ -287,7 +287,7 @@ public static class DeckGen
         // Whatever the type targets could not fill, and the colours the leader's
         // powers need paying in.
         var demanded = DemandedColors(leaderId);
-        for (int ci = 0; ci < 5; ci++)
+        for (int ci = 0; ci < Colors.All.Length; ci++)
         {
             if (!demanded[ci]) continue;
             var col = Colors.All[ci];
