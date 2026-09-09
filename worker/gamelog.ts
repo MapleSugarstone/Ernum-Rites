@@ -21,6 +21,12 @@ export interface GameLogRecord {
   startingPlayer: number;
   /** Seat the bot sat in for a solo game, -1 otherwise. */
   botSeat: number;
+  /**
+   * How hard the bot was set to play, for a solo game. A game against the easy
+   * bot says nothing about how the hard one holds up, so a reading that mixes
+   * them says nothing about either.
+   */
+  difficulty: 'easy' | 'hard' | null;
   decks: { leaderId: string; cards: string[] }[];
   steps: { actor: number; action: unknown }[];
   winner: number;
@@ -78,6 +84,7 @@ export function scrubGameLog(raw: unknown): GameLogRecord | null {
     seed: int(r.seed, 0),
     startingPlayer: int(r.startingPlayer, 0),
     botSeat: int(r.botSeat, -1),
+    difficulty: r.difficulty === 'easy' ? 'easy' : r.difficulty === 'hard' ? 'hard' : null,
     decks,
     steps,
     winner: int(r.winner, -1),

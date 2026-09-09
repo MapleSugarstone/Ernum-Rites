@@ -10,20 +10,26 @@
 
 const KEY = 'ernumrites.prefs';
 
+/** How hard the bot plays: the full search, or the cheap one. */
+export type BotLevel = 'easy' | 'hard';
+
 export interface Prefs {
   /** The name other players are shown online. */
   name: string;
   /** The setup screen's two deck keys, player one first. */
   picks: [string, string];
+  /** How hard the bot was last set to play. */
+  botLevel: BotLevel;
 }
 
 /** A field is null when nothing was kept for it, or what was kept is unusable. */
 export interface StoredPrefs {
   name: string | null;
   picks: [string | null, string | null];
+  botLevel: BotLevel | null;
 }
 
-const NOTHING: StoredPrefs = { name: null, picks: [null, null] };
+const NOTHING: StoredPrefs = { name: null, picks: [null, null], botLevel: null };
 
 /**
  * What the last visit left behind. Deck keys come back exactly as written: only
@@ -39,6 +45,7 @@ export function loadPrefs(): StoredPrefs {
     return {
       name: typeof v.name === 'string' ? v.name : null,
       picks: [key(v.picks?.[0]), key(v.picks?.[1])],
+      botLevel: v.botLevel === 'easy' || v.botLevel === 'hard' ? v.botLevel : null,
     };
   } catch {
     // Private mode and blocked storage both throw rather than return null.

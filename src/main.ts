@@ -1,7 +1,7 @@
 // First, before any other module can fail to load: a boot error must land on
 // the player's screen rather than leave a blank page.
 import './ui/bootguard';
-import { chooseAction, setNetwork } from './ai/bot';
+import { chooseAction, fullSearch, quickSearch, setNetwork, setSearchLimits } from './ai/bot';
 import { loadBundle, type NetBundleJson } from './ai/net/bundle';
 import defaultNet from './ai/net/default.json';
 import { NetClient } from './net/client';
@@ -177,7 +177,7 @@ import {
   syncDropdowns,
 } from './ui/dropdown';
 import { currentTheme, initTheme, setTheme, type Theme } from './ui/theme';
-import { loadPrefs, savePrefs } from './ui/prefs';
+import { loadPrefs, savePrefs, type BotLevel } from './ui/prefs';
 
 // The trained network ships inside the bundle and is decoded once at boot, so
 // the bot's first turn never waits on it. The weight is how much it may adjust
@@ -189,7 +189,7 @@ setNetwork(loadBundle(defaultNet as NetBundleJson), 0);
 
 // --- ui state ---------------------------------------------------------------
 
-type SetupMode = 'hotseat' | 'ai';
+type SetupMode = 'hotseat' | 'ai' | 'spectate';
 
 interface Targeting {
   label: string;
@@ -274,6 +274,14 @@ interface Ui {
   picks: [string, string];
   state: GameState | null;
   botSeat: PlayerIdx | null;
+  /**
+   * Both seats played by the bot, with the camera left on seat 0. The player
+   * watches and may still inspect a card, but nothing they click reaches the
+   * table.
+   */
+  botBoth: boolean;
+  /** How hard the bot plays. Kept in prefs, so it survives a reload. */
+  botLevel: BotLevel;
   botBusy: boolean;
   selection: Selection;
   targeting: Targeting | null;
@@ -325,6 +333,8 @@ const ui: Ui = {
   picks: ['deepcurrent', 'emberchoir'],
   state: null,
   botSeat: null,
+  botBoth: false,
+  botLevel: 'hard',
   botBusy: false,
   selection: null,
   targeting: null,
@@ -365,11 +375,12 @@ function restorePrefs(): void {
     key !== null && [...everyDeck, ...savedDeckList()].some((d) => d.key === key);
   if (known(saved.picks[0])) ui.picks[0] = saved.picks[0];
   if (known(saved.picks[1])) ui.picks[1] = saved.picks[1];
+  if (saved.botLevel !== null) ui.botLevel = saved.botLevel;
 }
 
 /** Called wherever the name or a pick changes, which is the only way either moves. */
 function rememberPrefs(): void {
-  savePrefs({ name: ui.online.name, picks: [ui.picks[0], ui.picks[1]] });
+  savePrefs({ name: ui.online.name, picks: [ui.picks[0], ui.picks[1]], botLevel: ui.botLevel });
 }
 
 const root = document.getElementById('app')!;
@@ -425,6 +436,9 @@ function viewSeat(): PlayerIdx {
 }
 
 function canAct(): boolean {
+  // Watching two bots play: the camera sits in seat 0 and a card can still be
+  // picked up and read, but nothing the watcher does reaches the table.
+  if (ui.botBoth) return false;
   return !!ui.state && !isOver(ui.state) && actor() === viewSeat();
 }
 
@@ -5290,6 +5304,8 @@ function renderSetup(): string {
   // toggle under it picks who takes the other chair.
   const seat = (m: SetupMode, label: string) =>
     `<button data-act="btn" data-cmd="mode:${m}" class="seattile${ui.setupMode === m ? ' on' : ''}">${label}</button>`;
+  const level = (l: BotLevel, label: string) =>
+    `<button data-act="btn" data-cmd="level:${l}" class="seattile${ui.botLevel === l ? ' on' : ''}">${label}</button>`;
   return `<div class="setup menuview"><div class="inner">
     <header class="platebar"><img class="sigil" src="${BASE}favicon.png" alt="" width="63" height="44"><h1>Ernum Rites</h1></header>
     <div class="modes">
@@ -5302,7 +5318,8 @@ function renderSetup(): string {
       <button class="modetile" data-act="btn" data-cmd="to-build">Deckbuilder</button>
       <button class="modetile" data-act="btn" data-cmd="to-rules">Rules</button>
       ${mixerHtml()}</div>
-    <div class="seats"><span class="seatlabel">Opponent</span>${seat('ai', 'Bot')}${seat('hotseat', 'Player')}</div>
+    <div class="seats"><span class="seatlabel">Opponent</span>${seat('ai', 'Bot')}${seat('hotseat', 'Player')}${seat('spectate', 'Bot vs bot')}</div>
+    <div class="seats"><span class="seatlabel">Bot skill</span>${level('hard', 'Hard')}${level('easy', 'Easy')}</div>
     ${
       savedDeckList().length > 0
         ? `<h2>Your decks</h2><div class="decks">${savedDeckList().map(deckCardHtml).join('')}</div>`
@@ -7172,10 +7189,19 @@ function pacingFor(action: Action): number {
   }
 }
 
+/** The seat the bot should be playing now, or null when it is not its move. */
+function botTurn(): PlayerIdx | null {
+  const state = ui.state;
+  if (!state || isOver(state)) return null;
+  const at = actor();
+  if (ui.botBoth) return at;
+  return ui.botSeat !== null && at === ui.botSeat ? at : null;
+}
+
 function scheduleBot(delay = BOT_DELAY): void {
   const state = ui.state;
-  if (!state || ui.botSeat === null || isOver(state)) return;
-  if (actor() !== ui.botSeat) {
+  if (!state || (ui.botSeat === null && !ui.botBoth) || isOver(state)) return;
+  if (botTurn() === null) {
     ui.botBusy = false;
     botActions = 0;
     return;
@@ -7191,29 +7217,29 @@ function scheduleBot(delay = BOT_DELAY): void {
 
 async function botStep(): Promise<void> {
   const state = ui.state;
-  if (!state || ui.botSeat === null || actor() !== ui.botSeat) {
+  const seat = botTurn();
+  if (!state || seat === null) {
     ui.botBusy = false;
     return render();
   }
-  const seat = ui.botSeat;
   const action = await botChoose(state, seat);
   // The page kept running while the bot thought. If the match it was
   // thinking about is gone, its answer is for a table nobody sits at.
-  if (ui.state !== state || ui.botSeat !== seat || actor() !== seat) {
+  if (ui.state !== state || botTurn() !== seat) {
     ui.botBusy = false;
     return render();
   }
   captureWounds();
-  const res = applyAction(state, ui.botSeat, action);
+  const res = applyAction(state, seat, action);
   if (!res.ok) {
     takeWounds();
     ui.error = `Bot stuck: ${res.error}`;
     ui.botBusy = false;
     return render();
   }
-  applyActionFx(state, res.state, action, ui.botSeat);
+  applyActionFx(state, res.state, action, seat);
   ui.state = res.state;
-  recordMatchStep(ui.botSeat, action);
+  recordMatchStep(seat, action);
   render();
   playSounds();
   playTrapReveal();
@@ -7717,8 +7743,11 @@ const LOG_QUEUE_KEY = 'ernum-game-log-queue';
 const LOG_QUEUE_MAX = 8;
 
 function beginMatchLog(decks: readonly DeckList[], seed: number): void {
+  // Two bots playing each other say nothing about how people play, and the log
+  // is the held-out set that judges the bot against people. Those games are
+  // watched, not recorded.
   matchLog =
-    ui.state && ui.botSeat !== null
+    ui.state && ui.botSeat !== null && !ui.botBoth
       ? {
           seed,
           startingPlayer: ui.state.startingPlayer,
@@ -7734,6 +7763,10 @@ function recordMatchStep(actor: PlayerIdx, action: Action): void {
   matchLog.steps.push({ actor, action: actionToWire(action) });
   if (isOver(ui.state)) {
     matchLog.posted = true;
+    // A game conceded on the first or second turn was never played. Keeping
+    // them drags every average the log is read for towards a game nobody
+    // finished.
+    if (action.type === 'CONCEDE' && ui.state.turn <= 2) return;
     void postGameLog({
       format: 1,
       kind: 'solo',
@@ -7743,6 +7776,7 @@ function recordMatchStep(actor: PlayerIdx, action: Action): void {
       seed: matchLog.seed,
       startingPlayer: matchLog.startingPlayer,
       botSeat: ui.botSeat,
+      difficulty: ui.botLevel,
       decks: matchLog.decks,
       steps: matchLog.steps,
       winner: ui.state.winner ?? -1,
@@ -7845,16 +7879,21 @@ function botThread(): Worker | null {
 
 function botChoose(state: GameState, seat: PlayerIdx): Promise<Action> {
   const worker = botThread();
-  if (!worker) return Promise.resolve(chooseAction(state, seat));
+  // A worker that failed leaves the search on the page, where the level has to
+  // be set here instead.
+  if (!worker) {
+    setSearchLimits(ui.botLevel === 'easy' ? quickSearch : fullSearch);
+    return Promise.resolve(chooseAction(state, seat));
+  }
   return new Promise((resolve) => {
     const id = ++botCallId;
     botCalls.set(id, { resolve, state, seat });
-    worker.postMessage({ id, kind: 'choose', state, seat });
+    worker.postMessage({ id, kind: 'choose', state, seat, level: ui.botLevel });
   });
 }
 
 function botWarm(state: GameState, seat: PlayerIdx): void {
-  botThread()?.postMessage({ id: 0, kind: 'warm', state, seat });
+  botThread()?.postMessage({ id: 0, kind: 'warm', state, seat, level: ui.botLevel });
 }
 
 function botReset(): void {
@@ -7870,10 +7909,16 @@ function startMatch(decks: [DeckList, DeckList]): void {
   // the seed on its own still reproduces the whole match.
   ui.state = createGame(decks, seed, (seed & 1) as PlayerIdx);
   ui.screen = 'game';
-  ui.botSeat = ui.setupMode === 'ai' ? 1 : null;
+  ui.botBoth = ui.setupMode === 'spectate';
+  ui.botSeat = ui.setupMode === 'hotseat' ? null : 1;
   beginMatchLog(decks, seed);
   botReset();
-  if (ui.botSeat !== null) botWarm(ui.state, ui.botSeat);
+  // Warming is the once-a-game deck scan and pool prior. Two bots need both
+  // seats warmed, or the second one pays for it on its first decision.
+  if (ui.botBoth) {
+    botWarm(ui.state, 0);
+    botWarm(ui.state, 1);
+  } else if (ui.botSeat !== null) botWarm(ui.state, ui.botSeat);
   ui.botBusy = false;
   ui.selection = null;
   ui.targeting = null;
@@ -7901,10 +7946,12 @@ function startMatch(decks: [DeckList, DeckList]): void {
   playOpeningDraw(viewSeat());
   const seat = viewSeat();
   popNotice(
-    `You are Player ${seat + 1}`,
-    seat === ui.state.startingPlayer
-      ? 'You go first.'
-      : `Player ${ui.state.startingPlayer + 1} goes first.`,
+    ui.botBoth ? 'Watching two bots' : `You are Player ${seat + 1}`,
+    ui.botBoth
+      ? `Bot ${ui.state.startingPlayer + 1} goes first. You can look at cards but not play.`
+      : seat === ui.state.startingPlayer
+        ? 'You go first.'
+        : `Player ${ui.state.startingPlayer + 1} goes first.`,
   );
   clearActionFx();
   scheduleBot();
@@ -7930,7 +7977,14 @@ function handleCommand(cmd: string): void {
     if (ui.preloading) return;
     const pick = (key: string, seatNo: number): DeckList => {
       const d = [...everyDeck, ...savedDeckList()].find((x) => x.key === key)!;
-      const who = ui.setupMode === 'ai' ? (seatNo === 1 ? 'You' : 'Bot') : `P${seatNo}`;
+      const who =
+        ui.setupMode === 'spectate'
+          ? `Bot ${seatNo}`
+          : ui.setupMode === 'ai'
+            ? seatNo === 1
+              ? 'You'
+              : 'Bot'
+            : `P${seatNo}`;
       return { name: `${d.name} (${who})`, leaderId: d.leaderId, cards: d.cards };
     };
     const decks: [DeckList, DeckList] = [pick(ui.picks[0], 1), pick(ui.picks[1], 2)];
@@ -7948,6 +8002,11 @@ function handleCommand(cmd: string): void {
   }
   if (cmd.startsWith('mode:')) {
     ui.setupMode = cmd.slice(5) as SetupMode;
+    return render();
+  }
+  if (cmd.startsWith('level:')) {
+    ui.botLevel = cmd.slice(6) === 'easy' ? 'easy' : 'hard';
+    rememberPrefs();
     return render();
   }
   if (cmd.startsWith('pick0:')) {

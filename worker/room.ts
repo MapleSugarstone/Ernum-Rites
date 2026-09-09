@@ -792,6 +792,8 @@ export class MatchRoom extends DurableObject {
     const record: GameLogRecord = {
       format: 1,
       kind: 'multi',
+      // People against people: no bot played, so no difficulty applies.
+      difficulty: null,
       version: pkg.version,
       build: 'worker',
       cards: cardSetHash(),
