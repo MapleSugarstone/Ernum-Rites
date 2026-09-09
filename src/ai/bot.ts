@@ -203,20 +203,37 @@ export interface BotWeights {
    */
   storeReach: number;
   /**
-   * How likely they must be to hold a summon before one of their unseen cards
-   * is believed to be a body. Filling a hole is free and takes exactly one
-   * body, so the question is only whether they hold any, and the pool's summon
-   * share against the cards they still hold answers it. Zero believes they
-   * never hold one, which is what the search did while a person refilled 108
-   * holes across the logged games.
+   * How much of the enemy pool's summon share stands in as playable bodies in
+   * the part of their hand the bot has not seen. The reply simulates their
+   * whole turn off this hand, and a hand of blank traps can play nothing at
+   * all.
    *
-   * Ships at 0. Over 292 replacement windows in the log the hole is filled
-   * 49.3% of the time and flat in hand size, so a believed body is wrong half
-   * the time whichever way it is set, and the pool's summon share overstates a
-   * hand's because bodies get played out of it. The decision belongs where the
-   * kill is weighed rather than in the read.
+   * Ships at 0, measured. A real turn plays something from hand 97% of the
+   * time and this model plays nothing on any of them, but filling the unseen
+   * hand with bodies at the pool's rate measured 239-359 on candy seed 1, ten
+   * points down over 600 paired games. A reply that imagines their board plays
+   * worse than one that imagines nothing, which is the same answer sampling the
+   * hand from the pool got. The blindness is a limitation, not an open bug.
    */
   handBodies: number;
+  /**
+   * Whether a kill has to survive the opponent answering a hole before it is
+   * taken outright. The leader is only exposed once every slot in front of it
+   * is empty, and over 292 replacement windows in the log a hole is filled
+   * 49.3% of the time, flat in hand size, so a kill that needs the front to
+   * stay clear is a coin flip rather than a kill. One takes the robust kills
+   * and gambles on the rest only when handing the turn over loses anyway,
+   * which is the case game 52 was lost in: a whole turn spent on a kill that
+   * evaporated, ending with nothing in front of the leader.
+   *
+   * The value is the share of a win such a kill is worth, so it competes in the
+   * outlook against the best ordinary line instead of short-circuiting: a
+   * certain kill still wins at once, and a coin-flip kill wins only when the
+   * alternative is worse than a coin flip. Zero takes every kill the search
+   * finds, which is what the bot did while committing whole turns to kills a
+   * single replacement erased.
+   */
+  killRisk: number;
   /**
    * Share of a pool's worst case priced into each card the enemy holds unseen:
    * the burst of the best cards their leader allows, measured beside that
@@ -348,6 +365,7 @@ export const defaultWeights: BotWeights = {
   leafSpread: 2,
   storeReach: 1,
   handBodies: 0,
+  killRisk: 0.5,
   kitPips: 6,
   kitDebt: 8,
   kitSolo: 1,
@@ -1270,6 +1288,14 @@ export const LETHAL_SLACK = 6;
 export const STORE_PLIES = 2;
 /** A win, scored above anything the evaluator can reach. */
 const WIN = 1e9;
+/**
+ * What a win is worth beside an outlook, for the one comparison that has to
+ * weigh a certain board against an uncertain kill. `WIN` is a sentinel at 1e9
+ * and swamps anything it is mixed with, so an expectation built on it always
+ * picks the kill whatever the odds. The analyzer already prices a kill at 200
+ * for the same reason.
+ */
+const KILL_WORTH = 200;
 
 function targetCombos(
   state: GameState,
@@ -1765,11 +1791,14 @@ export function believedHand(
     const unseen = p.hand.length - hand.length;
     const pool = poolBehind(p.leaderCardId);
     const density = pool.total > 0 ? pool.summons / pool.total : 0;
-    // A hole takes exactly one body to fill, so believing in more than one buys
-    // nothing here and prices their whole hand as a board. One stands in when
-    // the pool's summon share says they probably hold one at all.
-    const chance = unseen > 0 ? 1 - Math.pow(1 - density, unseen) : 0;
-    const bodies = w.handBodies > 0 && chance >= w.handBodies ? 1 : 0;
+    // A believed hand of nothing but traps cannot play a card, so the turn the
+    // reply simulates for them never develops a board. Over the logged games a
+    // real turn plays a summon in 82% of them and something from hand in 97%,
+    // three cards a turn, against this model's none. The unseen cards stand in
+    // as bodies at the share of the pool that is one, scaled by the weight.
+    // Whether they can answer a hole is not this term's job: `killRisk` asks
+    // that structurally, off the shape of the kill line.
+    const bodies = Math.min(unseen, Math.round(unseen * density * w.handBodies));
     const body = pool.blankBody?.id ?? blank;
     for (let i = 0; i < unseen; i++) hand.push(i < bodies ? body : blank);
     return hand;
@@ -3697,6 +3726,63 @@ function handOver(state: GameState, w: BotWeights): GameState | null {
 
 /** Whether a reply leaves the seat that plays next a kill on the seat that made it. */
 /**
+ * The same table with one of their unseen cards believed to be a body, used to
+ * play out what a kill looks like when they answer it.
+ */
+function withRefill(state: GameState, me: PlayerIdx): GameState {
+  const blank = blankCard()?.id;
+  if (!blank) return state;
+  let touched = false;
+  const s = cloneState(state);
+  for (let seat = 0; seat < s.players.length; seat++) {
+    if (seat === me) continue;
+    const p = s.players[seat];
+    const at = p.hand.indexOf(blank);
+    const body = poolBehind(p.leaderCardId).blankBody?.id;
+    if (at < 0 || !body) continue;
+    p.hand = [...p.hand];
+    p.hand[at] = body;
+    touched = true;
+  }
+  return touched ? s : state;
+}
+
+/**
+ * The board a kill leaves when it fails: the line played against an opponent
+ * who fills the hole, stopping where the line stops being legal. That is what
+ * game 52 actually looked like, the attacks spent on bodies that came straight
+ * back and nothing left in front of the leader, and it is the branch the old
+ * pricing left out entirely.
+ */
+function failureBoard(state: GameState, line: Action[], me: PlayerIdx, w: BotWeights): GameState {
+  let s = withRefill(state, me);
+  for (const a of line) {
+    const res = applyAction(s, me, a);
+    if (!res.ok) break;
+    s = settle(res.state, w);
+    if (isOver(s)) break;
+  }
+  return s;
+}
+
+/**
+ * Whether a kill line only works while the front it cleared stays clear. The
+ * leader is reachable only once every slot in front of it is empty, so a line
+ * that swings at a leader they had bodies in front of has to clear them first,
+ * and one replacement puts the leader back out of reach. Structural on the
+ * line, so it does not care how many answers they hold, which is the thing
+ * neither a believed body nor a second search could pin down.
+ */
+function needsTheFrontClear(from: GameState, line: Action[], me: PlayerIdx): boolean {
+  let guarded = false;
+  for (const foe of livingOpponents(from, me)) {
+    if (from.players[foe].slots.some((s) => s)) guarded = true;
+  }
+  if (!guarded) return false;
+  return line.some((a) => a.type === 'DECLARE_ATTACK' && a.target.kind === 'leader');
+}
+
+/**
  * Whether this seat can run a Store of its own now and carry what it costs.
  * Asked because a Store buys a blocker away without spending an attack, which
  * is the one thing the rollouts price wrong: they clear the same blocker by
@@ -4182,19 +4268,49 @@ export function chooseAction(
   // A kill this turn beats anything the evaluator can score, and it is the one
   // thing the evaluator cannot see: a play that converts the whole board into
   // exactly enough damage reads as a small gain rather than as a win.
+  const storeUp = w.storeReach > 0 && canRunStore(state, me, w);
+  const reach = storeUp ? STORE_PLIES : 0;
+  // A kill that only works while the front stays clear is a coin flip: they
+  // fill the hole about half the time. Rather than short-circuit on it, it is
+  // kept as a candidate worth its odds and weighed against the best ordinary
+  // line below, so it is taken when the alternative is worse than a coin flip
+  // and declined when it would spend the turn for nothing.
+  // A kill that only works while the front stays clear wins about half the
+  // time, and the half where it fails is not a neutral turn: it is the attacks
+  // spent on bodies that came straight back, with nothing left in front of the
+  // leader. Both branches are priced and weighed against the best ordinary
+  // line, so a kill that leaves the board survivable when it misses stays
+  // attractive and one that does not has a real bar to clear.
+  const gambles: { leaf: Leaf; value: number }[] = [];
+  const takeKill = (roll: Rollout): Action | null => {
+    if (w.killRisk > 0 && needsTheFrontClear(state, roll.line, me)) {
+      const failed = failureBoard(state, roll.line, me, w);
+      const missed = leafOutlook(
+        state,
+        { state: failed, line: roll.line, score: evaluate(failed, me, w) },
+        me,
+        w,
+      );
+      gambles.push({
+        leaf: { state: roll.state, line: roll.line, risk: 0, score: WIN },
+        value: w.killRisk * KILL_WORTH + (1 - w.killRisk) * missed,
+      });
+      return null;
+    }
+    return begin(state, me, key, roll.line);
+  };
+
   const race = burn(state, me, limits.maxBurnSteps, w);
   if (race.state.winner === me) {
-    const opener = begin(state, me, key, race.line);
+    const opener = takeKill(race);
     if (opener) return opener;
   }
   const built = burn(state, me, limits.maxBurnSteps, w, limits.maxSetupSteps, true);
   if (built.state.winner === me) {
-    const opener = begin(state, me, key, built.line);
+    const opener = takeKill(built);
     if (opener) return opener;
   }
-  const storeUp = w.storeReach > 0 && canRunStore(state, me, w);
   if (Math.max(race.damage, built.damage) + LETHAL_SLACK >= nearestFoeHp(state, me) || storeUp) {
-    const reach = storeUp ? STORE_PLIES : 0;
     const kill = findLethal(
       state,
       me,
@@ -4202,7 +4318,10 @@ export function chooseAction(
       { left: limits.lethalBudget * (storeUp ? 2 : 1) },
       w,
     );
-    if (kill) return kill;
+    // Not when the rollouts already found a kill that needs the front clear:
+    // an exhaustive kill from the same board is in the same class, and letting
+    // it through here walked straight past the weighing above.
+    if (kill && !(w.killRisk > 0 && gambles.length > 0)) return kill;
   }
 
   // Otherwise take the best turn the beam found, judged on where it leaves the
@@ -4252,7 +4371,11 @@ export function chooseAction(
 
   // Playing the reply out costs a turn of simulation apiece, which is why only
   // the handful of leaves gathered above get one.
-  const totals = ranked.map((leaf) => leafOutlook(state, leaf, me, w));
+  const firstGamble = ranked.length;
+  for (const g of gambles) ranked.push(g.leaf);
+  const totals = ranked.map((leaf, i) =>
+    i >= firstGamble ? gambles[i - firstGamble].value : leafOutlook(state, leaf, me, w),
+  );
   let pick = 0;
   for (let i = 1; i < ranked.length; i++) {
     if (totals[i] > totals[pick] + 1e-6) pick = i;

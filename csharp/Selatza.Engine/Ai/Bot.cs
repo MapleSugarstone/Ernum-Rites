@@ -130,11 +130,26 @@ public sealed class BotWeights
     /// never hold one, which is what the search did while a person refilled 108
     /// holes across the logged games.
     /// </summary>
-    /// Ships at 0. Over 292 replacement windows in the log the hole is filled
-    /// 49.3% of the time and flat in hand size, so a believed body is wrong
-    /// half the time whichever way it is set, and the pool's summon share
-    /// overstates a hand's because bodies get played out of it.
+    /// Ships at 0, measured: filling the unseen hand with bodies at the pool's
+    /// rate measured 239-359 on candy seed 1, ten points down over 600 paired
+    /// games, even though a real turn plays something from hand 97% of the time.
     public double HandBodies = 0;
+    /// <summary>
+    /// The share of a win a kill is worth when it only works while the front it
+    /// cleared stays clear. The leader is reachable only once every slot in
+    /// front of it is empty, and over 292 replacement windows in the log a hole
+    /// is filled 49.3% of the time, flat in hand size, so such a kill is a coin
+    /// flip rather than a kill. It is weighed against the best ordinary line
+    /// instead of short-circuiting, so a certain kill still wins at once and a
+    /// coin-flip kill wins only when the alternative is worse than a coin flip.
+    /// Zero takes every kill the search finds, which is what the bot did while
+    /// committing whole turns to kills a single replacement erased.
+    /// </summary>
+    /// Ships at 0.5, measured over 600 paired games a pool: 300-298 on candy,
+    /// 293-301 on random, 289-311 on evolved, pooling to 49.2% over 1792 games.
+    /// Inside noise against bots, and it declines game 52's phantom in both
+    /// engines while leaving game 58's Store kill and game 17's real kill alone.
+    public double KillRisk = 0.5;
     /// <summary>
     /// Share of a pool's worst case priced into each card the enemy holds
     /// unseen: the burst of the best cards their leader allows, measured
@@ -373,6 +388,14 @@ public static class Bot
     private const int StorePlies = 2;
     /// <summary>A win, scored above anything the evaluator can reach.</summary>
     private const double Win = 1e9;
+    /// <summary>
+    /// What a win is worth beside an outlook, for the one comparison that has
+    /// to weigh a certain board against an uncertain kill. Win is a sentinel at
+    /// 1e9 and swamps anything mixed with it, so an expectation built on it
+    /// always picks the kill whatever the odds. The analyzer prices a kill at
+    /// 200 for the same reason.
+    /// </summary>
+    private const double KillWorth = 200;
 
     /// <summary>Every opponent still playing. This engine seats two, so this is one.</summary>
     private static IEnumerable<int> LivingOpponents(GameState state, int me)
@@ -1571,16 +1594,16 @@ public static class Bot
         {
             w ??= BotWeights.Default;
             string blank = BlankCard()?.Id ?? p.Hand[0];
-            // A hole takes exactly one body to fill and the leader is only
-            // exposed once every slot in front of it is empty, so one refill
-            // stops every swing at it. One body stands in when the pool's
-            // summon share says they probably hold one; believing in more buys
-            // nothing here and prices their whole hand as a board.
+            // A believed hand of nothing but traps cannot play a card, so the
+            // turn the reply simulates for them never develops a board. Over
+            // the logged games a real turn plays a summon in 82% of them and
+            // something from hand in 97%, three cards a turn, against this
+            // model's none. Whether they can answer a hole is not this term's
+            // job: KillRisk asks that structurally, off the kill line's shape.
             int unseen = p.Hand.Count - hand.Count;
             var bodyPool = PoolBehind(p.LeaderCardId);
             double density = bodyPool.Total > 0 ? bodyPool.Summons / bodyPool.Total : 0;
-            double chance = unseen > 0 ? 1 - Math.Pow(1 - density, unseen) : 0;
-            int bodies = w.HandBodies > 0 && chance >= w.HandBodies ? 1 : 0;
+            int bodies = Math.Min(unseen, (int)Math.Round(unseen * density * w.HandBodies, MidpointRounding.AwayFromZero));
             string body = bodyPool.BlankBody?.Id ?? blank;
             for (int i = 0; i < unseen; i++) hand.Add(i < bodies ? body : blank);
             return hand;
@@ -3602,6 +3625,73 @@ public static class Bot
 
     /// <summary>Whether a reply leaves the seat that plays next a kill on the seat that made it.</summary>
     /// <summary>
+    /// The same table with one of their unseen cards believed to be a body,
+    /// used to play out what a kill looks like when they answer it.
+    /// </summary>
+    private static GameState WithRefill(GameState state, int me)
+    {
+        string? blank = BlankCard()?.Id;
+        if (blank is null) return state;
+        bool touched = false;
+        var s = state.Clone();
+        for (int seat = 0; seat < s.Players.Length; seat++)
+        {
+            if (seat == me) continue;
+            var p = s.Players[seat];
+            int at = p.Hand.IndexOf(blank);
+            string? body = PoolBehind(p.LeaderCardId).BlankBody?.Id;
+            if (at < 0 || body is null) continue;
+            p.Hand[at] = body;
+            touched = true;
+        }
+        return touched ? s : state;
+    }
+
+    /// <summary>
+    /// The board a kill leaves when it fails: the line played against an
+    /// opponent who fills the hole, stopping where it stops being legal. That
+    /// is the branch the pricing left out, and what game 52 actually looked
+    /// like.
+    /// </summary>
+    private static GameState FailureBoard(GameState state, List<GameAction> line, int me, BotWeights w)
+    {
+        var s = WithRefill(state, me);
+        foreach (var a in line)
+        {
+            var res = Engine.Apply(s, me, a);
+            if (!res.Ok) break;
+            s = Settle(res.State!, w);
+            if (s.IsOver) break;
+        }
+        return s;
+    }
+
+    /// <summary>
+    /// Whether a kill line only works while the front it cleared stays clear.
+    /// The leader is reachable only once every slot in front of it is empty, so
+    /// a line that swings at a leader they had bodies in front of has to clear
+    /// them first, and one replacement puts the leader back out of reach.
+    /// Structural on the line, so it does not care how many answers they hold.
+    /// </summary>
+    private static bool NeedsTheFrontClear(GameState from, List<GameAction> line, int me)
+    {
+        bool guarded = false;
+        foreach (var foe in LivingOpponents(from, me))
+        {
+            foreach (var slot in from.Players[foe].Slots)
+            {
+                if (slot is not null) guarded = true;
+            }
+        }
+        if (!guarded) return false;
+        foreach (var a in line)
+        {
+            if (a.Type == ActionType.DeclareAttack && a.Target.Kind == TargetKind.Leader) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
     /// Whether this seat can run a Store of its own now and carry what it
     /// costs. Asked because a Store buys a blocker away without spending an
     /// attack, which is the one thing the rollouts price wrong: they clear the
@@ -4004,7 +4094,7 @@ public static class Bot
         Peek(state, me);
         _rootSeat = me;
         _rootSet = true;
-        state = RedactTable(state, me);
+        state = RedactTable(state, me, w);
         EnsureKits(state, me, w);
         var reads = ReadTable(state, me);
         var lines = new List<string>();
@@ -4119,7 +4209,7 @@ public static class Bot
         Peek(state, me);
         _rootSeat = me;
         _rootSet = true;
-        state = RedactTable(state, me);
+        state = RedactTable(state, me, w);
         EnsureKits(state, me, w);
         var reads = ReadTable(state, me);
         var stand = new Leaf { State = state, Line = new List<GameAction>(), Score = Evaluate(state, me, w) };
@@ -4277,7 +4367,7 @@ public static class Bot
         Peek(state, me);
         _rootSeat = me;
         _rootSet = true;
-        var root = RedactTable(state, me);
+        var root = RedactTable(state, me, w);
         EnsureKits(root, me, w);
         var reads = ReadTable(root, me);
         var stand = new Leaf { State = root, Line = new List<GameAction>(), Score = Evaluate(root, me, w) };
@@ -4368,7 +4458,7 @@ public static class Bot
         Peek(state, me);
         _rootSeat = me;
         _rootSet = true;
-        state = RedactTable(state, me);
+        state = RedactTable(state, me, w);
 
         // Once a game: what the bot's own list can assemble, so the evaluator
         // can price a piece before the turn that uses it.
@@ -4417,21 +4507,42 @@ public static class Bot
         // A kill this turn beats anything the evaluator can score, and it is the
         // one thing the evaluator cannot see: a play that converts the whole
         // board into exactly enough damage reads as a small gain, not as a win.
-        var race = Burn(state, me, MaxBurnSteps, w);
-        if (race.State.Winner == me && Begin(state, me, key, race.Line) is { } finisher)
+        // A kill that only works while the front stays clear is a coin flip:
+        // they fill the hole about half the time. Rather than short-circuit on
+        // it, it is kept as a candidate worth its odds and weighed against the
+        // best ordinary line below.
+        // Both branches are priced: the half where the kill lands, and the half
+        // where they answer and the turn was spent on nothing.
+        var gambles = new List<Leaf>();
+        var gambleValues = new List<double>();
+        void Weigh(Rollout roll)
         {
-            return finisher;
+            var failed = FailureBoard(state, roll.Line, me, w);
+            double missed = LeafOutlook(state, new Leaf { State = failed, Line = roll.Line, Score = Evaluate(failed, me, w) }, me, w);
+            gambles.Add(new Leaf { State = roll.State, Line = roll.Line, Score = Win });
+            gambleValues.Add(w.KillRisk * KillWorth + (1 - w.KillRisk) * missed);
+        }
+        var race = Burn(state, me, MaxBurnSteps, w);
+        if (race.State.Winner == me)
+        {
+            if (w.KillRisk > 0 && NeedsTheFrontClear(state, race.Line, me)) Weigh(race);
+            else if (Begin(state, me, key, race.Line) is { } finisher) return finisher;
         }
         var built = Burn(state, me, MaxBurnSteps, w, MaxSetupSteps, patient: true);
-        if (built.State.Winner == me && Begin(state, me, key, built.Line) is { } assembled)
+        if (built.State.Winner == me)
         {
-            return assembled;
+            if (w.KillRisk > 0 && NeedsTheFrontClear(state, built.Line, me)) Weigh(built);
+            else if (Begin(state, me, key, built.Line) is { } assembled) return assembled;
         }
         bool storeUp = w.StoreReach > 0 && CanRunStore(state, me, w);
         if (Math.Max(race.Damage, built.Damage) + LethalSlack >= NearestFoeHp(state, me) || storeUp)
         {
             int budget = LethalBudget * (storeUp ? 2 : 1);
-            if (FindLethal(state, me, LethalDepth + (storeUp ? StorePlies : 0), ref budget, w) is { } kill) return kill;
+            // Not when the rollouts already found a kill that needs the front
+            // clear: an exhaustive kill from the same board is in the same
+            // class, and letting it through walked past the weighing above.
+            if (FindLethal(state, me, LethalDepth + (storeUp ? StorePlies : 0), ref budget, w) is { } kill
+                && !(w.KillRisk > 0 && gambles.Count > 0)) return kill;
         }
 
         // Otherwise take the best turn the beam found, judged on where it leaves
@@ -4484,11 +4595,13 @@ public static class Bot
 
         // Playing the reply out costs a turn of simulation apiece, which is why
         // only the handful of leaves gathered above get one.
+        int firstGamble = ranked.Count;
+        foreach (var g in gambles) ranked.Add(g);
         var totals = new double[ranked.Count];
         int pick = 0;
         for (int i = 0; i < ranked.Count; i++)
         {
-            totals[i] = LeafOutlook(state, ranked[i], me, w);
+            totals[i] = i >= firstGamble ? gambleValues[i - firstGamble] : LeafOutlook(state, ranked[i], me, w);
             if (totals[i] > totals[pick] + 1e-6) pick = i;
         }
 

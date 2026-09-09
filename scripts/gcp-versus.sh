@@ -74,17 +74,20 @@ STARTUP="${BUILD}/startup.sh"
     echo "mkdir -p /root/$(dirname "${f}")"
     echo "gcloud storage cp -r ${BUCKET}/sim-${TAG}/decks/$(basename "${f}") /root/$(dirname "${f}")/ >/dev/null 2>&1"
   done
-  echo "THREADS=\$(( \$(nproc) / ${#ARMS[@]} ))"
-  echo '[ "$THREADS" -lt 1 ] && THREADS=1'
-  echo 'PIDS=""'
+  # One arm at a time on every core, and each uploads the moment it finishes.
+  # Splitting the cores between arms and uploading at the end lost a whole
+  # batch on 2026-09-08: eleven arms on 128 cores put ~200 runnable threads on
+  # the machine, nothing had finished when the two-hour cap deleted it, and the
+  # upload only ran after the last arm. A run has to be stoppable at any moment
+  # with everything already done still retrievable.
+  echo "THREADS=\$(nproc)"
   n=0
   for arm in "${ARMS[@]}"; do
     n=$((n + 1))
     echo "echo \"arm ${n}: ${arm}\" > runs/arm-${n}.log"
-    echo "./sim/Selatza.Sim versus --games ${GAMES} --threads \$THREADS ${arm} >> runs/arm-${n}.log 2>&1 & PIDS=\"\$PIDS \$!\""
+    echo "./sim/Selatza.Sim versus --games ${GAMES} --threads \$THREADS ${arm} >> runs/arm-${n}.log 2>&1"
+    echo "gcloud storage cp runs/arm-${n}.log ${BUCKET}/versus-${TAG}/ >/dev/null 2>&1"
   done
-  echo 'wait $PIDS'
-  echo "gcloud storage cp runs/arm-*.log ${BUCKET}/versus-${TAG}/ > runs/upload.log 2>&1"
   echo 'touch runs/ALL_DONE'
   echo "gcloud storage cp runs/ALL_DONE ${BUCKET}/versus-${TAG}/ALL_DONE >/dev/null 2>&1"
 } > "${STARTUP}"
@@ -122,8 +125,20 @@ echo "created ${VM} as ${MACHINE} in ${ZONE}; watching ${BUCKET}/versus-${TAG}/ 
 # A describe can fail for a moment, so a machine is only given up on when
 # it has been missing or stopped three minutes in a row.
 MISSING=0
+PULLED=""
 while true; do
   sleep 60
+  # Arms upload as they finish, so they are pulled as they appear and a machine
+  # lost later still leaves every finished arm on disk here.
+  for GOT in $(gcloud storage ls "${BUCKET}/versus-${TAG}/arm-*.log" 2>/dev/null); do
+    case " ${PULLED} " in *" ${GOT} "*) continue;; esac
+    mkdir -p "${OUT}"
+    if gcloud storage cp "${GOT}" "${OUT}/" >/dev/null 2>&1; then
+      PULLED="${PULLED} ${GOT}"
+      echo "arm results in: $(basename "${GOT}")"
+      grep -aE "versus the|current wins|current [0-9]+ - other" "${OUT}/$(basename "${GOT}")" || true
+    fi
+  done
   if gcloud storage ls "${BUCKET}/versus-${TAG}/ALL_DONE" >/dev/null 2>&1; then DONE="yes"; break; fi
   STATUS=$(gcloud compute instances describe "${VM}" --zone "${ZONE}" --format="value(status)" 2>/dev/null || echo "GONE")
   if [ "${STATUS}" = "RUNNING" ] || [ "${STATUS}" = "PROVISIONING" ] || [ "${STATUS}" = "STAGING" ] || [ -z "${STATUS}" ]; then

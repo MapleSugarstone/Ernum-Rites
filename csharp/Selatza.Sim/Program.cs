@@ -57,7 +57,7 @@ public static class Program
             "explain" => Explain(ArgStr(args, "--replay", "012-sweetshop-store.json"), ArgInt(args, "--step", 0), ArgStr(args, "--set", ""), ArgStr(args, "--then", "")),
             "analyze" => Analyze(ArgStr(args, "--replay", "replays/human"), ArgInt(args, "--seat", -1), ArgStr(args, "--set", ""),
                 Flag2(args, "--deep"), ArgInt(args, "--top", 12), Flag2(args, "--oracle")),
-            "decide" => Decide(ArgStr(args, "--replay", "012-sweetshop-store.json"), ArgInt(args, "--seat", -1)),
+            "decide" => Decide(ArgStr(args, "--replay", "012-sweetshop-store.json"), ArgInt(args, "--seat", -1), ArgStr(args, "--set", "")),
             "panel" => Panel(games, ArgInt(args, "--threads", Environment.ProcessorCount),
                 ArgStr(args, "--decks", "random"), ArgStr(args, "--set", ""), ArgInt(args, "--seed", 1)),
             "verify" => Verify(),
@@ -965,8 +965,9 @@ public static class Program
     /// recorded action is applied after each decision, so both engines walk
     /// the same game whatever they would have played.
     /// </summary>
-    private static int Decide(string file, int seat)
+    private static int Decide(string file, int seat, string set = "")
     {
+        var w = WeightsFrom(set);
         var path = File.Exists(file) ? file : Path.Combine(Corpus.Directory() ?? "replays", file);
         var replay = Replay.Load(path);
         var d = replay.Decks;
@@ -977,7 +978,7 @@ public static class Program
         for (int i = 0; i < replay.Steps.Count; i++)
         {
             var step = replay.Steps[i];
-            var choice = Bot.ChooseAction(state, step.Actor);
+            var choice = Bot.ChooseAction(state, step.Actor, w);
             if (seat < 0 || step.Actor == seat) Console.WriteLine($"{i} {step.Actor} {Bot.DescribeOne(choice)}");
             var res = Engine.Apply(state, step.Actor, Replays.ParseAction(step.Action));
             if (!res.Ok)

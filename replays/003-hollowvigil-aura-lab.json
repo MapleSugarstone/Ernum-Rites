@@ -44,11 +44,11 @@
     {"actor": 1, "action": {"type":"DECLINE_FLIP"}, "digest": "cca5227d3039f346"},
     {"actor": 0, "action": {"type":"REPLACE_SUMMON","handIndex":1,"targets":[]}, "digest": "b9bcf54562057eec"},
     {"actor": 1, "action": {"type":"END_TURN"}, "digest": "c845698a4d080bf7"},
-    {"actor": 0, "action": {"type":"DECLARE_ATTACK","source":{"kind":"leader","player":0,"index":0},"target":{"kind":"summon","player":1,"index":0}}, "digest": "eb7d4067bfd4a915"},
-    {"actor": 1, "action": {"type":"DECLINE_FLIP"}, "digest": "b703fc5c1c36f95a"},
-    {"actor": 0, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":0,"index":0},"target":{"kind":"leader","player":1,"index":0}}, "digest": "d07de743c66729a0"}
+    {"actor": 0, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":0,"index":0},"target":{"kind":"summon","player":1,"index":0}}, "digest": "b3e69c489e7cabca"},
+    {"actor": 1, "action": {"type":"DECLINE_FLIP"}, "digest": "be115ef8fe5f7036"},
+    {"actor": 0, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":0,"index":1},"target":{"kind":"leader","player":1,"index":0}}, "digest": "d73ce3737b3416d0"}
   ],
-  "finalDigest": "d07de743c66729a0",
+  "finalDigest": "d73ce3737b3416d0",
   "winner": 0,
   "winReason": "Aura Lab (P2) lost their leader."
 }

@@ -42,11 +42,11 @@
     {"actor": 1, "action": {"type":"CAST_SPELL","handIndex":0,"targets":[{"kind":"summon","player":0,"index":1}]}, "digest": "cc8d8ab6be6a8620"},
     {"actor": 0, "action": {"type":"DECLINE_FLIP"}, "digest": "52c747ae7c8398f8"},
     {"actor": 1, "action": {"type":"END_TURN"}, "digest": "982d8f4ec1708939"},
-    {"actor": 0, "action": {"type":"DECLARE_ATTACK","source":{"kind":"leader","player":0,"index":0},"target":{"kind":"summon","player":1,"index":0}}, "digest": "204d4d890208a554"},
-    {"actor": 0, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":0,"index":0},"target":{"kind":"leader","player":1,"index":0}}, "digest": "9ebcc650343e3406"},
-    {"actor": 0, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":0,"index":2},"target":{"kind":"leader","player":1,"index":0}}, "digest": "db4f7dabdcb3de00"}
+    {"actor": 0, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":0,"index":2},"target":{"kind":"summon","player":1,"index":0}}, "digest": "55c07bd81c995f74"},
+    {"actor": 0, "action": {"type":"DECLARE_ATTACK","source":{"kind":"summon","player":0,"index":0},"target":{"kind":"leader","player":1,"index":0}}, "digest": "7fee38ef35888686"},
+    {"actor": 0, "action": {"type":"DECLARE_ATTACK","source":{"kind":"leader","player":0,"index":0},"target":{"kind":"leader","player":1,"index":0}}, "digest": "1f4386bf9f5c1e6c"}
   ],
-  "finalDigest": "db4f7dabdcb3de00",
+  "finalDigest": "1f4386bf9f5c1e6c",
   "winner": 0,
   "winReason": "Vanilla Dummies (P2) lost their leader."
 }

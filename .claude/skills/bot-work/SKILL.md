@@ -37,6 +37,17 @@ every pool. The long-form record is in `claude-notes/ai-audit.md` and
   and report each machine event unprompted; a meta check gets a check every
   thirty minutes. The maintainer should never have to ask whether a machine
   was lost.
+- Cloud work is small, single seed, and stoppable at any moment with everything
+  already finished still retrievable. One seed, a short leader roster
+  (`runs/roster-lite2.txt` is 68 leaders against the full pool's 186), and as
+  few arms as answer the question. Arms run one at a time on every core and
+  upload as each finishes, so a machine lost at any point still leaves its
+  finished arms in the bucket. An instance carries `--max-run-duration=2h`
+  which GCP enforces from outside, so `shutdown -c` inside the guest cannot
+  extend it: a batch that has not produced anything by then is simply gone.
+  On 2026-09-08 eleven arms split across 128 cores put about 200 runnable
+  threads on the machine, nothing had finished in two hours, and the whole
+  batch was lost because the upload ran only after the last arm.
 - A run and its notes must let another session, on another model, pick up
   where this one left off: the run state goes to memory with the exact
   commands, and anything long-lived runs detached from the session.

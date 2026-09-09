@@ -75,7 +75,7 @@ console.log(
   `step ${stop} turn ${state.turn} seat ${seat}; recorded ${JSON.stringify(replay.steps[stop].action)}; chose ${JSON.stringify(actionToWire(pick))}`,
 );
 
-const root = redactTable(state, seat);
+const root = redactTable(state, seat, w);
 for (let side = 0; side < root.players.length; side++) {
   const p = root.players[side];
   const body = (x: { cardId: string; sapped: boolean } | null) =>
