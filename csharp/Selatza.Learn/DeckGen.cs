@@ -418,6 +418,49 @@ public static class DeckGen
         return Expand(counts, size, pool, rng);
     }
 
+    /// <summary>
+    /// Reads a folder of hand-written deck files, one deck per file: a
+    /// <c>leader &lt;id&gt;</c> line and then a <c>&lt;count&gt; &lt;card id&gt;</c>
+    /// line per card, with <c>#</c> starting a comment. The file name is the
+    /// deck's name on the ladder. Used for decks a person built, played beside
+    /// the evolving field as a fixed reference.
+    /// </summary>
+    public static List<(string Name, string LeaderId, List<string> Cards)> ReadFolder(string dir)
+    {
+        var outList = new List<(string, string, List<string>)>();
+        if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir)) return outList;
+        foreach (var path in Directory.GetFiles(dir, "*.txt").OrderBy(p => p, StringComparer.Ordinal))
+        {
+            string? leader = null;
+            var cards = new List<string>();
+            foreach (var raw in File.ReadAllLines(path))
+            {
+                var line = raw.Split('#')[0].Trim();
+                if (line.Length == 0) continue;
+                // A card id may hold spaces ("p2-ash demon"), so only the first
+                // token is ever a keyword or a count and the rest is the id.
+                int cut = line.IndexOfAny(new[] { ' ', '\t' });
+                string head = cut < 0 ? line : line[..cut];
+                string rest = cut < 0 ? "" : line[(cut + 1)..].Trim();
+                if (head.Equals("leader", StringComparison.OrdinalIgnoreCase) && rest.Length > 0)
+                {
+                    leader = rest;
+                }
+                else if (rest.Length > 0 && int.TryParse(head, out int n))
+                {
+                    for (int i = 0; i < n; i++) cards.Add(rest);
+                }
+                else
+                {
+                    cards.Add(line);
+                }
+            }
+            if (leader is null || cards.Count == 0) continue;
+            outList.Add((Path.GetFileNameWithoutExtension(path), leader, cards));
+        }
+        return outList;
+    }
+
     /// <summary>Why a deck is illegal, or null when it is fine. A size alone is exact; two are a range.</summary>
     public static string? Validate(string leaderId, IReadOnlyList<string> cards, int minSize = 0, int maxSize = 0)
     {

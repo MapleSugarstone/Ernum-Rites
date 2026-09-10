@@ -65,6 +65,16 @@ public sealed class Agent
     public int RoundLosses { get; set; }
     public int Mutations { get; set; }
 
+    /// <summary>
+    /// Surprise accumulated since this deck last mutated, and the games it
+    /// covers. Raw wins and losses punish a deck for meeting a stronger one,
+    /// which is the wrong signal: what matters is whether it did better or
+    /// worse than its own rating predicted. Reset every time the deck mutates.
+    /// </summary>
+    public double WindowSurprise { get; set; }
+
+    public int WindowGames { get; set; }
+
     /// <summary>Sum and sum of squares of (result - expected), one entry per game.</summary>
     public double SurpriseSum { get; set; }
 

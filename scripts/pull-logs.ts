@@ -55,6 +55,7 @@ interface Row {
   winner: number;
   winReason: string | null;
   turns: number;
+  difficulty: 'easy' | 'hard' | null;
 }
 
 let pulled = 0;
@@ -78,7 +79,7 @@ for (;;) {
       finalDigest: '',
       winner: row.winner,
       winReason: row.winReason,
-      log: { id: row.id, day: row.day, kind: row.kind, version: row.version, build: row.build, cards: row.cards, botSeat: row.botSeat, turns: row.turns },
+      log: { id: row.id, day: row.day, kind: row.kind, version: row.version, build: row.build, cards: row.cards, botSeat: row.botSeat, turns: row.turns, difficulty: row.difficulty ?? null },
     };
     writeFileSync(join(dir, `${String(row.id).padStart(6, '0')}-${row.kind}-${row.day}.json`), JSON.stringify(replay));
     after = Math.max(after, row.id);

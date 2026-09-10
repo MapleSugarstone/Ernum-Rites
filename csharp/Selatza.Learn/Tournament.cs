@@ -34,7 +34,18 @@ public sealed class TournamentConfig
     /// worth only one leader could be found. At 0 additions are the
     /// population's opinion alone, which is the behaviour before this existed.
     /// </summary>
-    public double LocalAddWeight { get; set; } = 0.75;
+    public double LocalAddWeight { get; set; } = 0;
+
+    /// <summary>
+    /// How far a card is protected from removal while its own record is still
+    /// short. <see cref="CardStats.Lift"/> divides by plays plus a shrink, so a
+    /// card added last round scores near zero however well it did, and the drop
+    /// rule takes the minimum. Additions carry an exploration bonus and removals
+    /// carried none, so exploration was undone as fast as it happened and no
+    /// card ever survived long enough to be judged. At 0 removals rank on the
+    /// bare score, which is the behaviour before this existed.
+    /// </summary>
+    public double DropGrace { get; set; } = 0;
 
     /// <summary>
     /// How hard an agent's own record of a colour steers what it adds. A card
@@ -42,10 +53,43 @@ public sealed class TournamentConfig
     /// deck cannot learn that a whole colour is stranded in its hand. At 0 the
     /// colour a card prints does not affect whether it is added.
     /// </summary>
-    public double ColorAffinity { get; set; } = 0.5;
+    public double ColorAffinity { get; set; } = 0;
+
+    /// <summary>
+    /// The most cards a deck may swap in one round, whatever its losing margin.
+    /// Mutation size scaled with how badly a deck lost, so the decks that most
+    /// needed to search were shaken hardest: measured over lite3, win rate and
+    /// swap count correlate at -0.98, and a deck at 45 percent rewrote about 8
+    /// percent of itself a round and turned over completely every thirteen.
+    /// That is faster than its own record of a card can accumulate, so it could
+    /// never attribute a result to a change. At 0 the only limit is a quarter of
+    /// the deck, which is the behaviour before this existed.
+    /// </summary>
+    public int SwapCap { get; set; }
+
+    /// <summary>
+    /// Games a deck plays before it is judged, when judging on rating movement
+    /// rather than on raw wins and losses. Raw results punish a deck for being
+    /// paired against a stronger one; the surprise (result minus what the two
+    /// ratings predicted) does not, so a deck losing to who it should lose to
+    /// is left alone and only a deck losing to its own peers is rebuilt. The
+    /// swap count follows the size of the shortfall, which self-limits because
+    /// surprise per game is bounded. At 0 the deck is judged every  round on wins and
+    /// losses, which is the behaviour before this existed.
+    /// </summary>
+    public int MutateWindow { get; set; }
 
     /// <summary>Weakest agents handed a fresh leader and deck at each checkpoint.</summary>
     public int ReseedWorst { get; set; }
+
+    /// <summary>
+    /// A folder of hand-written deck files played beside the evolving field.
+    /// They are never mutated and never reseeded, but their rating moves, so
+    /// where one lands against the agent evolving the same leader is what a
+    /// list a person built is worth against one the tournament found. Empty
+    /// means none.
+    /// </summary>
+    public string ReferenceDeckDir { get; set; } = "";
 
     /// <summary>
     /// Hand out leaders so every colour identity in the pool is represented
@@ -209,6 +253,29 @@ public sealed class Tournament
             });
         }
 
+        // Hand-built decks sit in _all but never in _agents, so the round plays
+        // them and MutateLosers and ReseedWorst cannot touch them. Their rating
+        // moves, unlike an anchor's, because the point is where they land.
+        int human = 0;
+        foreach (var (name, leader, cards) in DeckGen.ReadFolder(_cfg.ReferenceDeckDir))
+        {
+            var bad = DeckGen.Validate(leader, cards);
+            if (bad is not null)
+            {
+                Console.WriteLine($"reference deck {name} skipped: {bad}");
+                continue;
+            }
+            _all.Add(new Agent
+            {
+                Name = $"hum{human++}",
+                LeaderId = leader,
+                Deck = cards,
+                Brain = _brains.Count > 0 ? _brains[0] : null,
+                Config = _cfg.Agent.Clone(),
+                Intel = _cfg.Intel.Clone(),
+            });
+        }
+
         int slots = Math.Max(1, _all.Count / 2 + 1);
         foreach (var b in _brains) b.EnsureReplicas(slots, _cfg.Seed * 31 + 7);
     }
@@ -358,6 +425,10 @@ public sealed class Tournament
         a.SurpriseSq += surprise * surprise;
         b.SurpriseSum -= surprise;
         b.SurpriseSq += surprise * surprise;
+        a.WindowSurprise += surprise;
+        b.WindowSurprise -= surprise;
+        a.WindowGames++;
+        b.WindowGames++;
         if (!a.Frozen) a.Elo = Elo.Update(ra, rb, scoreA, a.Games);
         if (!b.Frozen) b.Elo = Elo.Update(rb, ra, 1 - scoreA, b.Games);
 
@@ -474,16 +545,55 @@ public sealed class Tournament
         foreach (var a in _agents)
         {
             if (a.Frozen) continue;
-            if (a.RoundLosses <= a.RoundWins) continue;
-            int swaps = Math.Min(_cfg.MutateOnLoss * (a.RoundLosses - a.RoundWins), a.Deck.Count / 4);
+            int swaps;
+            if (_cfg.MutateWindow > 0)
+            {
+                // Judge on rating movement over a window, not on one round of raw
+                // results. A deck holding its rating is doing what its strength says
+                // it should, however many games it lost.
+                if (a.WindowGames < _cfg.MutateWindow) continue;
+                double shortfall = -a.WindowSurprise;
+                a.WindowSurprise = 0;
+                a.WindowGames = 0;
+                if (shortfall <= 0) continue;
+                swaps = (int)Math.Round(_cfg.MutateOnLoss * shortfall);
+                swaps = Math.Min(swaps, a.Deck.Count / 4);
+            }
+            else
+            {
+                if (a.RoundLosses <= a.RoundWins) continue;
+                swaps = Math.Min(_cfg.MutateOnLoss * (a.RoundLosses - a.RoundWins), a.Deck.Count / 4);
+            }
+            if (_cfg.SwapCap > 0) swaps = Math.Min(swaps, _cfg.SwapCap);
+            if (swaps <= 0) continue;
             var mine = a.Stats;
             var colours = _cfg.ColorAffinity > 0 ? mine.ColorScores() : null;
-            a.Deck = DeckGen.Mutate(a.LeaderId, a.Deck, swaps,
-                card => mine.Score(card),
+                        a.Deck = DeckGen.Mutate(a.LeaderId, a.Deck, swaps,
+                card => DropScore(card, mine),
                 card => AddScore(card, mine, colours, totalPlays),
                 _rng, _cfg.Deck.Size, _cfg.Deck.Largest);
             a.Mutations += swaps;
         }
+    }
+
+    /// <summary>
+    /// What a losing deck weighs when it picks a card to cut. A card the agent
+    /// has barely played is held back from the bottom of the ranking, so a
+    /// pairing that only pays off in some games survives long enough for the
+    /// agent's own record to price it.
+    /// </summary>
+    private double DropScore(int card, CardStats mine)
+    {
+        double score = mine.Score(card);
+        if (_cfg.DropGrace <= 0) return score;
+        // Offsets the shrink and nothing more. Lift divides by plays plus
+        // Shrink, so a card with no record sits at zero while the cards around
+        // it sit above, and the drop rule takes the minimum. This lifts a new
+        // card to the middle of that spread and decays as its record fills, so
+        // it buys time to be judged without ever outranking evidence. Scaling
+        // it by the agent's own total plays instead made a barely-played card
+        // beat every established one and the deck stopped cutting anything.
+        return score + _cfg.DropGrace * CardStats.Shrink / (mine.Plays(card) + CardStats.Shrink);
     }
 
     /// <summary>

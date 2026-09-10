@@ -56,6 +56,18 @@ if [ -f "${ROSTER}" ]; then
   echo "roster ${ROSTER}: ${COUNT} leaders"
 fi
 
+# Decks a person built, played frozen beside the evolving field. Same idea as
+# the roster: the folder is named for the tag, so a keeper relaunch keeps them.
+REFDECKS="runs/refdecks-${TAG}"
+REFFLAG=""
+if [ -d "${REFDECKS}" ]; then
+  REFCOUNT=$(find "${REFDECKS}" -name '*.txt' | wc -l | tr -d ' ')
+  if [ "${REFCOUNT}" -gt 0 ]; then
+    REFFLAG="--reference-decks /root/refdecks-${TAG}"
+    echo "reference decks ${REFDECKS}: ${REFCOUNT}"
+  fi
+fi
+
 cleanup() {
   echo "deleting ${VM}"
   gcloud compute instances delete "${VM}" --zone "${ZONE}" --quiet >/dev/null 2>&1 || true
@@ -70,6 +82,10 @@ echo "staging the build in ${BUCKET}"
 gcloud storage rm -r "${BUCKET}/train-${TAG}" >/dev/null 2>&1 || true
 gcloud storage rm "${BUCKET}/runs-${TAG}/ALL_DONE" >/dev/null 2>&1 || true
 gcloud storage cp -r "${BUILD}/train" "${BUCKET}/train-${TAG}/" >/dev/null
+if [ -n "${REFFLAG}" ]; then
+  gcloud storage rm -r "${BUCKET}/refdecks-${TAG}" >/dev/null 2>&1 || true
+  gcloud storage cp -r "${REFDECKS}" "${BUCKET}/refdecks-${TAG}/" >/dev/null
+fi
 # Only the seed folders this run names. A pattern once matched a stale
 # folder from another tag whose name happened to fit (tag meta2 seed 1 and
 # tag meta seed 21 are both runs/meta21) and offered it as a resume.
@@ -90,6 +106,9 @@ STARTUP="${BUILD}/startup.sh"
   echo 'mkdir -p runs'
   echo "gcloud storage cp -r ${BUCKET}/train-${TAG}/train /root/ >/dev/null 2>&1"
   echo 'chmod +x /root/train/Selatza.Train'
+  if [ -n "${REFFLAG}" ]; then
+    echo "gcloud storage cp -r ${BUCKET}/refdecks-${TAG}/refdecks-${TAG} /root/ >/dev/null 2>&1"
+  fi
   # Only onto a fresh disk. After a pre-emption the disk holds a newer
   # snapshot than the bucket, and copying over it once cost ninety rounds.
   echo "[ -f runs/${TAG}${SEED0}/snapshot.bin ] || gcloud storage cp -r ${BUCKET}/runs-${TAG}/* /root/runs/ >/dev/null 2>&1 || true"
@@ -109,7 +128,7 @@ STARTUP="${BUILD}/startup.sh"
   # a fresh log beside the earlier one, so the db command takes a pattern.
   echo 'PIDS=""'
   for s in $(seq "${SEED0}" "${SEED1}"); do
-    echo "./train/Selatza.Train train --no-net ${POOL} --rounds ${ROUNDS} --games 6 --seed ${s} --threads \$THREADS --out runs/${TAG}${s} --log-games runs/${TAG}${s}/games.szgl >> runs/${TAG}${s}.log 2>&1 & PIDS=\"\$PIDS \$!\""
+    echo "./train/Selatza.Train train --no-net ${POOL} ${REFFLAG} --rounds ${ROUNDS} --games 6 --seed ${s} --threads \$THREADS --out runs/${TAG}${s} --log-games runs/${TAG}${s}/games.szgl >> runs/${TAG}${s}.log 2>&1 & PIDS=\"\$PIDS \$!\""
   done
   echo 'wait $PIDS'
   echo 'DBS=""'

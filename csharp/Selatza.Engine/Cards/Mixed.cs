@@ -98,6 +98,42 @@ public static class Mixed
 
         // --- Fish and Machine ------------------------------------------------
         Bg.Summon(2, "robotfish", "Robotfish", F(Faction.Fish, Faction.Machine), str: 2, hp: 3,
+            text: "Has +1 attack for each other summon you control.",
+            triggers: new Triggers
+            {
+                StrengthBonus = a =>
+                {
+                    if (a.Source is null || a.Summon.Uid != a.Source.Uid) return 0;
+                    int n = 0;
+                    foreach (var s in a.State.Players[a.Controller].Slots)
+                    {
+                        if (s is not null && s.Uid != a.Summon.Uid) n++;
+                    }
+                    return n;
+                },
+            },
+            powers: Powers(new Power
+            {
+                Name = "Assembly Line",
+                Cost = new Cost(F: 1, R: 1),
+                Text = "Fill an empty slot with a Minnowling, then heal 1 debt.",
+                SapSelf = true,
+                Effect = c =>
+                {
+                var slot = c.EmptySlot(c.Me);
+                if (slot is null)
+                {
+                    c.Log("No room on the line.");
+                    return;
+                }
+                c.PutSummon(c.Me, "f1-basicfish", slot.Value, 0, Color.F,
+                    Registry.Card("f1-basicfish").Hp, asPrinted: true);
+                c.ClearDebt(c.Me, 1);
+                },
+            })),
+
+        Bg.Summon(3, "machineblue", "Machine Blue", F(Faction.Machine, Faction.Fish),
+            str: 2, hp: 3,
             text: "",
             powers: Powers(new Power
             {
@@ -117,41 +153,6 @@ public static class Mixed
                 {
                     c.Catch(c.Target(0), 1);
                     if (c.Self is { } me) c.Shield(me, 1);
-                },
-            })),
-
-        Bg.Summon(3, "machineblue", "Machine Blue", F(Faction.Machine, Faction.Fish),
-            str: 2, hp: 3,
-            text: "Has +1 attack for each other summon you control.",
-            triggers: new Triggers
-            {
-                StrengthBonus = a =>
-                {
-                    if (a.Source is null || a.Summon.Uid != a.Source.Uid) return 0;
-                    int n = 0;
-                    foreach (var s in a.State.Players[a.Controller].Slots)
-                    {
-                        if (s is not null && s.Uid != a.Summon.Uid) n++;
-                    }
-                    return n;
-                },
-            },
-            powers: Powers(new Power
-            {
-                Name = "Assembly Line",
-                Cost = new Cost(F: 1, R: 1),
-                Text = "Fill an empty slot with a Minnowling.",
-                SapSelf = true,
-                Effect = c =>
-                {
-                var slot = c.EmptySlot(c.Me);
-                if (slot is null)
-                {
-                    c.Log("No room on the line.");
-                    return;
-                }
-                c.PutSummon(c.Me, "f1-basicfish", slot.Value, 0, Color.F,
-                    Registry.Card("f1-basicfish").Hp, asPrinted: true);
                 },
             })),
 

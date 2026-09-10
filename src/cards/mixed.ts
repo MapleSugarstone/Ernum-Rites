@@ -119,6 +119,43 @@ export const mixedCards: CardDef[] = [
   bg.summon(2, 'robotfish', 'Robotfish', ['Fish', 'Machine'], {
     str: 2,
     hp: 3,
+    text: 'Has +1 attack for each other summon you control.',
+    triggers: {
+      strengthBonus: ({ state, controller, summon, source }) => {
+        if (!source || summon.uid !== source.uid) return 0;
+        let n = 0;
+        for (const s of state.players[controller].slots) {
+          if (s && s.uid !== summon.uid) n++;
+        }
+        return n;
+      },
+    },
+    powers: [
+      {
+        name: 'Assembly Line',
+        cost: { F: 1, R: 1 },
+        text: 'Fill an empty slot with a Minnowling, then heal 1 debt.',
+        sapSelf: true,
+        effect: (c) => {
+          const slot = c.emptySlot(c.me);
+          if (slot === null) {
+            c.log('No room on the line.');
+            return;
+          }
+          c.putSummon(c.me, 'f1-basicfish', slot, {
+            strength: 0,
+            color: 'F',
+            hp: card('f1-basicfish').hp ?? 1,
+            asPrinted: true,
+          });
+          c.clearDebt(c.me, 1);
+        },
+      },
+    ],
+  }),
+  bg.summon(3, 'machineblue', 'Machine Blue', ['Machine', 'Fish'], {
+    str: 2,
+    hp: 3,
     powers: [
       {
         name: 'Filter',
@@ -138,42 +175,6 @@ export const mixedCards: CardDef[] = [
           c.catch(c.targets[0], 1);
           const me = selfRef(c);
           if (me) c.shield(me, 1);
-        },
-      },
-    ],
-  }),
-  bg.summon(3, 'machineblue', 'Machine Blue', ['Machine', 'Fish'], {
-    str: 2,
-    hp: 3,
-    text: 'Has +1 attack for each other summon you control.',
-    triggers: {
-      strengthBonus: ({ state, controller, summon, source }) => {
-        if (!source || summon.uid !== source.uid) return 0;
-        let n = 0;
-        for (const s of state.players[controller].slots) {
-          if (s && s.uid !== summon.uid) n++;
-        }
-        return n;
-      },
-    },
-    powers: [
-      {
-        name: 'Assembly Line',
-        cost: { F: 1, R: 1 },
-        text: 'Fill an empty slot with a Minnowling.',
-        sapSelf: true,
-        effect: (c) => {
-          const slot = c.emptySlot(c.me);
-          if (slot === null) {
-            c.log('No room on the line.');
-            return;
-          }
-          c.putSummon(c.me, 'f1-basicfish', slot, {
-            strength: 0,
-            color: 'F',
-            hp: card('f1-basicfish').hp ?? 1,
-            asPrinted: true,
-          });
         },
       },
     ],

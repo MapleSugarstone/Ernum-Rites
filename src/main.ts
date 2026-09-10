@@ -4983,7 +4983,7 @@ function deckCardHtml(d: StarterDeck): string {
 function renderRules(): string {
   const sec = (n: string, body: string) => `<p class="rule"><b>${n}</b>${body}</p>`;
   return `<div class="setup rulesview"><div class="inner">
-    <header class="platebar"><img class="sigil" src="${BASE}favicon.png" alt="" width="63" height="44"><h1>Rules</h1></header>
+    <header class="platebar"><img class="sigil" src="${BASE}sigil.png" alt="" width="63" height="44"><h1>Rules</h1></header>
     <button class="modetile back" data-act="btn" data-cmd="to-setup">Back to menu</button>
 
     <h2>Summary</h2>
@@ -5201,7 +5201,7 @@ function renderOnline(): string {
           ? '<p class="lobbynote">Joining the room&hellip;</p>'
           : '<p class="lobbyerr lobbystatus"></p>';
   return `<div class="setup onlineview"><div class="inner">
-    <header class="platebar"><img class="sigil" src="${BASE}favicon.png" alt="" width="63" height="44"><h1>Online</h1></header>
+    <header class="platebar"><img class="sigil" src="${BASE}sigil.png" alt="" width="63" height="44"><h1>Online</h1></header>
     <div class="lobby">
       <label class="lobbyrow"><span>Name</span>
         <input class="lobbyinput" data-act="oname" value="${esc(o.name)}" maxlength="24"
@@ -5316,7 +5316,7 @@ function renderSetup(): string {
   const level = (l: BotLevel, label: string) =>
     `<button data-act="btn" data-cmd="level:${l}" class="seattile${ui.botLevel === l ? ' on' : ''}">${label}</button>`;
   return `<div class="setup menuview"><div class="inner">
-    <header class="platebar"><img class="sigil" src="${BASE}favicon.png" alt="" width="63" height="44"><h1>Ernum Rites</h1></header>
+    <header class="platebar"><img class="sigil" src="${BASE}sigil.png" alt="" width="63" height="44"><h1>Ernum Rites</h1></header>
     <div class="modes">
       <button class="modetile on" data-act="btn" data-cmd="mode:${ui.setupMode}">Local Play</button>
       <button class="modetile" ${
