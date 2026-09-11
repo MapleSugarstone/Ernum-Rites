@@ -79,6 +79,51 @@ public sealed class TournamentConfig
     /// </summary>
     public int MutateWindow { get; set; }
 
+    /// <summary>
+    /// Pair every agent with a uniformly random opponent instead of a
+    /// rating neighbour. Neighbour pairing makes ratings converge faster, but a
+    /// deck only ever meets its own tier: one that beats the field leader and
+    /// loses to the mid-table never gets to show the first half, and the
+    /// ranking it earns is a local measurement. Random pairing costs the same
+    /// games per round and makes every matchup equally likely, so over a long
+    /// run each agent meets each opponent many times. It only makes sense
+    /// beside <see cref="MutateWindow"/>: once opponents are drawn from the
+    /// whole field, raw wins and losses say nothing without weighing who they
+    /// were against.
+    /// </summary>
+    public bool RandomPairing { get; set; }
+
+    /// <summary>
+    /// How far an agent's rating may fall below its own best before its deck is
+    /// restored to the one it held at that peak. Mutation has no memory, so a
+    /// deck that mutates itself worse keeps mutating from the worse version.
+    /// At 0 nothing is ever restored, which is the behaviour before this
+    /// existed.
+    /// </summary>
+    public double ElitismSlack { get; set; }
+
+    /// <summary>
+    /// Frozen copies of past leaders of the ladder, played alongside the live
+    /// field. A population that only ever meets its current self can forget how
+    /// to beat something it already beat and cycle: A gives way to B, B to C,
+    /// and C loses to A again. Keeping champions around is the usual answer.
+    /// The slots exist from the first round so the field size never changes,
+    /// and the oldest is overwritten each time a new champion is taken.
+    /// At 0 there is no archive.
+    /// </summary>
+    public int HallOfFame { get; set; }
+
+    /// <summary>
+    /// A folder of decks to start from instead of generating random ones, in
+    /// the same format <see cref="ReferenceDeckDir"/> reads. Each is dealt to an
+    /// agent leading the same card, in file order, so a leader with several
+    /// files keeps several distinct decks. An agent whose leader has no file
+    /// still gets a random deck. Continuing from a finished run asks whether
+    /// this build improves a converged field rather than spending hundreds of
+    /// rounds re-deriving it.
+    /// </summary>
+    public string SeedDeckDir { get; set; } = "";
+
     /// <summary>Weakest agents handed a fresh leader and deck at each checkpoint.</summary>
     public int ReseedWorst { get; set; }
 
@@ -173,6 +218,9 @@ public sealed class Tournament
     private CardStats _global = new();
     private readonly GameShape _shape = new();
     private int _round;
+    private int _hallNext;
+    /// <summary>Head to head: wins and games between each ordered pair of agents.</summary>
+    private readonly Dictionary<(string A, string B), (double Score, int Games)> _head = new();
 
     public Tournament(TournamentConfig cfg)
     {
@@ -222,7 +270,7 @@ public sealed class Tournament
             // which is five to ten times as many games for the same minute.
             var brain = _brains.Count > 0 ? _brains[i % _brains.Count] : null;
             string leader = leaders[i];
-            var deck = DeckGen.Random(leader, _cfg.Deck, _rng);
+            var deck = TakeSeedDeck(leader) ?? DeckGen.Random(leader, _cfg.Deck, _rng);
             var agent = new Agent
             {
                 Name = $"a{i:D2}",
@@ -276,6 +324,21 @@ public sealed class Tournament
             });
         }
 
+        for (int i = 0; i < _cfg.HallOfFame; i++)
+        {
+            var seed = starters[i % starters.Length];
+            _all.Add(new Agent
+            {
+                Name = $"old{i}",
+                LeaderId = seed.LeaderId,
+                Deck = seed.Cards.ToList(),
+                Brain = null,
+                ReferenceBot = true,
+                Frozen = true,
+                Intel = IntelConfig.Blind,
+            });
+        }
+
         int slots = Math.Max(1, _all.Count / 2 + 1);
         foreach (var b in _brains) b.EnsureReplicas(slots, _cfg.Seed * 31 + 7);
     }
@@ -290,9 +353,20 @@ public sealed class Tournament
     {
         var order = new List<int>();
         for (int i = 0; i < _all.Count; i++) order.Add(i);
-        var jitter = new double[_all.Count];
-        for (int i = 0; i < _all.Count; i++) jitter[i] = _all[i].Elo + _rng.Next(60f);
-        order.Sort((a, b) => jitter[b].CompareTo(jitter[a]));
+        if (_cfg.RandomPairing)
+        {
+            for (int i = order.Count - 1; i > 0; i--)
+            {
+                int j = _rng.NextInt(i + 1);
+                (order[i], order[j]) = (order[j], order[i]);
+            }
+        }
+        else
+        {
+            var jitter = new double[_all.Count];
+            for (int i = 0; i < _all.Count; i++) jitter[i] = _all[i].Elo + _rng.Next(60f);
+            order.Sort((a, b) => jitter[b].CompareTo(jitter[a]));
+        }
 
         var pairs = new List<(int, int)>();
         for (int i = 0; i + 1 < order.Count; i += 2) pairs.Add((order[i], order[i + 1]));
@@ -391,6 +465,8 @@ public sealed class Tournament
         }
 
         RebuildGlobalStats();
+        if (_cfg.EvolveEvery > 0 && _round % _cfg.EvolveEvery == 0) ArchiveChampion();
+        KeepTheBest();
         MutateLosers();
         AppendCensus();
     }
@@ -421,6 +497,9 @@ public sealed class Tournament
     {
         double ra = a.Elo, rb = b.Elo;
         double surprise = scoreA - Elo.Expected(ra, rb);
+        var key = (a.Name, b.Name);
+        _head.TryGetValue(key, out var tally);
+        _head[key] = (tally.Score + scoreA, tally.Games + 1);
         a.SurpriseSum += surprise;
         a.SurpriseSq += surprise * surprise;
         b.SurpriseSum -= surprise;
@@ -535,6 +614,84 @@ public sealed class Tournament
             string colour = Colors.Letter(d.Color) + (d.Color2 is { } c2 ? Colors.Letter(c2) : "");
             w.WriteLine($"{_round},{d.Id},\"{d.Name}\",{colour},{d.Type},{copies[c]},{decks[c]},"
                 + $"{_global.Plays(c)},{_global.Lift(c):0.0000}");
+        }
+    }
+
+    /// <summary>
+    /// Records each agent's best deck, and restores it when the rating has
+    /// fallen far enough below that peak to say the walk went the wrong way.
+    /// </summary>
+    /// <summary>
+    /// Copies the current top agent into the archive, overwriting the oldest
+    /// slot. Called at checkpoints so the archive turns over slowly enough to
+    /// keep genuinely old opposition in it.
+    /// </summary>
+    private Dictionary<string, Queue<List<string>>>? _seedDecks;
+
+    /// <summary>
+    /// The next unused seed deck for this leader, or null when there is none.
+    /// A deck that is no longer legal (a card cut from the set since the run it
+    /// came from) is skipped rather than forced, so a stale folder degrades to
+    /// random rather than to an illegal deck.
+    /// </summary>
+    private List<string>? TakeSeedDeck(string leaderId)
+    {
+        if (string.IsNullOrWhiteSpace(_cfg.SeedDeckDir)) return null;
+        if (_seedDecks is null)
+        {
+            _seedDecks = new Dictionary<string, Queue<List<string>>>(StringComparer.Ordinal);
+            foreach (var (_, leader, cards) in DeckGen.ReadFolder(_cfg.SeedDeckDir))
+            {
+                if (!_seedDecks.TryGetValue(leader, out var q))
+                {
+                    q = new Queue<List<string>>();
+                    _seedDecks[leader] = q;
+                }
+                q.Enqueue(cards);
+            }
+            Console.WriteLine($"seed decks: {_seedDecks.Count} leaders from {_cfg.SeedDeckDir}");
+        }
+        if (!_seedDecks.TryGetValue(leaderId, out var queue)) return null;
+        while (queue.Count > 0)
+        {
+            var deck = queue.Dequeue();
+            var bad = DeckGen.Validate(leaderId, deck, _cfg.Deck.Size, _cfg.Deck.Largest);
+            if (bad is null) return deck;
+            Console.WriteLine($"seed deck for {leaderId} skipped: {bad}");
+        }
+        return null;
+    }
+
+    private void ArchiveChampion()
+    {
+        if (_cfg.HallOfFame <= 0) return;
+        var best = _agents.Where(a => !a.Frozen).OrderByDescending(a => a.Elo).FirstOrDefault();
+        if (best is null) return;
+        var slot = _all.FirstOrDefault(a => a.Name == $"old{_hallNext}");
+        if (slot is null) return;
+        slot.LeaderId = best.LeaderId;
+        slot.Deck = new List<string>(best.Deck);
+        _hallNext = (_hallNext + 1) % _cfg.HallOfFame;
+    }
+
+    private void KeepTheBest()
+    {
+        if (_cfg.ElitismSlack <= 0) return;
+        foreach (var a in _agents)
+        {
+            if (a.Frozen) continue;
+            if (a.Elo > a.BestElo)
+            {
+                a.BestElo = a.Elo;
+                a.BestDeck = new List<string>(a.Deck);
+                continue;
+            }
+            if (a.BestDeck is null || a.Elo >= a.BestElo - _cfg.ElitismSlack) continue;
+            a.Deck = new List<string>(a.BestDeck);
+            // The peak moves down to here so the agent is not restored again on
+            // the very next round while its rating is still recovering.
+            a.BestElo = a.Elo;
+            a.Reverts++;
         }
     }
 
@@ -828,6 +985,58 @@ public sealed class Tournament
         return (wins, losses, draws);
     }
 
+    /// <summary>
+    /// Each agent's weight in an equilibrium of the head-to-head matrix. Reads
+    /// what a rational field would play rather than what won most games, which
+    /// is the difference that matters when the field is not transitive.
+    /// </summary>
+    public string NashReport(int top = 20)
+    {
+        // An archived champion is a copy of whatever led the ladder when it was
+        // taken, so straight after a capture it is the same strategy as a live
+        // agent and would take weight twice. It stops being a duplicate as its
+        // descendant drifts, which is exactly when it starts saying something
+        // the live field does not. Compared by leader and sorted deck.
+        static string Signature(Agent a)
+        {
+            var cards = new List<string>(a.Deck);
+            cards.Sort(StringComparer.Ordinal);
+            return a.LeaderId + "|" + string.Join(",", cards);
+        }
+
+        var live = new HashSet<string>(_agents.Where(x => !x.Frozen).Select(Signature));
+        var pool = _all.Where(a => !(a.ReferenceBot && a.Name.StartsWith("old")
+                                     && live.Contains(Signature(a)))).ToList();
+        var names = pool.Select(a => a.Name).ToList();
+        int n = names.Count;
+        var payoff = new double?[n][];
+        for (int i = 0; i < n; i++)
+        {
+            payoff[i] = new double?[n];
+            for (int j = 0; j < n; j++)
+            {
+                if (i == j) continue;
+                _head.TryGetValue((names[i], names[j]), out var ij);
+                _head.TryGetValue((names[j], names[i]), out var ji);
+                int games = ij.Games + ji.Games;
+                if (games < 4) continue;
+                // Score from i's side, mapped from a 0..1 win share to -1..1.
+                double score = ij.Score + (ji.Games - ji.Score);
+                payoff[i][j] = 2 * (score / games) - 1;
+            }
+        }
+        var w = Nash.Mixture(payoff);
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("  weight  agent  leader                         rating");
+        foreach (var (idx, weight) in w.Select((x, i) => (i, x))
+                     .OrderByDescending(x => x.Item2).Take(top))
+        {
+            var a = pool[idx];
+            sb.AppendLine($"  {100 * weight,5:0.0}%  {a.Name,-6} {a.LeaderName,-28} {a.Elo,6:0}");
+        }
+        return sb.ToString();
+    }
+
     public string Report()
     {
         var sb = new System.Text.StringBuilder();
@@ -996,6 +1205,7 @@ public sealed class Tournament
         foreach (var b in _brains) b.Net.Save(Path.Combine(_cfg.OutDir, $"{b.Name}.snn"));
         File.WriteAllText(Path.Combine(_cfg.OutDir, "ladder.json"), Json());
         File.WriteAllText(Path.Combine(_cfg.OutDir, "report.txt"), Report());
+        File.WriteAllText(Path.Combine(_cfg.OutDir, "nash.txt"), NashReport(_all.Count));
         var best = _all.OrderByDescending(a => a.Elo).First();
         File.WriteAllText(Path.Combine(_cfg.OutDir, "best-deck.txt"), DeckText(best));
         File.WriteAllText(Path.Combine(_cfg.OutDir, "cards.txt"), CardReport());

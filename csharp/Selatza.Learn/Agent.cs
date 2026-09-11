@@ -49,8 +49,21 @@ public sealed class Brain
 public sealed class Agent
 {
     public required string Name { get; init; }
-    public required string LeaderId { get; init; }
+    public required string LeaderId { get; set; }
     public required List<string> Deck { get; set; }
+
+    /// <summary>
+    /// The deck this agent held when its rating was highest, and that rating.
+    /// Mutation edits the deck in place with no memory, so a run of bad swaps
+    /// walks a good list away and nothing brings it back. Kept so the agent can
+    /// restart from its own best rather than from wherever the walk left it.
+    /// </summary>
+    public List<string>? BestDeck { get; set; }
+
+    public double BestElo { get; set; } = double.MinValue;
+
+    /// <summary>How often this agent was restored to its own best deck.</summary>
+    public int Reverts { get; set; }
     public Brain? Brain { get; init; }
     public AgentConfig Config { get; init; } = new();
     public IntelConfig Intel { get; init; } = IntelConfig.Default;

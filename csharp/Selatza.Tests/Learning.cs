@@ -27,6 +27,52 @@ public static class Learning
         Scouting();
         Redaction();
         Persistence();
+        NashMixture();
+    }
+
+    /// <summary>
+    /// The equilibrium mixture, against three matrices whose answer is known.
+    /// Rock-paper-scissors is the one that matters: it is pure intransitivity,
+    /// which a ladder rating cannot express at all and which replicator
+    /// dynamics does not always settle on.
+    /// </summary>
+    private static void NashMixture()
+    {
+        Harness.Test("rock-paper-scissors splits the weight evenly", () =>
+        {
+            var w = Nash.Mixture(Matrix(new[,] { { 0, -1, 1 }, { 1, 0, -1 }, { -1, 1, 0 } }));
+            foreach (var x in w) Harness.True(Math.Abs(x - 1.0 / 3) < 0.02, $"got {x:0.###}");
+        });
+
+        Harness.Test("a strictly dominant row takes all of it", () =>
+        {
+            var w = Nash.Mixture(Matrix(new[,] { { 0, 1, 1 }, { -1, 0, 1 }, { -1, -1, 0 } }));
+            Harness.True(w[0] > 0.98, $"dominant row got {w[0]:0.###}");
+        });
+
+        Harness.Test("a counter-pick keeps weight despite a losing record", () =>
+        {
+            // Row 3 beats row 0 and loses to rows 1 and 2, so it wins one of
+            // three and a ladder would bury it. It answers the field's best,
+            // which is what the mixture is supposed to notice.
+            var w = Nash.Mixture(Matrix(new[,]
+            {
+                { 0, 1, 1, -1 }, { -1, 0, 1, 1 }, { -1, -1, 0, 1 }, { 1, -1, -1, 0 },
+            }));
+            Harness.True(w[3] > 0.05, $"counter-pick got {w[3]:0.###}");
+        });
+    }
+
+    private static double?[][] Matrix(int[,] src)
+    {
+        int n = src.GetLength(0);
+        var outMatrix = new double?[n][];
+        for (int i = 0; i < n; i++)
+        {
+            outMatrix[i] = new double?[n];
+            for (int j = 0; j < n; j++) outMatrix[i][j] = i == j ? null : src[i, j];
+        }
+        return outMatrix;
     }
 
     private static void Gradients()

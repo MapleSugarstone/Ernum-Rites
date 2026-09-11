@@ -215,6 +215,10 @@ public static class Program
             ReseedWorst = Int(args, "--reseed", 0),
             SwapCap = Int(args, "--swap-cap", 0),
             MutateWindow = Int(args, "--mutate-window", 0),
+            RandomPairing = Flag(args, "--random-pairing"),
+            ElitismSlack = Dbl(args, "--elitism", 0),
+            HallOfFame = Int(args, "--hall", 0),
+            SeedDeckDir = Str(args, "--seed-decks", ""),
             ReferenceDeckDir = Str(args, "--reference-decks", ""),
             Threads = Int(args, "--threads", Math.Max(1, Environment.ProcessorCount - 1)),
             Seed = Int(args, "--seed", 1),
@@ -1088,7 +1092,27 @@ public static class Program
             + $"({pairs * games} games total), intel: {intel}");
         Console.WriteLine();
 
-        var rows = new List<string> { "a,b,a_leader,b_leader,games,a_wins,b_wins,draws,a_rate,lo,hi,turns" };
+        const string Header = "a,b,a_leader,b_leader,games,a_wins,b_wins,draws,a_rate,lo,hi,turns";
+        // Written as each pairing finishes rather than at the end. A spot machine
+        // is taken back without warning, and a matrix that only lands when the last
+        // cell is done is a matrix that never lands. Rerunning over an existing file
+        // skips what it already holds, so a relaunch continues instead of restarting.
+        var already = new HashSet<string>(StringComparer.Ordinal);
+        var rows = new List<string> { Header };
+        if (outPath.Length > 0 && File.Exists(outPath))
+        {
+            foreach (var line in File.ReadAllLines(outPath))
+            {
+                var cells = line.Split(',');
+                if (cells.Length > 2 && cells[0] != "a") already.Add(cells[0] + " " + cells[1]);
+            }
+            Console.WriteLine($"{already.Count} pairings already done, skipping those");
+        }
+        else if (outPath.Length > 0)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outPath))!);
+            File.WriteAllLines(outPath, new[] { Header });
+        }
         int done = 0;
         for (int i = 0; i < decks.Count; i++)
         {
@@ -1096,6 +1120,11 @@ public static class Program
             {
                 // Seat is part of the matchup, so each pairing gets its own seed
                 // and Play alternates who is on the play inside it.
+                if (already.Contains(decks[i].Name + " " + decks[j].Name))
+                {
+                    done++;
+                    continue;
+                }
                 var res = Experiment.Play(decks[i], decks[j], games, seed + i * 1000 + j, threads, intel);
                 var ci = res.Confidence95;
                 rows.Add(string.Join(",",
@@ -1107,6 +1136,7 @@ public static class Program
                     ci.Low.ToString("0.0000", CultureInfo.InvariantCulture),
                     ci.High.ToString("0.0000", CultureInfo.InvariantCulture),
                     res.Shape.Mean.ToString("0.00", CultureInfo.InvariantCulture)));
+                if (outPath.Length > 0) File.AppendAllLines(outPath, new[] { rows[^1] });
                 done++;
                 if (done % 10 == 0 || done == pairs)
                 {
@@ -1117,8 +1147,6 @@ public static class Program
 
         if (outPath.Length > 0)
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outPath))!);
-            File.WriteAllLines(outPath, rows);
             Console.WriteLine($"\nwritten to {Path.GetFullPath(outPath)}");
         }
         else
