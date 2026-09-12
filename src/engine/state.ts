@@ -274,6 +274,21 @@ export interface GameState {
   flipQueue: FlipOffer[];
   /** Decisions effects deferred to a player, settled before anything else moves. */
   choiceQueue: PendingChoice[];
+  /**
+   * Players who have crossed a loss condition while a costed flip was still
+   * owed an answer. Damage has to finish turning cards over before the match
+   * is called, the way it would at a table, so the loss waits here until the
+   * flip queue drains and is then judged with every other loss at once.
+   */
+  doomed: PlayerIdx[];
+  /** Why each doomed player is out, kept until the loss is judged. */
+  doomReason: Record<number, string>;
+  /**
+   * Who swung the blow that the held-back loss came out of. The battle is
+   * cleared when the clash ends, and the loss is judged later, so without
+   * this the tiebreak has no aggressor to award the trade to.
+   */
+  doomAttacker: PlayerIdx | null;
   winner: PlayerIdx | null;
   winReason: string | null;
   /** True when the match hit a hard stop with nobody having won. */

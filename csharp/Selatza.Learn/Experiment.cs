@@ -1,3 +1,4 @@
+using Selatza.Ai;
 using Selatza.Cards;
 
 namespace Selatza.Learn;
@@ -127,7 +128,8 @@ public static class Experiment
     /// on the same seeds each way so the comparison is paired.
     /// </summary>
     public static MatchupResult Play(Deck a, Deck b, int games, int seed, int threads,
-        IntelConfig? intel = null, AgentConfig? agentCfg = null, Nn.SelatzaNet? net = null)
+        IntelConfig? intel = null, AgentConfig? agentCfg = null, Nn.SelatzaNet? net = null,
+        BotWeights? weightsA = null, BotWeights? weightsB = null)
     {
         var result = new MatchupResult();
         threads = Math.Max(1, threads);
@@ -159,6 +161,7 @@ public static class Experiment
                 Config = agentCfg ?? new AgentConfig { RecordEvery = 0 },
                 Intel = intel ?? IntelConfig.Default,
                 ReferenceBot = brain is null,
+                Weights = weightsA,
             };
             var agentB = new Agent
             {
@@ -169,6 +172,7 @@ public static class Experiment
                 Config = agentCfg ?? new AgentConfig { RecordEvery = 0 },
                 Intel = intel ?? IntelConfig.Default,
                 ReferenceBot = brain is null,
+                Weights = weightsB,
             };
             if (!free.TryTake(out int slot)) slot = 0;
             try

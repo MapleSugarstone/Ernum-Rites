@@ -782,7 +782,7 @@ public static class Effects
         Log(state, player, $"{reason} Debt is now {p.DebtCount}/{Rules.DebtLimit}.");
         if (p.DebtCount >= Rules.DebtLimit)
         {
-            EndGame(state, GameState.Other(player), $"{p.Name} reached {Rules.DebtLimit} debt.");
+            Lose(state, player, $"{p.Name} reached {Rules.DebtLimit} debt.");
         }
         // After the loss check: a bill that ended the game fires nothing.
         if (state.Winner < 0)
@@ -1243,7 +1243,7 @@ public static class Effects
         {
             p.Leader = null;
             Log(state, summon.Owner, $"{def.Name} has died.");
-            EndGame(state, GameState.Other(summon.Owner), $"{p.Name} lost their leader.");
+            Lose(state, summon.Owner, $"{p.Name} lost their leader.");
             return;
         }
         int slot = Array.IndexOf(p.Slots, summon);
@@ -1391,6 +1391,47 @@ public static class Effects
         });
     }
 
+    /// <summary>
+    /// One player has crossed a loss condition. A clash is one event and its
+    /// cards are still turning over while the battle stands, and a costed
+    /// flip can hold the rest of a blow across actions, so in both cases the
+    /// loss is held until the damage has finished.
+    /// </summary>
+    public static void Lose(GameState state, int loser, string reason)
+    {
+        if ((state.Battle is not null || state.FlipQueue.Count > 0) && state.Winner < 0)
+        {
+            if (!state.Doomed.Contains(loser))
+            {
+                state.Doomed.Add(loser);
+                state.DoomReason[loser] = reason;
+                var swing = state.Battle?.Attacker;
+                if (state.DoomAttacker < 0 && swing is not null)
+                {
+                    state.DoomAttacker = swing.Value.Player;
+                }
+                state.Log.Add(new LogEntry(state.Turn, -1,
+                    $"{state.Players[loser].Name} is out once the damage finishes."));
+            }
+            return;
+        }
+        EndGame(state, GameState.Other(loser), reason);
+    }
+
+    /// <summary>Judges the losses held back while damage was resolving.</summary>
+    public static void SettleDoomed(GameState state)
+    {
+        if (state.Doomed.Count == 0) return;
+        if (state.FlipQueue.Count > 0 || state.Battle is not null) return;
+        var owed = new List<int>(state.Doomed);
+        state.Doomed.Clear();
+        foreach (var loser in owed)
+        {
+            var why = state.DoomReason.TryGetValue(loser, out var r) ? r : "lost.";
+            EndGame(state, GameState.Other(loser), why);
+        }
+    }
+
     public static void EndGame(GameState state, int winner, string reason)
     {
         if (state.Winner >= 0)
@@ -1407,11 +1448,12 @@ public static class Effects
                 // the match rather than levelling it. A leader going down in the
                 // same breath is not a trade anybody won, and draws instead.
                 var swing = state.Battle?.Attacker;
+                int attacker = swing?.Player ?? state.DoomAttacker;
                 var leadersStanding =
                     state.Players[0].Leader is not null && state.Players[1].Leader is not null;
-                if (swing is not null && leadersStanding)
+                if (attacker >= 0 && leadersStanding)
                 {
-                    state.Winner = swing.Value.Player;
+                    state.Winner = attacker;
                     state.WinReason = $"{state.WinReason} {reason} The attacker takes the trade.".Trim();
                     state.Log.Add(new LogEntry(state.Turn, -1,
                         $"Both players lost at once: {state.Players[state.Winner].Name} attacked and takes it."));

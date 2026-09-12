@@ -5084,6 +5084,8 @@ function renderRules(): string {
     ${sec('9-2-2.', 'A leader with Redirection can be attacked even with its slots full.')}
     ${sec('9-3.', 'Attacker and defender deal their attack to each other at the same time.')}
     ${sec('9-3-1.', 'A defending leader is the exception and deals nothing back. See 4-2-2.')}
+    ${sec('9-3-2.', 'The attacker&rsquo;s HP cards turn over first, then the defender&rsquo;s. Both sides take the whole blow either way, but a flip that fires on the attacker resolves before the defender loses a card.')}
+    ${sec('9-3-3.', 'A clash finishes before the match is decided. If crossing 25 debt would end the game part way through, the rest of the damage and every flip it owes still resolves, and the result is judged once nothing is owed an answer. See 2-2.')}
 
     <h2>10. Traps</h2>
     ${sec('10-1.', 'Play a trap from your hand during a response window, never during your main step. A response window can open on your own turn as well as your opponent&rsquo;s.')}

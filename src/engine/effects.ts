@@ -765,7 +765,9 @@ export function endGame(state: GameState, winner: PlayerIdx, reason: string): vo
       // trade anybody won, and falls through to the draw.
       const swing = state.battle?.attacker;
       const attacker =
-        swing && (swing.kind === 'summon' || swing.kind === 'leader') ? swing.player : undefined;
+        swing && (swing.kind === 'summon' || swing.kind === 'leader')
+          ? swing.player
+          : (state.doomAttacker ?? undefined);
       // Players already eliminated in a party game have no leader to stand.
       const leadersStanding = state.players.every((q) => q.eliminated || q.leader !== null);
       if (attacker !== undefined && leadersStanding) {
@@ -793,9 +795,46 @@ export function endGame(state: GameState, winner: PlayerIdx, reason: string): vo
  * double-loss tiebreak included. In a party game with three or more players
  * still standing it only knocks the loser out and play continues.
  */
+/**
+ * Judges the losses that were held back while damage was still resolving.
+ * Called once an action leaves nothing owed an answer.
+ */
+export function settleDoomed(state: GameState): void {
+  if (state.doomed.length === 0) return;
+  if (state.flipQueue.length > 0 || state.battle !== null) return;
+  const owed = [...state.doomed];
+  state.doomed = [];
+  for (const loser of owed) finishLoss(state, loser, state.doomReason[loser] ?? 'lost.');
+}
+
 export function playerLoses(state: GameState, loser: PlayerIdx, reason: string): void {
   // A player already out has nothing left to lose, and must not be able to
   // hand the win to anyone by conceding again from the spectator seat.
+  if (state.players[loser].eliminated) return;
+  // A blow that is still turning cards over has not finished. Holding the
+  // loss until it has is what lets a clash that kills both bodies be judged
+  // as the one event it is, rather than by whichever side's cards happened
+  // to turn over first.
+  // A clash is one event. Its cards are still turning over while the battle
+  // stands, and a costed flip can hold the rest of a blow across actions, so
+  // both count as unfinished.
+  if ((state.battle !== null || state.flipQueue.length > 0) && state.winner === null) {
+    if (!state.doomed.includes(loser)) {
+      state.doomed.push(loser);
+      state.doomReason[loser] = reason;
+      const swing = state.battle?.attacker;
+      if (state.doomAttacker === null && swing
+          && (swing.kind === 'summon' || swing.kind === 'leader')) {
+        state.doomAttacker = swing.player;
+      }
+      log(state, null, `${state.players[loser].name} is out once the damage finishes.`);
+    }
+    return;
+  }
+  finishLoss(state, loser, reason);
+}
+
+function finishLoss(state: GameState, loser: PlayerIdx, reason: string): void {
   if (state.players[loser].eliminated) return;
   const living = livingPlayers(state);
   if (living.length <= 2) {

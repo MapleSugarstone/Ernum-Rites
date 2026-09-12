@@ -1,3 +1,4 @@
+using Selatza.Ai;
 using Selatza.Learn.Nn;
 
 namespace Selatza.Learn;
@@ -66,6 +67,16 @@ public sealed class Agent
     public int Reverts { get; set; }
     public Brain? Brain { get; init; }
     public AgentConfig Config { get; init; } = new();
+
+    /// <summary>
+    /// What this seat's bot believes, when it should not be the shipped
+    /// default. A deck and the evaluator that pilots it are one strategy:
+    /// a Candy list is built to bank Love and spend it later, and an
+    /// evaluator that prices a Love token at 0.6 against 8 for a point of
+    /// leader HP will not play toward that whatever the cards say. Null
+    /// means the shipped weights.
+    /// </summary>
+    public BotWeights? Weights { get; init; }
     public IntelConfig Intel { get; init; } = IntelConfig.Default;
     public CardStats Stats { get; } = new();
 

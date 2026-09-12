@@ -90,6 +90,7 @@ public static class Program
             "cards" => CardReport(args),
             "matchup" => Matchup(args),
             "roundrobin" => RoundRobin(args),
+            "climb" => ClimbCmd(args),
             "diff" => Diff(args),
             "logstats" => LogStats(args),
             "patterns" => Patterns.Run(args),
@@ -104,7 +105,7 @@ public static class Program
 
     private static int Usage()
     {
-        Console.WriteLine("commands: train | matchup | roundrobin | logstats | diff | cards | probe | deck | gauntlet"
+        Console.WriteLine("commands: train | matchup | roundrobin | climb | logstats | diff | cards | probe | deck | gauntlet"
             + " | bench | gradcheck");
         Console.WriteLine();
         Console.WriteLine("For balance work, start here:");
@@ -141,6 +142,7 @@ public static class Program
         Console.WriteLine("so rerunning the same command after a crash continues rather than restarts.");
         Console.WriteLine();
         Console.WriteLine("matchup  --a <deck file or starter:key> --b <deck> --games 400");
+        Console.WriteLine("climb    --deck <file> --vs <file> --pop 16 --rounds 40 --games 60 --target 0.5 --out <file>");
         Console.WriteLine("         --swap old-id=new-id --swap-count 0 (0 swaps every copy)");
         Console.WriteLine("         --net runs/v1/net0.snn (play it with a network instead)");
         Console.WriteLine("diff     --before runs/v1/cards.csv --after runs/v2/cards.csv --top 15");
@@ -1057,6 +1059,110 @@ public static class Program
     /// all of them, because 190 pairings launched one at a time spends more time
     /// starting the runtime than playing.
     /// </summary>
+    /// <summary>
+    /// Evolves one deck against a single fixed opponent until it clears a target
+    /// win rate, or the rounds run out.
+    /// </summary>
+    private static int ClimbCmd(string[] args)
+    {
+        string deckPath = Str(args, "--deck", "");
+        string vsPath = Str(args, "--vs", "");
+        if (deckPath.Length == 0 || vsPath.Length == 0)
+        {
+            Console.Error.WriteLine("climb needs --deck <file> and --vs <file>");
+            return 2;
+        }
+
+        var start = Experiment.Load(deckPath);
+        var foe = Experiment.Load(vsPath);
+        var opts = new Climb.Options
+        {
+            Population = Int(args, "--pop", 24),
+            ScreenGames = Int(args, "--screen", 24),
+            Finalists = Int(args, "--finalists", 4),
+            Rounds = Int(args, "--rounds", 30),
+            Games = Int(args, "--games", 150),
+            ConfirmGames = Int(args, "--confirm", 1000),
+            Threads = Int(args, "--threads", Math.Max(1, Environment.ProcessorCount - 1)),
+            Seed = Int(args, "--seed", 1),
+            MaxChurn = Dbl(args, "--churn", 0.25),
+            WeightShare = Dbl(args, "--weight-share", 0.4),
+            Target = Dbl(args, "--target", 0.55),
+            Intel = ConfigFrom(args).Intel,
+            MinSize = Int(args, "--deck-size", 48),
+            MaxSize = Math.Max(Int(args, "--deck-size", 48), Int(args, "--deck-max", 54)),
+        };
+
+        Console.WriteLine($"{start.Name} climbing against {foe.Name}");
+        Console.WriteLine($"  {opts.Population} mutants screened on {opts.ScreenGames} games, "
+            + $"top {opts.Finalists} plus the incumbent on {opts.Games}, "
+            + $"up to {opts.Rounds} rounds, target {100 * opts.Target:0.#}% over {opts.ConfirmGames} games");
+        Console.WriteLine();
+        // A redirected stdout buffers, and a round is minutes long, so the log a
+        // watcher tails would stay empty until the process ended.
+        Console.Out.Flush();
+
+        string outPath = Str(args, "--out", "");
+        void Save(Experiment.Deck deck, double rate)
+        {
+            if (outPath.Length == 0) return;
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outPath))!);
+            var lines = new List<string>
+            {
+                $"{start.Name} climbed against {foe.Name}, {100 * rate:0.0}%",
+                $"leader: {Registry.TryCard(deck.LeaderId)?.Name ?? deck.LeaderId} [{deck.LeaderId}]",
+            };
+            var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var c in deck.Cards) counts[c] = counts.GetValueOrDefault(c) + 1;
+            foreach (var (id, n) in counts.OrderBy(k => k.Key, StringComparer.Ordinal))
+            {
+                lines.Add($"{n}x {Registry.TryCard(id)?.Name ?? id} [{id}]");
+            }
+            File.WriteAllLines(outPath, lines);
+        }
+
+        var (best, rate, history, weights) = Climb.Run(start, foe, opts, (step, deck) =>
+        {
+            string mark = step.Adopted ? "adopted" : "       ";
+            string what = step.Moved.Length > 0 ? step.Moved : $"{step.Swaps,2} swaps";
+            Console.WriteLine($"  round {step.Round,3}  best {100 * step.BestRate,5:0.0}%  "
+                + $"tried {100 * step.TriedBest,5:0.0}% at {what}  {mark}");
+            Console.Out.Flush();
+            if (step.Adopted) Save(deck, step.BestRate);
+        });
+
+        Console.WriteLine();
+        Console.WriteLine($"finished at {100 * rate:0.0}% over {history.Count} rounds");
+
+        Save(best, rate);
+        if (outPath.Length > 0) Console.WriteLine($"written to {Path.GetFullPath(outPath)}");
+
+        // Every weight this climb moved off the shipped default, which is the
+        // other half of what it found.
+        var moved = new List<string>();
+        foreach (var k in typeof(BotWeights).GetFields())
+        {
+            if (k.FieldType != typeof(double) || k.IsInitOnly) continue;
+            double now = (double)k.GetValue(weights)!;
+            double was = (double)k.GetValue(BotWeights.Default)!;
+            if (Math.Abs(now - was) > 1e-9) moved.Add($"{k.Name} {was:0.###} -> {now:0.###}");
+        }
+        if (moved.Count > 0)
+        {
+            Console.WriteLine("evaluator weights it changed:");
+            foreach (var m in moved) Console.WriteLine($"  {m}");
+            if (outPath.Length > 0)
+            {
+                File.WriteAllLines(outPath + ".weights.txt", moved);
+            }
+        }
+        else
+        {
+            Console.WriteLine("evaluator weights: unchanged from the shipped defaults");
+        }
+        return 0;
+    }
+
     private static int RoundRobin(string[] args)
     {
         string dir = Str(args, "--decks", "");
@@ -1104,7 +1210,7 @@ public static class Program
             foreach (var line in File.ReadAllLines(outPath))
             {
                 var cells = line.Split(',');
-                if (cells.Length > 2 && cells[0] != "a") already.Add(cells[0] + " " + cells[1]);
+                if (cells.Length > 2 && cells[0] != "a") already.Add(cells[0] + "::" + cells[1]);
             }
             Console.WriteLine($"{already.Count} pairings already done, skipping those");
         }
@@ -1120,7 +1226,7 @@ public static class Program
             {
                 // Seat is part of the matchup, so each pairing gets its own seed
                 // and Play alternates who is on the play inside it.
-                if (already.Contains(decks[i].Name + " " + decks[j].Name))
+                if (already.Contains(decks[i].Name + "::" + decks[j].Name))
                 {
                     done++;
                     continue;

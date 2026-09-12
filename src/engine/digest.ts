@@ -160,6 +160,10 @@ export function digestOf(state: GameState): string {
           .map((f) => `${f.player}/${refString(f.holder)}/${f.cardId}/${f.pending}`)
           .join(',');
 
+  out += '|DM:';
+  out += state.doomed.length === 0 ? '-' : [...state.doomed].sort().join(',');
+  out += state.doomAttacker === null ? '' : `/${state.doomAttacker}`;
+
   out += '|CQ:';
   out +=
     state.choiceQueue.length === 0

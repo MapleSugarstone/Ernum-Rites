@@ -88,6 +88,20 @@ public static class Digest
                   .Append(s.FlipQueue[i].Pending);
             }
         }
+        sb.Append("|DM:");
+        if (s.Doomed.Count == 0) sb.Append('-');
+        else
+        {
+            var order = new List<int>(s.Doomed);
+            order.Sort();
+            for (int i = 0; i < order.Count; i++)
+            {
+                if (i > 0) sb.Append(',');
+                sb.Append(order[i]);
+            }
+        }
+        if (s.DoomAttacker >= 0) sb.Append('/').Append(s.DoomAttacker);
+
         sb.Append("|CQ:");
         if (s.ChoiceQueue.Count == 0) sb.Append('-');
         else

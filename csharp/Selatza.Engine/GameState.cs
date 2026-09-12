@@ -373,6 +373,24 @@ public sealed class GameState
 
     /// <summary>Decisions effects deferred to a player, settled before anything else moves.</summary>
     public List<PendingChoice> ChoiceQueue { get; set; } = new();
+    /// <summary>
+    /// Players who have crossed a loss condition while a blow was still
+    /// turning cards over. Damage has to finish before the match is
+    /// called, the way it would at a table, so the loss waits here until
+    /// nothing is owed an answer and is then judged with every other.
+    /// </summary>
+    public List<int> Doomed { get; set; } = new();
+
+    /// <summary>Why each held-back player is out, until it is judged.</summary>
+    public Dictionary<int, string> DoomReason { get; set; } = new();
+
+    /// <summary>
+    /// Who swung the blow the held-back loss came out of. The battle is
+    /// cleared when the clash ends and the loss is judged later, so
+    /// without this the tiebreak has no aggressor to award the trade to.
+    /// </summary>
+    public int DoomAttacker { get; set; } = -1;
+
     public int Winner { get; set; } = -1;
     public string? WinReason { get; set; }
     /// <summary>Whether the match has finished, by a win or by a hard stop.</summary>
@@ -408,6 +426,9 @@ public sealed class GameState
             DyingCardId = DyingCardId,
             ReplaceQueue = new List<ReplaceSlot>(ReplaceQueue),
             FlipQueue = new List<FlipOffer>(FlipQueue),
+            Doomed = new List<int>(Doomed),
+            DoomReason = new Dictionary<int, string>(DoomReason),
+            DoomAttacker = DoomAttacker,
             ChoiceQueue = ChoiceQueue.ConvertAll(c => c.Clone()),
             Winner = Winner,
             WinReason = WinReason,

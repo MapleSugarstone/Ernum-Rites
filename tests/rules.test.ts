@@ -27,7 +27,9 @@ import {
   RESHUFFLE_DEBT_STEP,
   reshuffleCost,
   bounceSummon,
-  reviveFromDebt, toDiscard, makeEffectCtx } from '../src/engine/effects';
+  reviveFromDebt, toDiscard, makeEffectCtx,
+  playerLoses,
+  settleDoomed } from '../src/engine/effects';
 import { colorsOf, deckIdentity, isLegalUnder } from '../src/engine/identity';
 import { fusedRecomp } from '../src/engine/generated';
 import { allCards, card } from '../src/engine/registry';
@@ -306,6 +308,49 @@ describe('scry', () => {
     s = must(s, 0, { type: 'RESOLVE_CHOICE' });
     expect(s.choiceQueue).toHaveLength(0);
     expect(s.players[0].deck).toHaveLength(deckBefore);
+  });
+});
+
+describe('a loss waits for the blow to finish', () => {
+  it('holds the loss while damage is still resolving, then judges every loss at once', () => {
+    let s = game();
+    // Both leaders have to be on the board: the tiebreak only awards the trade
+    // when neither leader went down in the same breath, and the second seat's
+    // leader does not arrive until they have taken a turn.
+    s = must(s, 0, { type: 'END_TURN' });
+    expect(s.players.every((q) => q.leader !== null)).toBe(true);
+    // Both sides one point from the limit, so the clash tips both over.
+    s.players[0].debtCount = DEBT_LIMIT - 1;
+    s.players[1].debtCount = DEBT_LIMIT - 1;
+    s.battle = { attacker: { kind: 'summon', player: 1, slot: 0 }, defender: { kind: 'summon', player: 0, slot: 0 } } as never;
+
+    // The first loss lands while the battle stands, so it is held rather than
+    // ending the match.
+    playerLoses(s, 1, 'seat 1 is over the limit.');
+    expect(s.winner).toBeNull();
+    expect(s.doomed).toEqual([1]);
+    expect(s.doomAttacker).toBe(1);
+
+    // The second comes out of the same blow.
+    playerLoses(s, 0, 'seat 0 is over the limit.');
+    expect(s.winner).toBeNull();
+    expect(s.doomed).toEqual([1, 0]);
+
+    // Once nothing is owed an answer both are judged together, and the swing
+    // takes the trade rather than the match levelling.
+    s.battle = null;
+    settleDoomed(s);
+    expect(s.winner).toBe(1);
+    expect(s.drawn).toBe(false);
+    expect(s.winReason).toContain('attacker takes the trade');
+  });
+
+  it('ends the match at once when no damage is outstanding', () => {
+    let s = game();
+    s.players[0].debtCount = DEBT_LIMIT - 1;
+    playerLoses(s, 0, 'seat 0 is over the limit.');
+    expect(s.doomed).toEqual([]);
+    expect(s.winner).toBe(1);
   });
 });
 

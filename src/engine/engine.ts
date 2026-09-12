@@ -21,6 +21,7 @@ import {
   resolveClash,
   resumeDamage,
   sweepReplaceQueue,
+  settleDoomed,
   setActingPlayer,
   clearSpellBonus,
   refFor,
@@ -127,6 +128,9 @@ export function createGame(
     dyingCardId: null,
     replaceQueue: [],
     flipQueue: [],
+    doomed: [],
+    doomReason: {},
+    doomAttacker: null,
     choiceQueue: [],
     winner: null,
     drawn: false,
@@ -1611,6 +1615,7 @@ export function applyAction(
   if (error) return { ok: false, error };
   sweepEliminated(next);
   sweepReplaceQueue(next);
+  settleDoomed(next);
   next.version += 1;
   next.actions += 1;
   // A blow that took both leaders leaves nobody to hand the match to. The

@@ -61,7 +61,8 @@ public static class Match
                 ? np.Choose(state)
                 : agents[actor].Previous
                     ? PreviousBot.ChooseAction(state, actor)
-                    : Bot.ChooseAction(state, actor);
+                    : Bot.ChooseAction(state, actor,
+                        agents[actor].Weights ?? BotWeights.Default);
 
             if (IsPlay(action.Type) && action.HandIndex >= 0
                 && action.HandIndex < state.Players[actor].Hand.Count)

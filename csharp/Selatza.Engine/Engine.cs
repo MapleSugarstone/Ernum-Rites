@@ -888,6 +888,7 @@ public static class Engine
         var error = Reduce(next, actor, action);
         if (error is not null) return ApplyResult.Fail(error);
         Effects.SweepReplaceQueue(next);
+        Effects.SettleDoomed(next);
         next.Version++;
         next.Actions++;
         // A blow that took both leaders leaves nobody to hand the match to. The
