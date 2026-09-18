@@ -75,9 +75,15 @@ public static class Blue
             powers: Powers(new Power
             {
                 Name = "Eight Hands",
-                Cost = new Cost(F: 2),
-                Text = "Unsap an ally summon.",
-                Targets = Specs(Ally()),
+                Cost = new Cost(F: 1),
+                Text = "Unsap an ally Fish summon.",
+                Targets = Specs(new TargetSpec
+                {
+                    Kind = TargetKind.Summon,
+                    Side = Side.Ally,
+                    Label = "an ally Fish summon",
+                    Filter = a => a.Card is { } d && d.HasFaction(Faction.Fish),
+                }),
                 Effect = c => c.Unsap(c.Target(0)),
             }),
             flipText: "Catch a spent HP card off the attached character.",

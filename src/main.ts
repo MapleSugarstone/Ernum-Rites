@@ -1312,9 +1312,9 @@ function computeDeckGifts(prev: GameState, next: GameState): void {
  * and the whole thing crumbles after the impact rather than vanishing the
  * instant the action lands.
  */
-function computeCorpses(prev: GameState, next: GameState): void {
+function computeCorpses(prev: GameState, next: GameState, truth: GameState): void {
   corpseFx = [];
-  const alive = new Set(allSummons(next).map((x) => x.summon.uid));
+  const alive = standingUids(next, truth);
   const count = (list: string[], id: string) => list.filter((x) => x === id).length;
   for (const { ref, summon } of allSummons(prev)) {
     if (alive.has(summon.uid)) continue;
@@ -1541,11 +1541,25 @@ function computeSmackFx(prev: GameState, next: GameState, action: Action): void 
   }
 }
 
+/**
+ * Bodies still on the board after an action. A body counts as dead only when the
+ * authority's state agrees. Online the animation replay cannot see face-down HP
+ * cards, so it finishes a blow that the room paused on a costed flip and kills
+ * bodies the room still has standing.
+ */
+function standingUids(next: GameState, truth: GameState): Set<string> {
+  const uids = new Set(allSummons(next).map((x) => x.summon.uid));
+  for (const { summon } of allSummons(truth)) uids.add(summon.uid);
+  return uids;
+}
+
+/** `truth` is the authority's state when `next` is only a local replay of the action. */
 function applyActionFx(
   prev: GameState,
   next: GameState,
   action: Action,
   actor: PlayerIdx,
+  truth: GameState = next,
 ): void {
   computeSmackFx(prev, next, action);
   computeHandPlayFx(prev, next, action, actor);
@@ -1559,7 +1573,7 @@ function applyActionFx(
   computeUnitFx(prev, next);
   computeWoundFx(prev, next);
   computeLockFx(prev, next);
-  computeCorpses(prev, next);
+  computeCorpses(prev, next, truth);
   // A muffled defender's flips turned over without firing, so no callouts.
   if (smackFx && smackFx.to.kind !== 'leader') {
     const atk = findSummon(prev, smackFx.from);
@@ -1580,7 +1594,7 @@ function applyActionFx(
   freshLogFrom = prev.log.length;
   recordLogGroups(next, action);
   // Last, so it can read everything the passes above worked out.
-  computeSoundFx(prev, next, action, actor);
+  computeSoundFx(prev, next, action, actor, truth);
 }
 
 
@@ -1681,7 +1695,13 @@ function actedCard(prev: GameState, action: Action, actor: PlayerIdx): CardDef |
  * What the last action should sound like, read off the same diff the animations
  * use so a spell, a flip and a trigger all get heard without declaring anything.
  */
-function computeSoundFx(prev: GameState, next: GameState, action: Action, actor: PlayerIdx): void {
+function computeSoundFx(
+  prev: GameState,
+  next: GameState,
+  action: Action,
+  actor: PlayerIdx,
+  truth: GameState,
+): void {
   soundCues = [];
   storeVoiced = false;
   // Board consequences wait for the lunge, the way the damage numbers do.
@@ -1814,9 +1834,9 @@ function computeSoundFx(prev: GameState, next: GameState, action: Action, actor:
   // generic exit clips stand down rather than playing under it.
   if (corpseFx.length > 0 && !storeVoiced) {
     cue('die', landed + 120);
-    const gone = new Set(allSummons(next).map((x) => x.summon.uid));
+    const standing = standingUids(next, truth);
     for (const [uid, old] of before) {
-      if (gone.has(uid)) continue;
+      if (standing.has(uid)) continue;
       const owner = next.players[old.owner];
       const eaten = allSummons(next).some(
         (x) => x.summon.hp.some((h) => h.cardId === old.cardId) &&
@@ -1856,10 +1876,21 @@ function computeSoundFx(prev: GameState, next: GameState, action: Action, actor:
   }
 
   // --- the match ending ----------------------------------------------------
-  if (!isOver(prev) && isOver(next) && next.winner !== null) {
-    const mine = ui.online.phase === 'playing' ? ui.online.seat : viewSeat();
-    cue(next.winner === mine ? 'win' : 'lose', landed + 700);
-  }
+  cueResult(prev, truth, landed + 700);
+}
+
+/**
+ * The win or loss clip, queued on the one action whose result the authority
+ * declared. Online that is the room's state rather than the replay's, because the
+ * replay cannot see a costed flip holding the blow and declares the result early.
+ * A draw has no clip.
+ */
+function cueResult(prev: GameState, next: GameState, at: number): void {
+  if (isOver(prev) || !isOver(next) || next.winner === null) return;
+  const mine = ui.online.phase === 'playing' ? ui.online.seat : viewSeat();
+  // After every other cue the action queued, so the last wound lands before the result.
+  const last = soundCues.reduce((t, c) => Math.max(t, c.at), 0);
+  cue(next.winner === mine ? 'win' : 'lose', Math.max(at, last + 250));
 }
 
 /** Fire the cues the last action queued. Called on the render that shows them. */
@@ -6524,7 +6555,7 @@ function netClient(): NetClient {
           // its real id and does not. Comparing to the room's copy instead
           // makes anything arriving in hand look drawn. The board still comes
           // from the room; only what is animated is read off this.
-          applyActionFx(prev, replay.state, move.action, move.actor);
+          applyActionFx(prev, replay.state, move.action, move.actor, state);
           animated = true;
         } else {
           // Nothing trustworthy to animate, and the wound log has to be emptied
@@ -6555,7 +6586,14 @@ function netClient(): NetClient {
         playOpeningDraw(seat);
         return;
       }
-      if (!animated) return;
+      if (!animated) {
+        // Nothing to animate, but a result the room declared is still heard.
+        if (prev) {
+          cueResult(prev, state, 0);
+          playSounds();
+        }
+        return;
+      }
       playSounds();
       playTrapReveal();
       playSmack();

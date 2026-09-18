@@ -80,9 +80,16 @@ export const blueCards: CardDef[] = [
     powers: [
       {
         name: 'Eight Hands',
-        cost: { F: 2 },
-        text: 'Unsap an ally summon.',
-        targets: [T.ally()],
+        cost: { F: 1 },
+        text: 'Unsap an ally Fish summon.',
+        targets: [
+          {
+            kind: 'summon',
+            side: 'ally',
+            label: 'an ally Fish summon',
+            filter: (a) => !!a.card?.factions?.includes('Fish'),
+          },
+        ],
         effect: (c) => c.unsap(c.targets[0]),
       },
     ],

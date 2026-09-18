@@ -325,7 +325,7 @@ export const yellowCards: CardDef[] = [
   }),
   k.summon(2, 'orangefarmer', 'Orange Farmer', ['Mortal', 'Living'], {
     str: 3,
-    hp: 4,
+    hp: 5,
     powers: [
       {
         name: 'Harvest',

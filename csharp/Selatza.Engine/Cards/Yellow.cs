@@ -300,7 +300,7 @@ public static class Yellow
                 Effect = c => c.Reinforce(c.Target(0), 2),
             })),
 
-        K.Summon(2, "orangefarmer", "Orange Farmer", F(Faction.Mortal, Faction.Living), str: 3, hp: 4,
+        K.Summon(2, "orangefarmer", "Orange Farmer", F(Faction.Mortal, Faction.Living), str: 3, hp: 5,
             powers: Powers(new Power
             {
                 Name = "Harvest",
