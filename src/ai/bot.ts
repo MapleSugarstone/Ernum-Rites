@@ -245,6 +245,14 @@ export interface BotWeights {
    */
   loveOnce: number;
   /**
+   * Whether an offer of the seat's own holds the rest of the blow inside the
+   * search. One branches on declining as well as paying, and refuses to score a
+   * position that still owes an answer. Zero is what the search did before: the
+   * only candidate was the payment, so a cost the seat could not pay ended the
+   * line, and every leaf behind it read the parked damage as never landing.
+   */
+  flipHold: number;
+  /**
    * Share of a pool's worst case priced into each card the enemy holds unseen:
    * the burst of the best cards their leader allows, measured beside that
    * leader. Zero reads an unseen card as nothing. Measured even with zero
@@ -377,6 +385,7 @@ export const defaultWeights: BotWeights = {
   handBodies: 0,
   killRisk: 0.5,
   loveOnce: 1,
+  flipHold: 1,
   kitPips: 6,
   kitDebt: 8,
   kitSolo: 1,
@@ -1364,6 +1373,12 @@ export function candidateActions(
   if (state.flipQueue.length > 0) {
     const offer = state.flipQueue[0];
     if (offer.player !== me) return acts;
+    // Declining is first because the rest of the blow waits behind this answer,
+    // and a cost the seat cannot pay left the line with no legal move at all:
+    // every leaf behind it kept the damage parked and read a body the blow was
+    // about to kill as untouched, which is how a leader traded itself for one
+    // summon.
+    if (w.flipHold > 0) acts.push({ type: 'DECLINE_FLIP' });
     const cost = card(offer.cardId).flipCost;
     if (cost?.discard) {
       p.hand.forEach((_, handIndex) => acts.push({ type: 'PAY_FLIP', handIndex }));
@@ -4072,7 +4087,13 @@ export function searchTurn(state: GameState, me: PlayerIdx, w: BotWeights, reads
             ? w.trapWindow * trapRisk(res.state, reads)
             : 0);
         const leaf: Leaf = { state: after, line, risk, score: evaluate(after, me, w) - risk };
-        leaves.push(leaf);
+        // A position with an offer of my own still open is not one the turn can
+        // stop at: the rest of the blow waits behind the answer, and scoring it
+        // here reads a body the damage is about to kill as untouched. Only the
+        // answered positions behind it are leaves.
+        if (w.flipHold <= 0 || after.flipQueue.length === 0 || after.flipQueue[0].player !== me) {
+          leaves.push(leaf);
+        }
         if (turnGoesOn(after, me)) next.push(leaf);
       }
     }
@@ -4132,6 +4153,7 @@ export function findLethal(
       action.type !== 'PLAY_SUMMON' &&
       action.type !== 'PLAY_SUPPORTER' &&
       action.type !== 'RESOLVE_CHOICE' &&
+      action.type !== 'DECLINE_FLIP' &&
       !(action.type === 'PAY_FLIP' && w.storeReach > 0)
     ) {
       continue;

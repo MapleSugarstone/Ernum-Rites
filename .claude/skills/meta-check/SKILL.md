@@ -559,6 +559,11 @@ fifteen threads. A 200-round seed is more than a day on a 16-core machine.
 `--light-bot` is about a tenth of that and is not the shipped bot: it skips
 the probes, the scan and the wide reply, so it does not measure the new terms.
 
+Cloud runs are off for the foreseeable future (the maintainer's decision on
+2026-09-18). The buckets, the SSH key and the `gcloud` login were removed that
+day. Run a smaller check locally, with a short roster and fewer rounds, and do
+not propose a cloud run. The rest of this section is history.
+
 Run it in the cloud. `scripts/gcp-meta.sh <tag> [seeds] [rounds] [machine]
 [zone]` publishes the trainer self-contained for Linux, creates a spot VM,
 uploads it, runs every seed at once with the cores split between them, builds

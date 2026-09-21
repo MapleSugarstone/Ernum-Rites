@@ -20,8 +20,11 @@ every pool. The long-form record is in `claude-notes/ai-audit.md` and
 - Do not run the full gate as a matter of course. Verify a change with
   `npx tsc --noEmit`, `npm run cs:release`, and the one or two suites it
   touches. Run the full gate before a deploy and when asked.
-- Meta checks run in the cloud at 300 to 400 rounds; the local machine cannot
-  run one any more. See the meta-check skill and the cloud section below.
+- No cloud testing for the foreseeable future (the maintainer's decision on
+  2026-09-18). The buckets, the SSH key and the `gcloud` login were removed
+  that day. Measure locally and size a run to what this machine can finish.
+  Do not propose a cloud run. Everything below about the cloud is history,
+  kept for the day the maintainer asks for it again.
 - The maintainer wants a bot that reads cards as what they do and never needs
   retraining after a balance change. The arithmetic bot is that; the network
   is at weight 0 and stays there until a run clears the bar.
@@ -245,6 +248,13 @@ and the lists as played is the step before training on regret.
   rest until its owner answers. `settle` answers the other side's offers
   now; before that every damaging line was scored on the first card of the
   blow, in the kill search, the threat measure and the reply alike.
+- An offer of the searcher's own is the other half of that, fixed 2026-09-20
+  (`flipHold`, `claude-notes/parked-damage.md`). A leaf must never owe an
+  answer: the parked damage has not landed in it, so the body the blow is
+  about to kill reads as untouched. And `candidateActions` offers both answers
+  at such an offer now; when it offered only the payment, a cost the seat could
+  not pay left the line with no legal move and it ended there. A leader traded
+  itself for one summon that way, in front of a player.
 - The patient climb keeps back the mana its best cash-in needs
   (`cashPotential(...).cashIn`). Without it a repeatable buff ate every pip
   and the Power that was to fire the buffed body was never affordable.

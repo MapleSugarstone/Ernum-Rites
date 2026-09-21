@@ -161,6 +161,14 @@ public sealed class BotWeights
     /// </summary>
     public double LoveOnce = 1;
     /// <summary>
+    /// Whether an offer of the seat's own holds the rest of the blow inside the
+    /// search. One branches on declining as well as paying, and refuses to score
+    /// a position that still owes an answer. Zero is what the search did before:
+    /// the only candidate was the payment, so a cost the seat could not pay ended
+    /// the line, and every leaf behind it read the parked damage as never landing.
+    /// </summary>
+    public double FlipHold = 1;
+    /// <summary>
     /// Share of a pool's worst case priced into each card the enemy holds
     /// unseen: the burst of the best cards their leader allows, measured
     /// beside that leader. Zero reads an unseen card as nothing. Measured
@@ -1172,7 +1180,7 @@ public static class Bot
         return TargetCombos(state, me, lenient, def);
     }
 
-    public static List<GameAction> CandidateActions(GameState state, int me, bool forKill = false)
+    public static List<GameAction> CandidateActions(GameState state, int me, bool forKill = false, BotWeights? w = null)
     {
         var acts = new List<GameAction>();
         var p = state.Players[me];
@@ -1184,6 +1192,11 @@ public static class Bot
         {
             var offer = state.FlipQueue[0];
             if (offer.Player != me) return acts;
+            // Declining is first because the rest of the blow waits behind this
+            // answer, and a cost the seat cannot pay left the line with no legal
+            // move at all: every leaf behind it kept the damage parked and read a
+            // body the blow was about to kill as untouched.
+            if ((w ?? BotWeights.Default).FlipHold > 0) acts.Add(GameAction.DeclineFlip());
             var fcost = Registry.Card(offer.CardId).FlipCost;
             if (fcost is not null && fcost.Discard > 0)
             {
@@ -3926,7 +3939,7 @@ public static class Bot
             var next = new List<Leaf>();
             foreach (var node in level)
             {
-                foreach (var action in CandidateActions(node.State, me))
+                foreach (var action in CandidateActions(node.State, me, w: w))
                 {
                     if (spent >= SearchBudget) break;
                     var res = Engine.Apply(node.State, me, action);
@@ -3952,7 +3965,13 @@ public static class Bot
                         Risk = risk,
                         Score = Evaluate(after, me, w) - risk,
                     };
-                    leaves.Add(leaf);
+                    // A position with an offer of my own still open is not one the
+                    // turn can stop at: the rest of the blow waits behind the
+                    // answer. Only the answered positions behind it are leaves.
+                    if (w.FlipHold <= 0 || after.FlipQueue.Count == 0 || after.FlipQueue[0].Player != me)
+                    {
+                        leaves.Add(leaf);
+                    }
                     if (TurnGoesOn(after, me)) next.Add(leaf);
                 }
             }
@@ -4003,7 +4022,8 @@ public static class Bot
             // branching on them reached the same kills and measured slower.
             if (action.Type is not (ActionType.ActivatePower or ActionType.DeclareAttack
                 or ActionType.CastSpell or ActionType.UseStore or ActionType.OpenStore
-                or ActionType.PlaySummon or ActionType.PlaySupporter or ActionType.ResolveChoice)
+                or ActionType.PlaySummon or ActionType.PlaySupporter or ActionType.ResolveChoice
+                or ActionType.DeclineFlip)
                 && !(action.Type == ActionType.PayFlip && w.StoreReach > 0)) continue;
             if (budget <= 0) break;
             budget--;
