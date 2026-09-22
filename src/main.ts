@@ -1056,6 +1056,16 @@ const LOCK_FADE_MS = 420;
 let lockIn: Set<PlayerIdx> = new Set();
 let lockOut: Set<PlayerIdx> = new Set();
 
+/** How long a body wears the note saying it has just been made Stationary. */
+const ROOT_NOTE_MS = 2800;
+/**
+ * Bodies rooted by something else's text, named on the card for a moment.
+ * Stationary is printed on the cards that are born with it; a body that has it
+ * put on mid-game says so itself, or the player has no way to know why it will
+ * not attack.
+ */
+const rootNote: Set<string> = new Set();
+
 /**
  * Wound tokens for one body: the pool that landed, and what became of it. The
  * tokens scatter over the card, then resolve. At the usual two-wounds-to-a-point
@@ -1410,8 +1420,10 @@ function computeWoundFx(prev: GameState, next: GameState): void {
 function computeLockFx(prev: GameState, next: GameState): void {
   lockIn = new Set();
   for (let player = 0 as PlayerIdx; player < next.players.length; player++) {
-    const was = replaceLockedFor(prev, player);
-    const now = replaceLockedFor(next, player);
+    // The seal shows from the moment it is set, faded until the turn it bites,
+    // so it animates when it lands and when it lifts rather than in between.
+    const was = prev.players[player].replaceLockedBy >= 0;
+    const now = next.players[player].replaceLockedBy >= 0;
     if (now && !was) {
       lockIn.add(player);
       lockOut.delete(player);
@@ -1421,6 +1433,27 @@ function computeLockFx(prev: GameState, next: GameState): void {
         lockOut.delete(player);
         render();
       }, LOCK_FADE_MS);
+    }
+  }
+}
+
+/** Bodies something just rooted, so each one says what happened to it once. */
+function computeRootFx(prev: GameState, next: GameState): void {
+  const before = new Map<string, boolean>();
+  for (const p of prev.players) {
+    for (const s of [...p.slots, p.leader]) {
+      if (s) before.set(s.uid, !!s.rooted);
+    }
+  }
+  for (const p of next.players) {
+    for (const s of [...p.slots, p.leader]) {
+      if (!s || !s.rooted || before.get(s.uid) !== false) continue;
+      const uid = s.uid;
+      rootNote.add(uid);
+      window.setTimeout(() => {
+        rootNote.delete(uid);
+        render();
+      }, ROOT_NOTE_MS);
     }
   }
 }
@@ -1573,6 +1606,7 @@ function applyActionFx(
   computeUnitFx(prev, next);
   computeWoundFx(prev, next);
   computeLockFx(prev, next);
+  computeRootFx(prev, next);
   computeCorpses(prev, next, truth);
   // A muffled defender's flips turned over without firing, so no callouts.
   if (smackFx && smackFx.to.kind !== 'leader') {
@@ -2654,9 +2688,20 @@ function lockHtml(state: GameState, ref: TargetRef): string {
   if (ref.kind !== 'summon') return '';
   const player = ref.player;
   const held = lockOut.has(player);
-  if (!replaceLockedFor(state, player) && !held) return '';
+  const biting = replaceLockedFor(state, player);
+  const set = state.players[player].replaceLockedBy >= 0;
+  if (!biting && !set && !held) return '';
+  // Set but not biting yet: it waits for the turn of whoever set it, and says
+  // so faintly rather than not at all.
+  const idle = set && !biting ? ' lockidle' : '';
   const phase = held ? ' lockout' : lockIn.has(player) ? ' lockin' : '';
-  return `<img class="lockfx${phase}" src="${BASE}Cardgame/Extras/Locked.png" alt="" title="Sealed: a summon that dies here cannot be replaced until the end of the turn." draggable="false">`;
+  const grace = state.players[player].replaceGrace;
+  const title = biting
+    ? grace > 0
+      ? `Sealed: only ${grace} summon that dies here can be replaced until the end of the turn.`
+      : 'Sealed: a summon that dies here cannot be replaced until the end of the turn.'
+    : 'Sealed from the start of the sealing player’s turn: only one summon that dies here can be replaced then.';
+  return `<img class="lockfx${idle}${phase}" src="${BASE}Cardgame/Extras/Locked.png" alt="" title="${esc(title)}" draggable="false">`;
 }
 
 function unitHtml(state: GameState, ref: TargetRef, caption: string): string {
@@ -2773,6 +2818,9 @@ function unitHtml(state: GameState, ref: TargetRef, caption: string): string {
     }
   }
   extra += tokenHtml(s.uid, tokens);
+  if (rootNote.has(s.uid)) {
+    extra += '<span class="rootnote" title="Stationary: this body cannot attack.">Stationary</span>';
+  }
   if (liveStrength > printedStrength) {
     extra += `<span class="sparkles">${markSpots(`s${s.uid}`, 5).join('')}</span>`;
   } else if (liveStrength < printedStrength) {

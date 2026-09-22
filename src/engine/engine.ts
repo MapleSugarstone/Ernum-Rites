@@ -98,6 +98,7 @@ function newPlayer(list: DeckList): PlayerState {
     supportersLeft: 1,
     spellBonus: 0,
     replaceLockedBy: -1,
+    replaceGrace: 0,
     spellTax: 0,
     leaderPlayed: false,
     turnsTaken: 0,
@@ -365,7 +366,10 @@ function finishTurn(state: GameState): void {
   // A seal holds for its locker's turn and no longer, so seats between them in
   // party turn order are not caught by it.
   for (const pl of state.players) {
-    if (pl.replaceLockedBy === state.active) pl.replaceLockedBy = -1;
+    if (pl.replaceLockedBy === state.active) {
+      pl.replaceLockedBy = -1;
+      pl.replaceGrace = 0;
+    }
   }
   if (state.winner !== null) return;
   startTurn(state, nextLiving(state, state.active));
@@ -924,7 +928,10 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
     }
 
     case 'REPLACE_SUMMON': {
-      if (replaceLockedFor(state, actor)) return 'That slot is cursed shut.';
+      // A seal leaves one replacement through. Spending it closes the holes
+      // behind this one, so the seal still costs the rest of the turn's slots.
+      const sealed = replaceLockedFor(state, actor);
+      if (sealed && me.replaceGrace <= 0) return 'That slot is cursed shut.';
       const entry = state.replaceQueue[0];
       if (!entry || entry.player !== actor) return 'Nothing to replace.';
       // Claim the slot first: placing can end the game, and ending the game
@@ -936,6 +943,12 @@ function reduce(state: GameState, actor: PlayerIdx, action: Action): string | nu
       clearOppWanted();
       const err = placeSummon(state, actor, action.handIndex, entry.slot, action.targets ?? [], mode);
       if (err) return err;
+      if (sealed) {
+        me.replaceGrace--;
+        if (me.replaceGrace <= 0) {
+          state.replaceQueue = state.replaceQueue.filter((r) => r.player !== actor);
+        }
+      }
       return mode?.kind === 'track' && oppWasWanted() ? NEEDS_ENEMY : null;
     }
 

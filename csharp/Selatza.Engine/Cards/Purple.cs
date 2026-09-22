@@ -313,7 +313,7 @@ public static class Purple
                 Targets = Specs(Enemy()),
                 Effect = c => c.Wound(c.Target(0), 1),
             }),
-            flipText: "The enemy cannot replace summons that die until the end of your turn.",
+            flipText: "The enemy may replace only one summon that dies until the end of your turn.",
             flipCost: new FlipCost { Mana = new Cost(O: 1) },
             flip: c => c.LockReplace(c.Opp)),
 
@@ -401,13 +401,13 @@ public static class Purple
             triggers: new Triggers { OnAwake = c => c.Mill(c.Me, 2) }),
 
         K.Summon(3, "fungal", "Fungal Bloom", F(Faction.Living), str: 3, hp: 5,
-            text: "Deathrattle: Every enemy summon takes 3 Wounds. "
-            + "The enemy cannot replace summons that die until the end of your turn.",
+            text: "Deathrattle: Every enemy summon takes 1 Wound. "
+            + "The enemy may replace only one summon that dies until the end of your turn.",
             triggers: new Triggers
             {
                 OnDeath = c =>
                 {
-                    foreach (var r in c.SummonsOf(c.Opp)) c.Wound(r, 3);
+                    foreach (var r in c.SummonsOf(c.Opp)) c.Wound(r, 1);
                     c.LockReplace(c.Opp);
                 },
             }),

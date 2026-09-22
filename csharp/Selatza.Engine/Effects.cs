@@ -140,8 +140,15 @@ public sealed class EffectCtx
     {
         var p = State.Players[player];
         p.ReplaceLockedBy = Me;
-        State.ReplaceQueue.RemoveAll(r => r.Player == player);
-        Effects.Log(State, Me, $"{p.Name} cannot fill that slot yet.");
+        // One replacement comes through the seal. The offers past the first wait
+        // until it lifts, and taking the one closes them.
+        p.ReplaceGrace = 1;
+        int kept = State.ReplaceQueue.FindIndex(r => r.Player == player);
+        for (int i = State.ReplaceQueue.Count - 1; i >= 0; i--)
+        {
+            if (State.ReplaceQueue[i].Player == player && i != kept) State.ReplaceQueue.RemoveAt(i);
+        }
+        Effects.Log(State, Me, $"{p.Name} may fill only one of those slots.");
     }
 
     /// <summary>
@@ -520,8 +527,15 @@ public sealed class FlipCtx
     {
         var p = State.Players[player];
         p.ReplaceLockedBy = Me;
-        State.ReplaceQueue.RemoveAll(r => r.Player == player);
-        Effects.Log(State, Me, $"{p.Name} cannot fill that slot yet.");
+        // One replacement comes through the seal. The offers past the first wait
+        // until it lifts, and taking the one closes them.
+        p.ReplaceGrace = 1;
+        int kept = State.ReplaceQueue.FindIndex(r => r.Player == player);
+        for (int i = State.ReplaceQueue.Count - 1; i >= 0; i--)
+        {
+            if (State.ReplaceQueue[i].Player == player && i != kept) State.ReplaceQueue.RemoveAt(i);
+        }
+        Effects.Log(State, Me, $"{p.Name} may fill only one of those slots.");
     }
     public void BuffStrength(TargetRef t, int amount, ModDuration d)
     {
@@ -1348,8 +1362,8 @@ public static class Effects
         // On the owner's own turn the main phase already lets them refill, so
         // the immediate-replacement prompt is only for the side not on the play.
         if (summon.Owner == state.Active) return;
-        // Never offer a replacement the seal will refuse.
-        if (ReplaceLockedFor(state, summon.Owner)) return;
+        // Never offer a replacement the seal will refuse. One comes through it.
+        if (ReplaceLockedFor(state, summon.Owner) && p.ReplaceGrace <= 0) return;
         // And only while the hole is still there. A Deathrattle that refills the
         // slot it just left closed it before this ran: Slime stands a smaller
         // Slime up in the first empty slot, which is its own, and the offer went

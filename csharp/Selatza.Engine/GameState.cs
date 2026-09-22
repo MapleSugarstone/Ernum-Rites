@@ -167,6 +167,9 @@ public sealed class PlayerState
     /// <summary>Seat whose turn the replace lock holds for, or -1 when nothing holds it.</summary>
     public int ReplaceLockedBy { get; set; } = -1;
 
+    /// <summary>Replacements this player may still make while the seal holds.</summary>
+    public int ReplaceGrace { get; set; }
+
     /// <summary>
     /// Cards this player has hacked. While they hold one, it costs its total in
     /// Robot and pays in Robot as a supporter, whatever colour it was printed.
@@ -194,6 +197,7 @@ public sealed class PlayerState
             Love = Love,
             PlaysThisTurn = PlaysThisTurn,
             ReplaceLockedBy = ReplaceLockedBy,
+            ReplaceGrace = ReplaceGrace,
             SpellTax = SpellTax,
             Deck = new List<string>(Deck),
             Hand = new List<string>(Hand),

@@ -347,7 +347,7 @@ export const purpleCards: CardDef[] = [
         effect: (c) => c.wound(c.targets[0], 1),
       },
     ],
-    flipText: 'The enemy cannot replace summons that die until the end of your turn.',
+    flipText: 'The enemy may replace only one summon that dies until the end of your turn.',
     flipCost: { mana: { O: 1 } },
     flip: (c) => c.lockReplace(c.opp),
   }),
@@ -446,10 +446,10 @@ export const purpleCards: CardDef[] = [
     str: 3,
     hp: 5,
     text:
-      'Deathrattle: Every enemy summon takes 3 Wounds. The enemy cannot replace summons that die until the end of your turn.',
+      'Deathrattle: Every enemy summon takes 1 Wound. The enemy may replace only one summon that dies until the end of your turn.',
     triggers: {
       onDeath: (c) => {
-        for (const ref of c.summonsOf(c.opp)) c.wound(ref, 3);
+        for (const ref of c.summonsOf(c.opp)) c.wound(ref, 1);
         c.lockReplace(c.opp);
       },
     },

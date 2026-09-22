@@ -330,7 +330,7 @@ public static class Pink
             powers: Powers(new Power
             {
                 Name = "Dream",
-                Cost = new Cost(),
+                Cost = new Cost(K: 1),
                 Text = "Love: Draw a card.",
                 SapSelf = true,
                 NeedsLove = true,

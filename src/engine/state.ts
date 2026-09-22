@@ -134,6 +134,8 @@ export interface PlayerState {
    */
   /** Seat whose turn the replace lock holds for, or -1 when nothing holds it. */
   replaceLockedBy: number;
+  /** Replacements this player may still make while the seal holds. */
+  replaceGrace: number;
   /**
    * Extra colourless this player pays on every spell and trap they cast. Oil and
    * Robot put it there and it stays until something takes it off.

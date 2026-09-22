@@ -397,7 +397,11 @@ public static class Engine
         // A seal holds for its locker's turn and no longer.
         foreach (var pl in state.Players)
         {
-            if (pl.ReplaceLockedBy == state.Active) pl.ReplaceLockedBy = -1;
+            if (pl.ReplaceLockedBy == state.Active)
+            {
+                pl.ReplaceLockedBy = -1;
+                pl.ReplaceGrace = 0;
+            }
         }
         if (state.Winner >= 0) return;
         StartTurn(state, GameState.Other(state.Active));
@@ -1001,7 +1005,11 @@ public static class Engine
 
             case ActionType.ReplaceSummon:
             {
-                if (Effects.ReplaceLockedFor(state, actor)) return "That slot is cursed shut.";
+                // A seal leaves one replacement through. Spending it closes the
+                // holes behind this one, so the seal still costs the rest of the
+                // turn's slots.
+                bool sealed_ = Effects.ReplaceLockedFor(state, actor);
+                if (sealed_ && me.ReplaceGrace <= 0) return "That slot is cursed shut.";
                 if (state.ReplaceQueue.Count == 0 || state.ReplaceQueue[0].Player != actor)
                 {
                     return "Nothing to replace.";
@@ -1010,7 +1018,14 @@ public static class Engine
                 // Claim the slot first: placing can end the game, and ending the
                 // game clears the queue out from under us.
                 state.ReplaceQueue.RemoveAt(0);
-                return PlaceSummon(state, actor, action.HandIndex, slot, action.Targets);
+                var placeErr = PlaceSummon(state, actor, action.HandIndex, slot, action.Targets);
+                if (placeErr is not null) return placeErr;
+                if (sealed_)
+                {
+                    me.ReplaceGrace--;
+                    if (me.ReplaceGrace <= 0) state.ReplaceQueue.RemoveAll(r => r.Player == actor);
+                }
+                return null;
             }
 
             case ActionType.PayFlip:

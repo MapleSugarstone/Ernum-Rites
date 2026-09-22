@@ -1347,7 +1347,7 @@ public static class Program
             Harness.Eq(3, s.Players[1].Deck.Count(id => id == "o-curse-rot"), "copies in there");
         });
 
-        Harness.Test("a cursed slot cannot be refilled until it clears", () =>
+        Harness.Test("a cursed slot lets one replacement through, then holds", () =>
         {
             var s = Game();
             s = Must(s, 0, GameAction.EndTurn());
@@ -1359,11 +1359,16 @@ public static class Program
             Harness.True(s.ReplaceQueue.Count > 0, "a replacement is offered");
 
             Ctx(s, 0).LockReplace(1);
-            Harness.Eq(0, s.ReplaceQueue.Count, "the offer is withdrawn");
+            Harness.Eq(1, s.ReplaceQueue.Count, "one offer stands");
             Harness.Eq(0, s.Players[1].ReplaceLockedBy, "and the slot is locked by seat 0");
+            Harness.Eq(1, s.Players[1].ReplaceGrace, "with one replacement allowed");
 
             int idx = s.Players[1].Hand.IndexOf(D2);
-            Harness.False(Engine.Apply(s, 1, GameAction.ReplaceSummon(idx)).Ok, "refused while locked");
+            var through = Engine.Apply(s, 1, GameAction.ReplaceSummon(idx));
+            Harness.True(through.Ok, "the one replacement goes through");
+            s = through.State!;
+            Harness.Eq(0, s.Players[1].ReplaceGrace, "which spends the allowance");
+            Harness.Eq(0, s.ReplaceQueue.Count, "and closes the holes behind it");
 
             // A seal holds for its locker's turn and no longer, so a party seat
             // between the two in turn order refills as normal.

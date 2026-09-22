@@ -356,7 +356,7 @@ export const pinkCards: CardDef[] = [
     powers: [
       {
         name: 'Dream',
-        cost: {},
+        cost: { K: 1 },
         text: 'Love: Draw a card.',
         sapSelf: true,
         needsLove: true,

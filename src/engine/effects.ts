@@ -723,7 +723,7 @@ export function destroySummon(state: GameState, summon: SummonInstance): void {
   // chain of them asked once a link.
   if (
     summon.owner !== state.active &&
-    !replaceLockedFor(state, summon.owner) &&
+    (!replaceLockedFor(state, summon.owner) || p.replaceGrace > 0) &&
     !p.slots[slot] &&
     p.hand.some((id) => card(id).type === 'summon')
   ) {
@@ -1289,8 +1289,12 @@ function baseHelpers(state: GameState, me: PlayerIdx, sourceId: string, casts: b
     lockReplace: (player: PlayerIdx) => {
       const p = state.players[player];
       p.replaceLockedBy = me;
-      state.replaceQueue = state.replaceQueue.filter((r) => r.player !== player);
-      log(state, me, `${p.name} cannot fill that slot yet.`);
+      // One replacement comes through the seal. The offers past the first wait
+      // until it lifts, and taking the one closes them.
+      p.replaceGrace = 1;
+      const first = state.replaceQueue.find((r) => r.player === player);
+      state.replaceQueue = state.replaceQueue.filter((r) => r.player !== player || r === first);
+      log(state, me, `${p.name} may fill only one of those slots.`);
     },
     draw: (player: PlayerIdx, count: number) => {
       drawCards(state, player, count);

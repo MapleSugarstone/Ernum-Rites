@@ -4828,10 +4828,70 @@ body.mobile .draftwait .prompt {
 .unit .lockfx.lockout {
   animation: lockout 420ms ease-in forwards;
 }
+/* Set, but waiting for the turn of whoever set it. */
+.unit .lockfx.lockidle {
+  opacity: 0.3;
+}
+@keyframes lockinidle {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0.3;
+  }
+}
+.unit .lockfx.lockidle.lockin {
+  animation: lockinidle 420ms ease-out;
+}
 @media (prefers-reduced-motion: reduce) {
   .unit .lockfx.lockin,
-  .unit .lockfx.lockout {
+  .unit .lockfx.lockout,
+  .unit .lockfx.lockidle.lockin {
     animation-duration: 1ms;
+  }
+}
+
+/* A body rooted by something else's text says so for a moment, because
+   Stationary is otherwise only ever printed on the card. */
+.unit .rootnote {
+  position: absolute;
+  top: calc(16px + var(--cw-board) * var(--card-ratio) * 0.42);
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: fit-content;
+  max-width: var(--cw-board);
+  padding: 2px 7px;
+  border-radius: var(--radius);
+  background: rgba(16, 16, 24, 0.82);
+  color: #f4f1ff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  pointer-events: none;
+  z-index: 11;
+  animation: rootnote 2800ms ease-out forwards;
+}
+@keyframes rootnote {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  12% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .unit .rootnote {
+    animation: none;
   }
 }
 
