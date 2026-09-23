@@ -474,14 +474,14 @@ export const greenCards: CardDef[] = [
     str: 3,
     hp: 5,
     spellEcho: true,
-    text: 'Your spells cast twice. When you play a Machine, draw a card and Mill 1.',
+    text: 'Your spells cast twice. When you play a Machine, draw a card and Mill 3.',
     triggers: {
       onSummonPlayed: (c) => {
         const played = c.summonAt(c.targets[0]);
         if (!played || played.owner !== c.me) return;
         if (!card(played.cardId).factions?.includes('Machine')) return;
         c.draw(c.me, 1);
-        c.mill(c.me, 1);
+        c.mill(c.me, 3);
       },
     },
   }),

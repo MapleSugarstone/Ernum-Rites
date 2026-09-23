@@ -431,7 +431,7 @@ public static class Green
         K.Summon(3, "scoobertsingularity", "Scoobert Singularity",
             F(Faction.Machine, Faction.Star), str: 3, hp: 5,
             spellEcho: true,
-            text: "Your spells cast twice. When you play a Machine, draw a card and Mill 1.",
+            text: "Your spells cast twice. When you play a Machine, draw a card and Mill 3.",
             triggers: new Triggers
             {
                 OnSummonPlayed = c =>
@@ -440,7 +440,7 @@ public static class Green
                     if (played is null || played.Owner != c.Me) return;
                     if (!Registry.Card(played.CardId).HasFaction(Faction.Machine)) return;
                     c.Draw(c.Me, 1);
-                    c.Mill(c.Me, 1);
+                    c.Mill(c.Me, 3);
                 },
             }),
 
