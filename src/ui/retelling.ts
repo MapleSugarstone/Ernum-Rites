@@ -1,5 +1,5 @@
 import { card, tryCard } from '../engine/registry';
-import { isOver, type GameState } from '../engine/state';
+import { isOver, logLineFor, type GameState } from '../engine/state';
 import { BUILD_VERSION } from '../version';
 
 /**
@@ -98,7 +98,7 @@ export function matchRetelling(ctx: RetellingContext): string {
       turn = entry.turn;
       body.push('', `Turn ${turn}`);
     }
-    body.push(`  ${entry.text}`);
+    body.push(`  ${logLineFor(entry, ctx.seat)}`);
   }
   if (body.length === 0) body.push('', '(nothing happened)');
 

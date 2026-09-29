@@ -4,7 +4,8 @@ import type { Action, SourceRef } from '../src/engine/actions';
 import { applyAction, createGame, type DeckList } from '../src/engine/engine';
 import { publicView, redactFor } from '../src/engine/redact';
 import { digestShort } from '../src/engine/digest';
-import { currentActor, type GameState } from '../src/engine/state';
+import { logPrivate } from '../src/engine/effects';
+import { currentActor, logLineFor, type GameState } from '../src/engine/state';
 import { timeoutAction } from '../src/engine/timeout';
 import {
   CLOCK_SECONDS,
@@ -227,6 +228,16 @@ describe('the digest both clients check against', () => {
         for (const h of body.hp) if (!h.flipped) expect(h.cardId).toBe('hidden');
       }
     }
+  });
+
+  it('keeps a private log line for its own player and gives everyone else the public wording', () => {
+    const s = game();
+    logPrivate(s, 0, 'A card goes to hand.', 'Secret goes to hand.');
+    const last = (v: GameState, seat: PlayerIdx) => logLineFor(v.log[v.log.length - 1], seat);
+    expect(last(redactFor(s, 0), 0)).toBe('Secret goes to hand.');
+    expect(last(redactFor(s, 1), 1)).toBe('A card goes to hand.');
+    expect(JSON.stringify(redactFor(s, 1).log)).not.toContain('Secret');
+    expect(JSON.stringify(publicView(s).log)).not.toContain('Secret');
   });
 });
 

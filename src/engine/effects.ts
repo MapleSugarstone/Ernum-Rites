@@ -95,6 +95,16 @@ export function log(state: GameState, player: PlayerIdx | null, text: string): v
   state.log.push({ turn: state.turn, player, text });
 }
 
+/** A log line whose full wording only `player` may read, such as a card taken off their own deck. */
+export function logPrivate(
+  state: GameState,
+  player: PlayerIdx,
+  text: string,
+  privateText: string,
+): void {
+  state.log.push({ turn: state.turn, player, text, privateText });
+}
+
 /** A body the player owes for. This is what the debt counter counts. */
 export function toDebt(state: GameState, player: PlayerIdx, cardId: string): void {
   state.players[player].debt.push(cardId);
@@ -996,7 +1006,7 @@ registerChoiceResolver('scry', (state, choice, pick) => {
   if (pick.index !== undefined) {
     const [id] = cards.splice(pick.index, 1);
     if (toHand(state, choice.player, id)) {
-      log(state, choice.player, `${card(id).name} goes to hand.`);
+      logPrivate(state, choice.player, 'A card goes to hand.', `${card(id).name} goes to hand.`);
     }
   }
   p.deck.push(...cards);

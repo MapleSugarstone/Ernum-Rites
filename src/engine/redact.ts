@@ -1,4 +1,4 @@
-import { cloneState, type GameState } from './state';
+import { cloneState, type GameState, type LogEntry } from './state';
 import type { CardDef, PlayerIdx } from './types';
 
 /**
@@ -43,19 +43,15 @@ export function redactFor(state: GameState, viewer: PlayerIdx): GameState {
       s.hp = s.hp.map((h) => (h.flipped ? h : { ...h, cardId: HIDDEN_ID }));
     }
   }
-  // A decision belongs to the player making it, and so does what it is looking
-  // at. A flip offer names a face-down HP card, which neither side is supposed
-  // to know: a declined flip has to go back to being unknown, not merely
-  // unflipped. A reveal holds cards pulled off a deck for one player to choose
-  // from, and the other player never sees the row.
-  for (const offer of out.flipQueue) {
-    if (offer.player !== viewer) offer.cardId = HIDDEN_ID;
-  }
+  // A flip offer is left alone: its card is already face up on the body and
+  // named in the log. A reveal holds cards pulled off a deck for one player to
+  // choose from, and the other player never sees the row.
   for (const choice of out.choiceQueue) {
     if (choice.player !== viewer && choice.cards) {
       choice.cards = choice.cards.map(() => HIDDEN_ID);
     }
   }
+  out.log = out.log.map((e) => (e.player === viewer ? e : withoutPrivateText(e)));
   return out;
 }
 
@@ -91,5 +87,12 @@ export function publicView(state: GameState): GameState {
   for (const choice of out.choiceQueue) {
     if (choice.cards) choice.cards = choice.cards.map(() => HIDDEN_ID);
   }
+  out.log = out.log.map(withoutPrivateText);
   return out;
+}
+
+/** Entries are shared between clones, so the private wording is dropped from a copy. */
+function withoutPrivateText(e: LogEntry): LogEntry {
+  if (e.privateText === undefined) return e;
+  return { turn: e.turn, player: e.player, text: e.text };
 }

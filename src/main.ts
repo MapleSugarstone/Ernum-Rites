@@ -134,6 +134,7 @@ import {
   findSummon,
   isOver,
   levelOf,
+  logLineFor,
   otherPlayer,
   powersOf,
   refIsGone,
@@ -1234,10 +1235,13 @@ function discardGains(prev: GameState, next: GameState, player: PlayerIdx): stri
   return out;
 }
 
-function computeFlipFx(prev: GameState, next: GameState): void {
+function computeFlipFx(prev: GameState, next: GameState, truth: GameState): void {
   flipFx = new Map();
   effectCallouts = [];
   const before = new Map(allSummons(prev).map((x) => [x.summon.uid, x.summon]));
+  // A card the local replay turned over is still a placeholder there, while the
+  // room's state already shows its face.
+  const shown = new Map(allSummons(truth).map((x) => [x.summon.uid, x.summon]));
   for (const { ref, summon } of allSummons(next)) {
     const old = before.get(summon.uid);
     if (!old) continue;
@@ -1245,12 +1249,14 @@ function computeFlipFx(prev: GameState, next: GameState): void {
     summon.hp.forEach((h, i) => {
       if (h.flipped && old.hp[i] && !old.hp[i].flipped) {
         fresh.add(i);
-        const hdef = tryCard(h.cardId);
+        const room = shown.get(summon.uid)?.hp[i];
+        const id = h.cardId === HIDDEN_ID && room?.flipped ? room.cardId : h.cardId;
+        const hdef = tryCard(id);
         // Costed flips announce themselves through the pay prompt instead.
         if (hdef?.flip && !hdef.flipCost) {
           effectCallouts.push({
             ref,
-            cardId: h.cardId,
+            cardId: id,
             says: hdef.flipText ?? '',
             order: effectCallouts.length,
           });
@@ -1326,6 +1332,10 @@ function computeCorpses(prev: GameState, next: GameState, truth: GameState): voi
   corpseFx = [];
   const alive = standingUids(next, truth);
   const count = (list: string[], id: string) => list.filter((x) => x === id).length;
+  // One pool per owner, shared by every body of theirs that died this action, so
+  // a second corpse does not claim the first one's cards. Read off the room's
+  // state because the local replay only ever discards placeholders.
+  const pools = new Map<PlayerIdx, string[]>();
   for (const { ref, summon } of allSummons(prev)) {
     if (alive.has(summon.uid)) continue;
     const def = card(summon.cardId);
@@ -1338,7 +1348,8 @@ function computeCorpses(prev: GameState, next: GameState, truth: GameState): voi
     // of where they landed: the already-flipped cards match themselves out of
     // the pool first, and the hidden ones take what remains in order, which is
     // the order the fan was discarded in.
-    const gained = discardGains(prev, next, summon.owner);
+    const gained = pools.get(summon.owner) ?? discardGains(prev, truth, summon.owner);
+    pools.set(summon.owner, gained);
     for (const h of summon.hp) {
       if (!h.flipped || h.cardId === HIDDEN_ID) continue;
       const at = gained.indexOf(h.cardId);
@@ -1599,7 +1610,7 @@ function applyActionFx(
   computeDeckOutFx(prev, next);
   computeDebtFx(prev, next);
   computeDrawFx(prev, next);
-  computeFlipFx(prev, next);
+  computeFlipFx(prev, next, truth);
   computeTriggerCallouts(next);
   computeArrivals(prev, next);
   computeDeckGifts(prev, next);
@@ -3059,12 +3070,13 @@ function historyHtml(state: GameState): string {
   state.log.forEach((e, i) => {
     const gid = logGroups[i];
     const cur = groups[groups.length - 1];
+    const text = logLineFor(e, me);
     if (cur && cur.gid === gid) {
-      cur.texts.push(e.text);
+      cur.texts.push(text);
       cur.last = i;
       if (cur.player === null) cur.player = e.player;
     } else {
-      groups.push({ gid, texts: [e.text], player: e.player, last: i });
+      groups.push({ gid, texts: [text], player: e.player, last: i });
     }
   });
   const tiles = groups
@@ -4745,8 +4757,16 @@ function choiceArrowFrom(): { x: number; y: number } | null {
   if (!ch) return null;
   let el: Element | null = null;
   if (ch.at && (ch.at.kind === 'summon' || ch.at.kind === 'leader')) el = boardElFor(ch.at, true);
-  // The flipped HP mini and the summon both carry the card id.
-  el ??= document.querySelector(`.board [data-cardid="${ch.source}"]`);
+  // The flipped HP mini and the summon both carry the card id, and so can an
+  // enemy's copy of the same card. The chooser's own side is searched first,
+  // the HP fans before the debt and discard piles.
+  const id = CSS.escape(ch.source);
+  const own = `.board .side[data-player="${ch.player}"]`;
+  el ??=
+    document.querySelector(`${own} .hpmini.flipnow[data-cardid="${id}"]`) ??
+    document.querySelector(`${own} .hpfan [data-cardid="${id}"]`) ??
+    document.querySelector(`${own} .unit [data-cardid="${id}"]`) ??
+    document.querySelector(`.board [data-cardid="${id}"]`);
   return el ? centerOf(el) : null;
 }
 

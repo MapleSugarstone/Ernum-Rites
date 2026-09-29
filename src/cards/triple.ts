@@ -1,6 +1,6 @@
 import { card } from '../engine/registry';
 import { registerChoiceResolver } from '../engine/choices';
-import { log, toHand } from '../engine/effects';
+import { log, logPrivate, toHand } from '../engine/effects';
 import { coloredBanana, graftedCopy, malwareCopy, oilCopy, robotCopy } from '../engine/generated';
 import {
   colorOf,
@@ -719,7 +719,13 @@ registerChoiceResolver('long-sight', (state, choice, pick) => {
     if (!self) p.deck.unshift(id);
     else {
       self.hp.push({ cardId: id, flipped: false });
-      log(state, choice.player, `${card(id).name} slides under ${card(self.cardId).name}.`);
+      const under = card(self.cardId).name;
+      logPrivate(
+        state,
+        choice.player,
+        `A card slides under ${under}.`,
+        `${card(id).name} slides under ${under}.`,
+      );
     }
   }
   p.deck.push(...cards);

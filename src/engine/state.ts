@@ -248,6 +248,13 @@ export interface LogEntry {
   turn: number;
   player: PlayerIdx | null;
   text: string;
+  /** The line as `player` reads it, naming a card nobody else has seen. Redacted for everyone else. */
+  privateText?: string;
+}
+
+/** The log line as `viewer` is allowed to read it. */
+export function logLineFor(entry: LogEntry, viewer: number | null): string {
+  return entry.privateText !== undefined && entry.player === viewer ? entry.privateText : entry.text;
 }
 
 export interface GameState {
