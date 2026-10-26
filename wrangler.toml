@@ -13,6 +13,11 @@ ALLOWED_ORIGINS = "https://maplesugarstone.github.io,http://localhost:5173"
 [observability]
 enabled = true
 
+# Only the server's own log lines are kept. A log for every run would count each socket message
+# against the account's daily log limit.
+[observability.logs]
+invocation_logs = false
+
 [[durable_objects.bindings]]
 name = "MATCH_ROOM"
 class_name = "MatchRoom"
